@@ -30,6 +30,48 @@ RaidClear.Enable = 1
 RaidClear.KillOrder = 1
 
 #
+#    RaidClear.Tanks.AssignMainTank
+#        Description: In every raid, if the group has two or more tanks and nobody has the Main
+#                     Tank flag, give it to the tank playerbots already treats as main (the first
+#                     tank in group order; `.botraid sort` puts tanks first). With the flag set
+#                     the main tank sticks to its own target, and mod-dungeon-clear picks the same
+#                     tank as its leader. A Main Tank you set yourself is never changed.
+#        Default:     1
+#
+
+RaidClear.Tanks.AssignMainTank = 1
+
+#
+#    RaidClear.Tanks.Split
+#        Description: In every raid, the other tanks act as off-tanks: they never take the main
+#                     tank's target, they pick up mobs hitting non-tanks first, then extra mobs on
+#                     the main tank, and leave mobs another off-tank holds.
+#        Default:     1
+#
+
+RaidClear.Tanks.Split = 1
+
+#
+#    RaidClear.Tanks.Separation
+#        Description: How far (yards) an off-tank drags its mob from the main tank, so cleaves and
+#                     frontal attacks hit only one tank. Only spots on dry ground at about the
+#                     main tank's height and in its line of sight are used. 0 = don't move.
+#        Default:     12
+#
+
+RaidClear.Tanks.Separation = 12
+
+#
+#    RaidClear.Tanks.SeparateOnBosses
+#        Description: Also separate while a boss is in the fight. Off by default: boss rooms have
+#                     their own positioning (and some boss strategies place the tanks themselves).
+#                     Off-tanks still take the boss's adds either way.
+#        Default:     0
+#
+
+RaidClear.Tanks.SeparateOnBosses = 0
+
+#
 #    RaidClear.MoltenCore.Enable
 #        Description: Molten Core strategy (map 409): kill order, Tremor Totem on Magmadar,
 #                     no attacks into Majordomo's reflection shields, ranged out of Ragnaros'

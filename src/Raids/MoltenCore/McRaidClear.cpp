@@ -34,6 +34,12 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::MoltenCore::KillOrder()
     return table;
 }
 
+std::vector<uint32> const& RaidClear::MoltenCore::TankSplitSkipBosses()
+{
+    static std::vector<uint32> const bosses = { NPC_GOLEMAGG };
+    return bosses;
+}
+
 void RaidClearMoltenCoreStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("rc kill order", { NextAction("rc mark kill order", ACTION_RAID + 2) }));

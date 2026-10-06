@@ -25,12 +25,28 @@ whichever add should die first: adds that split or multiply, then healers, then 
 adds. A skull already on an add of the same or higher priority is left where it is, so the mark
 doesn't flicker between equal adds. A skull you put on an add stays there too.
 
+### Main tank and off-tanks (all raids)
+
+`.botraid` builds raids with two or more tanks, but playerbots treats them all the same: each one
+grabs whatever isn't hitting it, off-tanks taunt the main tank's mob, and every mob ends up in one
+pile. In any raid:
+
+- **One main tank.** If nobody has the group's Main Tank flag, the tank playerbots already treats
+  as main gets it (first tank in group order). The main tank then sticks to its own target, and
+  mod-dungeon-clear leads with the same tank. A Main Tank you set yourself is kept.
+- **Off-tanks.** The other tanks never take the main tank's target. They pick up mobs hitting
+  healers or DPS first, then extra mobs on the main tank, and leave mobs another off-tank already
+  holds.
+- **Separated on trash.** An off-tank drags its mob about 12 yards from the main tank, so cleaves
+  and frontal attacks hit only one tank. It only picks dry ground (no lava) at the main tank's
+  height and in its line of sight. In boss fights it stays put unless configured otherwise.
+
 ## Raids
 
 ### Molten Core
 
 Playerbots already handles Living Bomb and Inferno, Shazzrah's Arcane Explosion, the Golemagg /
-Core Rager tank split, Core Hound packs, lava pools and the resistance auras. On top of that:
+Core Rager tank split (the off-tank split stays out of that fight), Core Hound packs, lava pools and the resistance auras. On top of that:
 
 | Fight | What the bots do |
 |---|---|
@@ -62,6 +78,10 @@ also keep playerbots' own raid strategies.
 |---|---|---|
 | `RaidClear.Enable` | 1 | Master switch (startup only). |
 | `RaidClear.KillOrder` | 1 | Skull kill order. |
+| `RaidClear.Tanks.AssignMainTank` | 1 | Give the group's Main Tank flag to a tank if nobody has it. |
+| `RaidClear.Tanks.Split` | 1 | Off-tanks leave the main tank's target and pick up the rest. |
+| `RaidClear.Tanks.Separation` | 12 | Yards an off-tank drags its mob from the main tank (0 = off). |
+| `RaidClear.Tanks.SeparateOnBosses` | 0 | Also separate during boss fights. |
 | `RaidClear.MoltenCore.Enable` | 1 | Molten Core strategy. |
 
 ## Patch Notes: Raid Clear
@@ -69,6 +89,8 @@ also keep playerbots' own raid strategies.
 Category: Raids
 
 - Bot raids now know more of Molten Core's boss mechanics.
+- Bot raids now have a main tank and off-tanks. Off-tanks pick up the mobs the main tank isn't
+  holding and tank them a few steps away, so one cleave doesn't hit both tanks.
 - Bots kill the dangerous adds first: **Lava Spawn**, then the Flamewaker healers and priests,
   then each boss's guards, before turning to the boss.
 - Shamans drop **Tremor Totem** for Magmadar's **Panic**.

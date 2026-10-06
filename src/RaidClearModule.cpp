@@ -19,6 +19,7 @@
 #include "RaidClearConfig.h"
 #include "RaidClearContexts.h"
 #include "RaidClearRegistry.h"
+#include "Common/TankRoles.h"
 
 #include "Config.h"
 #include "Log.h"
@@ -56,13 +57,17 @@ namespace RaidClear
     {
         sConfig.enable = sConfigMgr->GetOption<bool>("RaidClear.Enable", true);
         sConfig.killOrder = sConfigMgr->GetOption<bool>("RaidClear.KillOrder", true);
+        sConfig.assignMainTank = sConfigMgr->GetOption<bool>("RaidClear.Tanks.AssignMainTank", true);
+        sConfig.tankSplit = sConfigMgr->GetOption<bool>("RaidClear.Tanks.Split", true);
+        sConfig.tankSeparation = sConfigMgr->GetOption<float>("RaidClear.Tanks.Separation", 12.0f);
+        sConfig.separateOnBosses = sConfigMgr->GetOption<bool>("RaidClear.Tanks.SeparateOnBosses", false);
         sConfig.raidEnabled.clear();
         for (RaidEntry const& raid : Raids)
             sConfig.raidEnabled[raid.mapId] =
                 sConfigMgr->GetOption<bool>(std::string("RaidClear.") + raid.confKey + ".Enable", true);
     }
 
-    // Install the strategy for the bot's current raid, strip every other raid's.
+    // Install the strategies for the bot's current raid, strip every other raid's.
     void Reconcile(Player* player)
     {
         if (!sRegistered || !player)
@@ -74,6 +79,14 @@ namespace RaidClear
 
         Map* map = player->GetMap();
         uint32 const mapId = map ? map->GetId() : 0;
+
+        // The tank split applies in every raid, supported or not.
+        bool const wantTanks = sConfig.enable && sConfig.tankSplit && map && map->IsRaid();
+        bool const hasTanks = botAI->HasStrategy(TANKS_STRATEGY, BOT_STATE_COMBAT);
+        if (wantTanks && !hasTanks)
+            botAI->ChangeStrategy(std::string("+") + TANKS_STRATEGY, BOT_STATE_COMBAT);
+        else if (!wantTanks && hasTanks)
+            botAI->ChangeStrategy(std::string("-") + TANKS_STRATEGY, BOT_STATE_COMBAT);
 
         for (RaidEntry const& raid : Raids)
         {
@@ -147,7 +160,13 @@ public:
         // World thread, outside map updates: the same place mod-dungeon-clear reconciles its
         // strategies from.
         for (auto const& [guid, player] : ObjectAccessor::GetPlayers())
+        {
             Reconcile(player);
+
+            // Group flags are only touched here, on the world thread.
+            if (GetConfig().assignMainTank && player->GetMap() && player->GetMap()->IsRaid())
+                Tanks::AssignMainTank(player->GetGroup());
+        }
     }
 
 private:
