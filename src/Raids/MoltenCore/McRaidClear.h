@@ -38,6 +38,7 @@ namespace RaidClear::MoltenCore
     enum Creatures : uint32
     {
         NPC_MAGMADAR             = 11982,
+        NPC_GOLEMAGG             = 11988,
         NPC_MAJORDOMO            = 12018,
         NPC_RAGNAROS             = 11502,
 
@@ -65,6 +66,10 @@ namespace RaidClear::MoltenCore
     constexpr float RAGNAROS_RANGED_TARGET = 30.0f;
 
     std::vector<KillOrderEntry> const& KillOrder();
+
+    // Bosses where mod-playerbots places the tanks itself (Golemagg: main tank on him, assist
+    // tank on the Core Ragers at fixed spots), so the generic off-tank split stays out.
+    std::vector<uint32> const& TankSplitSkipBosses();
 }
 
 class RaidClearMoltenCoreStrategy : public Strategy

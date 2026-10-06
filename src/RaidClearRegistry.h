@@ -25,6 +25,9 @@ namespace RaidClear
         char const* confKey;   // RaidClear.<confKey>.Enable
     };
 
+    // Main tank / off-tank split, installed on every raid map (see Common/TankRoles.h).
+    inline constexpr char const* TANKS_STRATEGY = "rc raid tanks";
+
     inline constexpr std::array<RaidEntry, 1> Raids = {{
         { 409, "rc moltencore", "MoltenCore" },
     }};

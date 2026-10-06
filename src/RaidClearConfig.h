@@ -18,6 +18,10 @@ namespace RaidClear
     {
         bool enable = true;
         bool killOrder = true;
+        bool assignMainTank = true;
+        bool tankSplit = true;
+        float tankSeparation = 12.0f;
+        bool separateOnBosses = false;
         std::unordered_map<uint32, bool> raidEnabled;  // mapId -> RaidClear.<Raid>.Enable
 
         bool IsRaidEnabled(uint32 mapId) const
