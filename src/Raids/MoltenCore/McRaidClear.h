@@ -22,6 +22,7 @@
 #define MOD_RAID_CLEAR_MOLTEN_CORE_H
 
 #include "Common/KillOrder.h"
+#include "Common/TankRoles.h"
 
 #include "Action.h"
 #include "MovementActions.h"
@@ -39,6 +40,9 @@ namespace RaidClear::MoltenCore
     {
         NPC_MAGMADAR             = 11982,
         NPC_GOLEMAGG             = 11988,
+
+        NPC_MOLTEN_GIANT         = 11658,  // Smash: 10 yd AoE, Knock Away
+        NPC_MOLTEN_DESTROYER     = 11659,  // Massive Tremor: 13 yd AoE, Knockdown
         NPC_MAJORDOMO            = 12018,
         NPC_RAGNAROS             = 11502,
 
@@ -70,6 +74,9 @@ namespace RaidClear::MoltenCore
     // Bosses where mod-playerbots places the tanks itself (Golemagg: main tank on him, assist
     // tank on the Core Ragers at fixed spots), so the generic off-tank split stays out.
     std::vector<uint32> const& TankSplitSkipBosses();
+
+    // Trash whose AoE needs more room than the default tank separation.
+    std::vector<Tanks::SplashRadius> const& TankSplitSplashRadii();
 }
 
 class RaidClearMoltenCoreStrategy : public Strategy

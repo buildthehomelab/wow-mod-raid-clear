@@ -12,9 +12,11 @@
  *   - Every other tank is an off-tank. It never takes the main tank's target. It picks up mobs
  *     that are hitting someone who isn't a tank first, then extra mobs on the main tank, and
  *     leaves mobs another off-tank already holds.
- *   - On trash, an off-tank holding a mob drags it a little way from the main tank, so cleaves
- *     and frontal attacks don't hit both tanks. The spot is on dry ground (no lava or water),
- *     at about the same height and in line of sight of the main tank.
+ *   - On trash, an off-tank holding a mob drags it away from the main tank's mob, so cleaves
+ *     and stomps don't hit both tanks. The distance is measured mob to mob: the configured
+ *     separation, or more for mobs with a big AoE (each raid lists those with their radius).
+ *     The spot is on dry ground (no lava or water), at about the same height and in line of
+ *     sight of the main tank.
  *
  * Released under the MIT License.
  */
@@ -36,6 +38,17 @@ class Unit;
 
 namespace RaidClear::Tanks
 {
+    // A mob whose own AoE (stomp, cleave, knockback) reaches this far around it. Two tanked mobs
+    // are kept at least the sum of their radii apart, or the configured separation if larger.
+    struct SplashRadius
+    {
+        uint32 entry;
+        float radius;
+    };
+
+    // Yards the off-tank's mob should be kept from the main tank's mob.
+    float WantedSeparation(Unit const* mine, Unit const* theirs);
+
     // Flag the group's main tank if nobody has the flag. World thread only.
     void AssignMainTank(Group* group);
 
