@@ -55,6 +55,27 @@ namespace RaidClear::Tanks
             return false;
         }
 
+        // How far each mob's own AoE reaches, so two of them are kept out of each other's.
+        std::vector<SplashRadius> const& SplashRadii(uint32 mapId)
+        {
+            static std::vector<SplashRadius> const none;
+            switch (mapId)
+            {
+                case MoltenCore::MAP_ID: return MoltenCore::TankSplitSplashRadii();
+                default:                 return none;
+            }
+        }
+
+        float SplashRadiusOf(Unit const* unit)
+        {
+            if (!unit)
+                return 0.0f;
+            for (SplashRadius const& s : SplashRadii(unit->GetMapId()))
+                if (s.entry == unit->GetEntry())
+                    return s.radius;
+            return 0.0f;
+        }
+
         bool IsDry(Map* map, uint32 phaseMask, float x, float y, float z, float collisionHeight)
         {
             LiquidData const liquid = map->GetLiquidData(phaseMask, x, y, z, collisionHeight, {});
@@ -170,6 +191,11 @@ namespace RaidClear::Tanks
         return best;
     }
 
+    float WantedSeparation(Unit const* mine, Unit const* theirs)
+    {
+        return std::max(GetConfig().tankSeparation, SplashRadiusOf(mine) + SplashRadiusOf(theirs));
+    }
+
     bool BossInFight(PlayerbotAI* botAI, GuidVector const& attackers)
     {
         for (ObjectGuid const& guid : attackers)
@@ -234,8 +260,7 @@ bool RcOffTankTargetAction::Execute(Event /*event*/)
 
 bool RcOffTankSeparateTrigger::IsActive()
 {
-    float const separation = GetConfig().tankSeparation;
-    if (separation <= 0.0f || !GetConfig().tankSplit || !bot->IsInCombat())
+    if (GetConfig().tankSeparation <= 0.0f || !GetConfig().tankSplit || !bot->IsInCombat())
         return false;
 
     Player* mainTank = ActingMainTank(bot->GetGroup());
@@ -252,7 +277,10 @@ bool RcOffTankSeparateTrigger::IsActive()
     if (!GetConfig().separateOnBosses && BossInFight(botAI, attackers))
         return false;
 
-    return bot->GetExactDist2d(mainTank) < separation - SEPARATION_SLACK;
+    // Measured between the two mobs, not the two tanks: the mobs are what swing and stomp, and
+    // big ones stand well in front of their tank.
+    Unit* anchor = mainTank->GetVictim() ? mainTank->GetVictim() : mainTank;
+    return target->GetExactDist2d(anchor) < WantedSeparation(target, anchor) - SEPARATION_SLACK;
 }
 
 bool RcOffTankSeparateAction::Execute(Event /*event*/)
@@ -261,31 +289,46 @@ bool RcOffTankSeparateAction::Execute(Event /*event*/)
     if (!IsOffTank(bot, mainTank))
         return false;
 
-    Map* map = bot->GetMap();
-    float const separation = GetConfig().tankSeparation;
+    Unit* mine = AI_VALUE(Unit*, "current target");
+    if (!mine)
+        return false;
 
-    // Straight away from the main tank first, then fan out to either side.
-    float base = mainTank->GetAngle(bot);
-    if (bot->GetExactDist2d(mainTank) < 1.0f)
-        base = mainTank->GetOrientation() + float(M_PI) / 2.0f;
+    Unit* anchor = mainTank->GetVictim() ? mainTank->GetVictim() : mainTank;
+    Map* map = bot->GetMap();
+
+    // Stand far enough out that my mob, following me, ends up at the wanted distance from the
+    // main tank's mob even if it stops between us.
+    float const wanted = WantedSeparation(mine, anchor) + mine->GetCombatReach() + 1.0f;
+
+    // Straight away from the main tank's mob first, then fan out to either side; a little
+    // closer only if nothing at full distance works.
+    float base = anchor->GetAngle(bot);
+    if (bot->GetExactDist2d(anchor) < 1.0f)
+        base = anchor->GetOrientation() + float(M_PI) / 2.0f;
 
     static float const offsets[] = { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f, 1.5f, -1.5f };
-    for (float const offset : offsets)
+    static float const scales[] = { 1.0f, 0.85f };
+    for (float const scale : scales)
     {
-        float const angle = base + offset;
-        float const x = mainTank->GetPositionX() + std::cos(angle) * separation;
-        float const y = mainTank->GetPositionY() + std::sin(angle) * separation;
-        float const z = map->GetHeight(bot->GetPhaseMask(), x, y, mainTank->GetPositionZ() + MAX_HEIGHT_DIFF);
+        float const radius = wanted * scale;
+        for (float const offset : offsets)
+        {
+            float const angle = base + offset;
+            float const x = anchor->GetPositionX() + std::cos(angle) * radius;
+            float const y = anchor->GetPositionY() + std::sin(angle) * radius;
+            float const z = map->GetHeight(bot->GetPhaseMask(), x, y, anchor->GetPositionZ() + MAX_HEIGHT_DIFF);
 
-        if (z <= INVALID_HEIGHT || std::fabs(z - mainTank->GetPositionZ()) > MAX_HEIGHT_DIFF)
-            continue;
-        if (!IsDry(map, bot->GetPhaseMask(), x, y, z, bot->GetCollisionHeight()))
-            continue;
-        if (!mainTank->IsWithinLOS(x, y, z + 2.0f))
-            continue;
+            if (z <= INVALID_HEIGHT || std::fabs(z - anchor->GetPositionZ()) > MAX_HEIGHT_DIFF)
+                continue;
+            if (!IsDry(map, bot->GetPhaseMask(), x, y, z, bot->GetCollisionHeight()))
+                continue;
+            // Healers stay near the main tank; keep the off-tank where they can see it.
+            if (!mainTank->IsWithinLOS(x, y, z + 2.0f))
+                continue;
 
-        if (MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT))
-            return true;
+            if (MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT))
+                return true;
+        }
     }
     return false;
 }

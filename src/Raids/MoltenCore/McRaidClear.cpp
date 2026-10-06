@@ -40,6 +40,17 @@ std::vector<uint32> const& RaidClear::MoltenCore::TankSplitSkipBosses()
     return bosses;
 }
 
+std::vector<RaidClear::Tanks::SplashRadius> const& RaidClear::MoltenCore::TankSplitSplashRadii()
+{
+    // AoE radius plus ~5 yd for the knockback on their tank, which throws it (and so the mob)
+    // back toward the other pair. Two giants end up 30 yd apart, two destroyers 36.
+    static std::vector<Tanks::SplashRadius> const radii = {
+        { NPC_MOLTEN_GIANT, 15.0f },
+        { NPC_MOLTEN_DESTROYER, 18.0f },
+    };
+    return radii;
+}
+
 void RaidClearMoltenCoreStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("rc kill order", { NextAction("rc mark kill order", ACTION_RAID + 2) }));

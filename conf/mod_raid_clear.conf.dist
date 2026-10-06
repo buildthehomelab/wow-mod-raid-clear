@@ -53,9 +53,11 @@ RaidClear.Tanks.Split = 1
 
 #
 #    RaidClear.Tanks.Separation
-#        Description: How far (yards) an off-tank drags its mob from the main tank, so cleaves and
-#                     frontal attacks hit only one tank. Only spots on dry ground at about the
-#                     main tank's height and in its line of sight are used. 0 = don't move.
+#        Description: Minimum distance (yards) between the off-tank's mob and the main tank's mob
+#                     on trash. Mobs with a big AoE get more: each raid lists their radius and the
+#                     pair is kept at least the sum apart (Molten Core: Molten Giants 30 yd apart,
+#                     Molten Destroyers 36). Only spots on dry ground at about the same height and
+#                     in the main tank's line of sight are used. 0 = don't move.
 #        Default:     12
 #
 

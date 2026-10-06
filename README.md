@@ -37,9 +37,11 @@ pile. In any raid:
 - **Off-tanks.** The other tanks never take the main tank's target. They pick up mobs hitting
   healers or DPS first, then extra mobs on the main tank, and leave mobs another off-tank already
   holds.
-- **Separated on trash.** An off-tank drags its mob about 12 yards from the main tank, so cleaves
-  and frontal attacks hit only one tank. It only picks dry ground (no lava) at the main tank's
-  height and in its line of sight. In boss fights it stays put unless configured otherwise.
+- **Separated on trash.** An off-tank drags its mob away from the main tank's mob, so cleaves and
+  stomps hit only one tank: at least 12 yards apart, and further for mobs with a big AoE (in Molten
+  Core, two Molten Giants end up 30 yards apart and two Molten Destroyers 36). It only picks dry
+  ground (no lava) at about the same height and in the main tank's line of sight. In boss fights
+  it stays put unless configured otherwise.
 
 ## Raids
 
@@ -80,7 +82,7 @@ also keep playerbots' own raid strategies.
 | `RaidClear.KillOrder` | 1 | Skull kill order. |
 | `RaidClear.Tanks.AssignMainTank` | 1 | Give the group's Main Tank flag to a tank if nobody has it. |
 | `RaidClear.Tanks.Split` | 1 | Off-tanks leave the main tank's target and pick up the rest. |
-| `RaidClear.Tanks.Separation` | 12 | Yards an off-tank drags its mob from the main tank (0 = off). |
+| `RaidClear.Tanks.Separation` | 12 | Minimum yards between the two tanks' mobs on trash; big-AoE mobs get more (0 = off). |
 | `RaidClear.Tanks.SeparateOnBosses` | 0 | Also separate during boss fights. |
 | `RaidClear.MoltenCore.Enable` | 1 | Molten Core strategy. |
 
