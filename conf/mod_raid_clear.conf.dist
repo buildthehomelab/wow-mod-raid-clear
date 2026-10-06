@@ -1,0 +1,40 @@
+[worldserver]
+
+########################################
+# mod-raid-clear
+#
+# Boss and trash mechanics for playerbots raids, raid by raid. Works on top of mod-playerbots'
+# own raid strategies (it only adds what they're missing) and alongside mod-dungeon-clear, which
+# walks the raid from boss to boss and hands each boss fight to the bots' strategies.
+#
+# Needs mod-playerbots.
+########################################
+
+#
+#    RaidClear.Enable
+#        Description: Master switch. Read at startup; turning it on later needs a restart.
+#        Default:     1
+#
+
+RaidClear.Enable = 1
+
+#
+#    RaidClear.KillOrder
+#        Description: The group's main tank bot (or first tank bot) keeps the skull raid icon on
+#                     the add that should die first: Lava Spawn, then healers, then other boss
+#                     adds. DPS bots always attack skull first. It never moves a skull that is
+#                     already on an add of the same or higher priority.
+#        Default:     1
+#
+
+RaidClear.KillOrder = 1
+
+#
+#    RaidClear.MoltenCore.Enable
+#        Description: Molten Core strategy (map 409): kill order, Tremor Totem on Magmadar,
+#                     no attacks into Majordomo's reflection shields, ranged out of Ragnaros'
+#                     knockback.
+#        Default:     1
+#
+
+RaidClear.MoltenCore.Enable = 1
