@@ -43,7 +43,13 @@ Core Rager tank split, Core Hound packs, lava pools and the resistance auras. On
 
 ## Install
 
-1. Clone into `modules/mod-raid-clear` (the folder name must match the loader function).
+1. Clone into `modules/mod-raid-clear`. The folder name must be exactly that, because
+   AzerothCore derives the loader function from it:
+
+   ```bash
+   git clone https://github.com/buildthehomelab/wow-mod-raid-clear.git modules/mod-raid-clear
+   ```
+
 2. Re-run CMake and rebuild the worldserver.
 3. Copy `conf/mod_raid_clear.conf.dist` to `mod_raid_clear.conf` to change the defaults.
 
