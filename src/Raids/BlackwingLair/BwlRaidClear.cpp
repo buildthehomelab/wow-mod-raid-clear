@@ -6,6 +6,8 @@
 
 #include "BwlRaidClear.h"
 
+#include "RaidClearConfig.h"
+
 #include "GameObject.h"
 #include "GameTime.h"
 #include "Group.h"
@@ -15,6 +17,7 @@
 #include "Spell.h"
 #include "PlayerbotAI.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <list>
@@ -28,14 +31,19 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::BlackwingLair::KillOrde
         // Each living warlock keeps opening portals that keep summoning felguards.
         { NPC_BLACKWING_WARLOCK, 0 },
 
-        // Heals the pack (Healing Circle), polymorphs, buffs the pack and marks for detonation.
+        // Heals the pack (Healing Circle), polymorphs.
         { NPC_BLACKWING_TASKMASTER, 1 },
         { NPC_BLACKWING_SPELLBINDER, 1 },
-        { NPC_DEATH_TALON_CAPTAIN, 1 },
         // The Suppression Room elites, before Broodlord if he gets pulled with them.
         { NPC_DEATH_TALON_HATCHER, 1 },
-        // Casters in the Death Talon packs go before the Overseers and Wyrmguards.
+
+        // Death Talon packs: the Wyrmkin's Fireball Volley hits the whole raid, so they go first.
+        // The Captain is off on his own tank (Mark of Detonation) and dies last, once the melee
+        // has nothing else to hit near the main tank.
         { NPC_DEATH_TALON_WYRMKIN, 1 },
+        { NPC_DEATH_TALON_FLAMESCALE, 2 },
+        { NPC_DEATH_TALON_SEETHER, 2 },
+        { NPC_DEATH_TALON_CAPTAIN, 3 },
 
         // Razorgore's adds: dragonkin, then mages, then the melee.
         { NPC_DEATH_TALON_DRAGONSPAWN, 1 },
@@ -79,8 +87,16 @@ std::vector<RaidClear::Tanks::SplashRadius> const& RaidClear::BlackwingLair::Tan
     // War Stomp (24375) reaches 15 yd: two Wyrmguards end up 30 yd apart.
     static std::vector<Tanks::SplashRadius> const radii = {
         { NPC_DEATH_TALON_WYRMGUARD, 15.0f },
+        // Not his own AoE: the Mark of Detonation on his tank, 30 yd around it.
+        { NPC_DEATH_TALON_CAPTAIN, CAPTAIN_SPLASH },
     };
     return radii;
+}
+
+std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitOwnTankAdds()
+{
+    static std::vector<uint32> const adds = { NPC_DEATH_TALON_CAPTAIN };
+    return adds;
 }
 
 std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitIgnore()
@@ -126,12 +142,19 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
 
     triggers.push_back(
         new TriggerNode("rc bwl nefarian ranged", { NextAction("rc bwl nefarian move out", ACTION_RAID + 1) }));
+
+    triggers.push_back(
+        new TriggerNode("rc bwl detonation keep away", { NextAction("rc bwl detonation keep away", ACTION_RAID + 1) }));
+
+    triggers.push_back(new TriggerNode("rc bwl seether tranq", { NextAction("rc bwl seether tranq", ACTION_RAID) }));
 }
 
 void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcBwlShadowOfEbonrocMultiplier(botAI));
     multipliers.push_back(new RcBwlHoldCoverMultiplier(botAI));
+    multipliers.push_back(new RcBwlDetonationHoldMultiplier(botAI));
+    multipliers.push_back(new RcBwlCaptainMainTankMultiplier(botAI));
 }
 
 // --- Suppression Room -----------------------------------------------------
@@ -623,4 +646,155 @@ float RcBwlShadowOfEbonrocMultiplier::GetValue(Action* action)
         if (name == taunt)
             return 0.0f;
     return 1.0f;
+}
+
+// --- Death Talon packs ----------------------------------------------------
+
+namespace
+{
+    // The main tank of a group that has an off-tank to give the Captain to, while there's
+    // something else in the fight for the main tank to hold.
+    bool MainTankLeavesCaptain(PlayerbotAI* botAI, Player* bot)
+    {
+        if (!RaidClear::GetConfig().tankSplit || !bot->IsInCombat())
+            return false;
+
+        Group* group = bot->GetGroup();
+        if (RaidClear::Tanks::ActingMainTank(group) != bot || !RaidClear::Tanks::HasOffTank(group, bot))
+            return false;
+
+        for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
+            if (Unit* unit = botAI->GetUnit(guid))
+                if (unit->IsAlive() && !RaidClear::Tanks::IsOwnTankAdd(unit))
+                    return true;
+        return false;
+    }
+
+    // The explosion hits the marked player's allies, not the player; tanks stay with their mobs.
+    bool AvoidsDetonation(Player* bot)
+    {
+        return !PlayerbotAI::IsTank(bot) && !bot->HasAura(SPELL_MARK_OF_DETONATION);
+    }
+
+    // The nearest other group member carrying Mark of Detonation, closer than `range`.
+    Player* MarkedAllyWithin(Player* bot, float range)
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return nullptr;
+
+        Player* nearest = nullptr;
+        float best = range;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId() ||
+                !member->HasAura(SPELL_MARK_OF_DETONATION))
+                continue;
+
+            float const dist = bot->GetExactDist(member);
+            if (dist < best)
+            {
+                nearest = member;
+                best = dist;
+            }
+        }
+        return nearest;
+    }
+}
+
+void RaidClearBlackwingLairStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type)
+{
+    // The main tank's own target picking skips the Captain; an off-tank takes him.
+    if (type != TargetValueExclusionType::Tank)
+        return;
+
+    Player* bot = botAI->GetBot();
+    if (!MainTankLeavesCaptain(botAI, bot))
+        return;
+
+    for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
+        if (RaidClear::Tanks::IsOwnTankAdd(botAI->GetUnit(guid)))
+            exclusions.insert(guid);
+}
+
+bool RcBwlDetonationKeepAwayTrigger::IsActive()
+{
+    return bot->IsInCombat() && AvoidsDetonation(bot) && MarkedAllyWithin(bot, DETONATION_KEEP_AWAY);
+}
+
+bool RcBwlDetonationKeepAwayAction::Execute(Event /*event*/)
+{
+    Player* marked = MarkedAllyWithin(bot, DETONATION_KEEP_AWAY);
+    if (!marked)
+        return false;
+
+    // Straight away from the marked player first, then fanning out to either side.
+    Map* map = bot->GetMap();
+    float const base = marked->GetAngle(bot);
+    float const reach = DETONATION_KEEP_AWAY_TARGET + marked->GetObjectSize() + bot->GetObjectSize();
+    static float const offsets[] = { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f };
+    for (float const offset : offsets)
+    {
+        float const angle = base + offset;
+        float const x = marked->GetPositionX() + std::cos(angle) * reach;
+        float const y = marked->GetPositionY() + std::sin(angle) * reach;
+        float const z = map->GetHeight(bot->GetPhaseMask(), x, y, bot->GetPositionZ() + 5.0f);
+        if (z <= INVALID_HEIGHT || std::fabs(z - bot->GetPositionZ()) > 5.0f)
+            continue;
+
+        if (MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT))
+            return true;
+    }
+    return false;
+}
+
+float RcBwlDetonationHoldMultiplier::GetValue(Action* action)
+{
+    // Picking a target isn't movement; only walking somewhere is held.
+    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
+        dynamic_cast<RcBwlDetonationKeepAwayAction*>(action))
+        return 1.0f;
+
+    if (!bot->IsInCombat() || !AvoidsDetonation(bot))
+        return 1.0f;
+
+    return MarkedAllyWithin(bot, DETONATION_HOLD) ? 0.0f : 1.0f;
+}
+
+float RcBwlCaptainMainTankMultiplier::GetValue(Action* action)
+{
+    if (!PlayerbotAI::IsTank(bot) || !RaidClear::Tanks::IsOwnTankAdd(action->GetTarget()))
+        return 1.0f;
+
+    bool const taunt = std::find(TAUNT_ACTIONS.begin(), TAUNT_ACTIONS.end(), action->getName()) != TAUNT_ACTIONS.end();
+    if (!taunt && !dynamic_cast<AttackAction*>(action))
+        return 1.0f;
+
+    return MainTankLeavesCaptain(botAI, bot) ? 0.0f : 1.0f;
+}
+
+bool RcBwlSeetherTranqTrigger::IsActive()
+{
+    if (!bot->IsClass(CLASS_HUNTER) || !bot->IsInCombat())
+        return false;
+
+    std::list<Creature*> seethers;
+    bot->GetCreatureListWithEntryInGrid(seethers, NPC_DEATH_TALON_SEETHER, TRANQUILIZING_SHOT_RANGE);
+    for (Creature* seether : seethers)
+        if (seether->IsAlive() && seether->HasAura(SPELL_SEETHER_ENRAGE) &&
+            botAI->CanCastSpell("tranquilizing shot", seether))
+            return true;
+    return false;
+}
+
+bool RcBwlSeetherTranqAction::Execute(Event /*event*/)
+{
+    std::list<Creature*> seethers;
+    bot->GetCreatureListWithEntryInGrid(seethers, NPC_DEATH_TALON_SEETHER, TRANQUILIZING_SHOT_RANGE);
+    for (Creature* seether : seethers)
+        if (seether->IsAlive() && seether->HasAura(SPELL_SEETHER_ENRAGE) &&
+            botAI->CanCastSpell("tranquilizing shot", seether))
+            return botAI->CastSpell("tranquilizing shot", seether);
+    return false;
 }

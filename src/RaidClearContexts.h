@@ -50,6 +50,8 @@ public:
         creators["rc bwl firemaw hide"] = &RaidClearActionContext::bwl_firemaw_hide;
         creators["rc bwl chromaggus hide"] = &RaidClearActionContext::bwl_chromaggus_hide;
         creators["rc bwl nefarian move out"] = &RaidClearActionContext::bwl_nefarian_move_out;
+        creators["rc bwl detonation keep away"] = &RaidClearActionContext::bwl_detonation_keep_away;
+        creators["rc bwl seether tranq"] = &RaidClearActionContext::bwl_seether_tranq;
     }
 
 private:
@@ -76,6 +78,8 @@ private:
         return new RcBwlKeepOutAction(botAI, "rc bwl nefarian move out", "nefarian",
                                       RaidClear::BlackwingLair::NEFARIAN_RANGED_TARGET);
     }
+    static Action* bwl_detonation_keep_away(PlayerbotAI* botAI) { return new RcBwlDetonationKeepAwayAction(botAI); }
+    static Action* bwl_seether_tranq(PlayerbotAI* botAI) { return new RcBwlSeetherTranqAction(botAI); }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -98,6 +102,8 @@ public:
         creators["rc bwl firemaw hide"] = &RaidClearTriggerContext::bwl_firemaw_hide;
         creators["rc bwl chromaggus breath"] = &RaidClearTriggerContext::bwl_chromaggus_breath;
         creators["rc bwl nefarian ranged"] = &RaidClearTriggerContext::bwl_nefarian_ranged;
+        creators["rc bwl detonation keep away"] = &RaidClearTriggerContext::bwl_detonation_keep_away;
+        creators["rc bwl seether tranq"] = &RaidClearTriggerContext::bwl_seether_tranq;
     }
 
 private:
@@ -126,6 +132,8 @@ private:
                                        RaidClear::BlackwingLair::NEFARIAN_RANGED_MIN,
                                        RaidClear::BlackwingLair::NEFARIAN_RANGED_TARGET);
     }
+    static Trigger* bwl_detonation_keep_away(PlayerbotAI* botAI) { return new RcBwlDetonationKeepAwayTrigger(botAI); }
+    static Trigger* bwl_seether_tranq(PlayerbotAI* botAI) { return new RcBwlSeetherTranqTrigger(botAI); }
 };
 
 #endif
