@@ -11,7 +11,7 @@
  *   - Kill order: Blackwing Warlocks first. Each casts Demon Portal every 30-45s and every portal
  *     summons an Enraged Felguard every 30s until its warlock dies (which despawns its portals),
  *     so the pack only shrinks once the warlocks are dead. Then the casters and elites that heal,
- *     polymorph or buff: Taskmasters, Spellbinders, Hatchers, Death Talon Captains.
+ *     polymorph or buff: Taskmasters, Spellbinders, Hatchers.
  *   - Suppression Devices: Suppression Aura reaches 20 yd, playerbots' disarm only 15, so a bot
  *     standing 15-20 yd from an armed device stays slowed. With the "raid" bot cheat on, bots in
  *     the Suppression Room turn off every armed device within 22 yd.
@@ -35,6 +35,15 @@
  *   - Technician packs: Blackwing Technicians throw Bomb (22334, 5 yd splash) at random raiders
  *     within 30 yd, so ranged and healers keep 6 yd from each other while one is fighting nearby.
  *     Only bots in a clump move, one short step at a time.
+ *   - Death Talon packs (Hall of the Dragonspawn: a Captain, two Seethers, two Wyrmkin and a
+ *     Flamescale each). The Captain puts Mark of Detonation (22438, 30s, magic) on whoever he
+ *     hits; every melee hit on that player then explodes (22439) for 657-844 fire on all of that
+ *     player's allies within 30 yd. So the Captain gets an off-tank of his own: the main tank
+ *     leaves him alone, an off-tank picks him up (taking him off the main tank if needed) and
+ *     drags him 36 yd from the main tank's mob, and every other non-tank stays 32 yd away from
+ *     anyone carrying the Mark. He dies last. Wyrmkin die first (Fireball Volley hits the whole
+ *     raid within 45 yd), then Flamescales and Seethers; hunters Tranquilizing Shot an enraged
+ *     Seether (22428: +100% attack speed).
  *
  * Released under the MIT License.
  */
@@ -72,6 +81,8 @@ namespace RaidClear::BlackwingLair
         NPC_BLACKWING_TECHNICIAN  = 13996,  // Bomb
         NPC_DEATH_TALON_WYRMGUARD = 12460,  // War Stomp, 15 yd
         NPC_DEATH_TALON_WYRMKIN   = 12465,  // Fireball Volley, Blast Wave
+        NPC_DEATH_TALON_SEETHER   = 12464,  // Enrage, Flame Buffet
+        NPC_DEATH_TALON_FLAMESCALE = 12463, // Flame Shock, Berserker Charge
 
         NPC_RAZORGORE             = 12435,
         NPC_VAELASTRASZ           = 13020,
@@ -101,6 +112,8 @@ namespace RaidClear::BlackwingLair
     {
         SPELL_SHADOW_OF_EBONROC = 23340,
         SPELL_FLAME_BUFFET      = 23341,
+        SPELL_MARK_OF_DETONATION = 22438,  // Death Talon Captain
+        SPELL_SEETHER_ENRAGE    = 22428,
 
         // Chromaggus' breaths (two per instance, every 30s, 2s cast).
         SPELL_INCINERATE        = 23308,
@@ -146,6 +159,18 @@ namespace RaidClear::BlackwingLair
     constexpr float NEFARIAN_RANGED_MIN = 36.0f;
     constexpr float NEFARIAN_RANGED_TARGET = 37.5f;
 
+    // Mark of Detonation's explosion (22439) hits the marked player's allies within 30 yd.
+    // Non-tanks keep a margin beyond it, and stand still while close to the edge so that their
+    // own movement doesn't walk them back in.
+    constexpr float DETONATION_RADIUS = 30.0f;
+    constexpr float DETONATION_KEEP_AWAY = 32.0f;
+    constexpr float DETONATION_KEEP_AWAY_TARGET = 35.0f;
+    constexpr float DETONATION_HOLD = 36.0f;
+    // The Captain's off-tank keeps him this far from the main tank's mob (and its melee).
+    constexpr float CAPTAIN_SPLASH = 36.0f;
+    // Tranquilizing Shot's range.
+    constexpr float TRANQUILIZING_SHOT_RANGE = 35.0f;
+
     std::vector<KillOrderEntry> const& KillOrder();
 
     // Bosses that cut their tank's threat: the off-tank builds threat on them too.
@@ -159,6 +184,9 @@ namespace RaidClear::BlackwingLair
 
     // Trash whose AoE needs more room than the default tank separation.
     std::vector<Tanks::SplashRadius> const& TankSplitSplashRadii();
+
+    // Adds that get an off-tank of their own (the Death Talon Captain).
+    std::vector<uint32> const& TankSplitOwnTankAdds();
 }
 
 class RaidClearBlackwingLairStrategy : public Strategy
@@ -168,6 +196,8 @@ public:
     std::string const getName() override { return "rc bwl"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
     void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
+    bool HasTargetExclusions() const override { return true; }
+    void AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type) override;
 };
 
 // --- Suppression Room -----------------------------------------------------
@@ -323,6 +353,54 @@ class RcBwlShadowOfEbonrocMultiplier : public Multiplier
 public:
     RcBwlShadowOfEbonrocMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl shadow of ebonroc") {}
     float GetValue(Action* action) override;
+};
+
+// --- Death Talon packs ----------------------------------------------------
+
+// Non-tanks within DETONATION_KEEP_AWAY of a group member carrying Mark of Detonation.
+class RcBwlDetonationKeepAwayTrigger : public Trigger
+{
+public:
+    RcBwlDetonationKeepAwayTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl detonation keep away") {}
+    bool IsActive() override;
+};
+
+class RcBwlDetonationKeepAwayAction : public MovementAction
+{
+public:
+    RcBwlDetonationKeepAwayAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl detonation keep away") {}
+    bool Execute(Event event) override;
+};
+
+// Near a marked player, a non-tank's other movement (chasing its target into melee, following)
+// is held, so it doesn't walk back into the explosion it just left.
+class RcBwlDetonationHoldMultiplier : public Multiplier
+{
+public:
+    RcBwlDetonationHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl detonation hold") {}
+    float GetValue(Action* action) override;
+};
+
+// The main tank doesn't taunt a Captain back from the off-tank that came for him.
+class RcBwlCaptainMainTankMultiplier : public Multiplier
+{
+public:
+    RcBwlCaptainMainTankMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl captain main tank") {}
+    float GetValue(Action* action) override;
+};
+
+class RcBwlSeetherTranqTrigger : public Trigger
+{
+public:
+    RcBwlSeetherTranqTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl seether tranq") {}
+    bool IsActive() override;
+};
+
+class RcBwlSeetherTranqAction : public Action
+{
+public:
+    RcBwlSeetherTranqAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl seether tranq") {}
+    bool Execute(Event event) override;
 };
 
 #endif

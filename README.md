@@ -46,6 +46,9 @@ pile. In any raid:
   threat (Broodlord Lashlayer's Knock Away, the Blackwing drakes' Wing Buffet). On those, an
   off-tank with no add to hold attacks the boss too, so it sits second on threat and catches the
   boss before it turns on a healer. The main tank taunts it back.
+- **Adds that need a tank of their own.** Some adds have to be tanked away from everyone (Blackwing
+  Lair's Death Talon Captain). The main tank leaves them alone, and an off-tank picks them up first,
+  off the main tank if need be, and drags them well clear of the main tank's mob.
 - **Endless adds are ignored.** Off-tanks don't chase adds that respawn faster than anyone can
   tank them (Blackwing Lair's Suppression Room whelps).
 
@@ -75,8 +78,9 @@ and the fire resistance auras. On top of that:
 |---|---|
 | Razorgore | Kill his adds in order: **Death Talon Dragonspawn**, then **Blackwing Mages**, then **Legionnaires**. The off-tank split stays out of the fight (playerbots places the tanks). |
 | Vaelastrasz | He can't be taunted, so the off-tank keeps itself second on threat for when **Burning Adrenaline** kills the main tank. |
-| Warlock packs | Kill the **Blackwing Warlocks** first: each one keeps opening Demon Portals that summon Enraged Felguards until it dies. Then Taskmasters, Spellbinders and Death Talon Captains, then the felguards. |
-| Death Talon packs | Casters (**Death Talon Wyrmkin**) first. Two **Wyrmguards** are tanked 30 yards apart (**War Stomp** reaches 15). |
+| Warlock packs | Kill the **Blackwing Warlocks** first: each one keeps opening Demon Portals that summon Enraged Felguards until it dies. Then Taskmasters and Spellbinders, then the felguards. |
+| Death Talon packs (Hall of the Dragonspawn) | The **Death Talon Captain** puts **Mark of Detonation** on whoever he hits, and every melee hit on that player then explodes on all of that player's allies within 30 yards. So he gets an off-tank of his own: the main tank leaves him alone, an off-tank takes him (off the main tank if needed) and holds him 36 yards from the main tank's mob, and every other non-tank stays 32 yards from anyone carrying the Mark, standing still near the edge so it doesn't walk back in. Kill order: **Wyrmkin** first (**Fireball Volley** hits everyone within 45 yards), then **Flamescales** and **Seethers**, the Captain last. Hunters **Tranquilizing Shot** an enraged Seether. |
+| Wyrmguard packs | Two **Death Talon Wyrmguards** are tanked 30 yards apart (**War Stomp** reaches 15). |
 | Technician packs | Ranged bots and healers keep 6 yards from each other while **Blackwing Technicians** are fighting nearby, so one **Bomb** (5-yard splash) hits one bot. Only bots in a clump move, one short step every 1.5 seconds. |
 | Suppression Room | With the `raid` bot cheat on (the default), bots turn off every armed **Suppression Device** within 22 yards: the aura reaches 20, playerbots' own disarm only 15. Kill the Hatchers and Taskmasters before Broodlord if they come along. Off-tanks ignore the whelps. |
 | Broodlord Lashlayer | The off-tank co-tanks him through **Knock Away**. Ranged and healers stay out of **Blast Wave** (20 yards); a healer only backs off as far as it can still reach the tank. |
@@ -142,7 +146,7 @@ Category: Raids
 - Bots stop attacking Majordomo's adds while **Magic Reflection** or **Damage Reflection** is up.
 - Ranged bots and healers keep out of reach of **Wrath of Ragnaros**.
 - Blackwing Lair: bots kill the **Blackwing Warlocks** before the felguards their portals keep
-  summoning, then the Taskmasters, Spellbinders and Death Talon Captains.
+  summoning, then the Taskmasters and Spellbinders.
 - Blackwing Lair: bots turn off **Suppression Devices** within the aura's full reach, not just the
   ones right next to them.
 - Broodlord Lashlayer, Firemaw, Ebonroc and Flamegor: the off-tank builds threat on the boss, so
@@ -158,6 +162,9 @@ Category: Raids
   taking turns.
 - Chromaggus: bots duck behind cover when he breathes, except for **Time Lapse**.
 - Nefarian: ranged bots and healers stay out of **Bellowing Roar**, and bots kill his adds first.
+- Blackwing Lair, Death Talon packs: an off-tank takes the **Death Talon Captain** away from the
+  raid, and everyone else stays out of the **Mark of Detonation** explosion. Bots kill the Wyrmkin
+  first and the Captain last, and hunters **Tranquilizing Shot** enraged Seethers.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.

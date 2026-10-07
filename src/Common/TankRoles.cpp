@@ -70,6 +70,18 @@ namespace RaidClear::Tanks
             }
         }
 
+        // Adds that get an off-tank of their own, taken even off the main tank (the Death Talon
+        // Captain, whose Mark of Detonation has to be tanked away from the raid).
+        std::vector<uint32> const& OwnTankAdds(uint32 mapId)
+        {
+            static std::vector<uint32> const none;
+            switch (mapId)
+            {
+                case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitOwnTankAdds();
+                default:                    return none;
+            }
+        }
+
         bool IsIgnoredAdd(Unit const* unit)
         {
             std::vector<uint32> const& ignore = IgnoredAdds(unit->GetMapId());
@@ -193,8 +205,58 @@ namespace RaidClear::Tanks
         return nullptr;
     }
 
+    bool IsOwnTankAdd(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+        std::vector<uint32> const& own = OwnTankAdds(unit->GetMapId());
+        return std::find(own.begin(), own.end(), unit->GetEntry()) != own.end();
+    }
+
+    bool HasOffTank(Group* group, Player* mainTank)
+    {
+        if (!group || !mainTank)
+            return false;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (member && member->IsInWorld() && IsOffTank(member, mainTank) &&
+                member->GetDistance(mainTank) <= PICKUP_RANGE)
+                return true;
+        }
+        return false;
+    }
+
     Unit* PickOffTankTarget(PlayerbotAI* botAI, Player* bot, Player* mainTank, GuidVector const& attackers)
     {
+        // An add that wants a tank of its own comes first, wherever it is, unless another off-tank
+        // already holds it. The main tank leaves it alone (see the raid's target exclusions).
+        Unit* ownTankAdd = nullptr;
+        float ownTankDist = 0.0f;
+        for (ObjectGuid const& guid : attackers)
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsAlive() || !IsOwnTankAdd(unit) || !bot->IsValidAttackTarget(unit))
+                continue;
+
+            Unit* victim = unit->GetVictim();
+            if (victim == bot)
+                return unit;  // keep holding it
+
+            Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
+            if (victimPlayer && victimPlayer != mainTank && PlayerbotAI::IsTank(victimPlayer))
+                continue;  // another off-tank has it
+
+            float const dist = bot->GetDistance(unit);
+            if (dist <= PICKUP_RANGE && (!ownTankAdd || dist < ownTankDist))
+            {
+                ownTankAdd = unit;
+                ownTankDist = dist;
+            }
+        }
+        if (ownTankAdd)
+            return ownTankAdd;
+
         Unit* mainTarget = mainTank->GetVictim();
         Unit* coBoss = CoTankBoss(botAI, bot, attackers);
 
