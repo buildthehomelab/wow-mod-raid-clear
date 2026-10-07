@@ -19,6 +19,7 @@
 #include "PlayerbotAI.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <list>
 
@@ -213,17 +214,63 @@ namespace RaidClear::Tanks
         return std::find(own.begin(), own.end(), unit->GetEntry()) != own.end();
     }
 
-    bool HasOffTank(Group* group, Player* mainTank)
+    GuidSet OwnTankAddsForOffTanks(PlayerbotAI* botAI, Player* mainTank, GuidVector const& attackers)
     {
-        if (!group || !mainTank)
-            return false;
+        GuidSet result;
+        Group* group = mainTank ? mainTank->GetGroup() : nullptr;
+        if (!group)
+            return result;
+
+        // No distance limit: an off-tank holding one of these is meant to be far from the main tank.
+        std::vector<Player*> offTanks;
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* member = ref->GetSource())
+                if (member->IsInWorld() && IsOffTank(member, mainTank))
+                    offTanks.push_back(member);
+        if (offTanks.empty())
+            return result;
+
+        std::vector<Player*> holding;
+        std::vector<Unit*> loose;
+        for (ObjectGuid const& guid : attackers)
         {
-            Player* member = ref->GetSource();
-            if (member && member->IsInWorld() && IsOffTank(member, mainTank) &&
-                member->GetDistance(mainTank) <= PICKUP_RANGE)
-                return true;
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsAlive() || !IsOwnTankAdd(unit))
+                continue;
+
+            Player* victim = unit->GetVictim() ? unit->GetVictim()->ToPlayer() : nullptr;
+            if (victim && std::find(offTanks.begin(), offTanks.end(), victim) != offTanks.end())
+            {
+                result.insert(guid);
+                if (std::find(holding.begin(), holding.end(), victim) == holding.end())
+                    holding.push_back(victim);
+            }
+            else
+                loose.push_back(unit);
         }
+
+        size_t const free = offTanks.size() - holding.size();
+        for (size_t i = 0; i < loose.size() && i < free; ++i)
+            result.insert(loose[i]->GetGUID());
+        return result;
+    }
+
+    // Single-target taunts, by their playerbots spell names.
+    constexpr std::array<char const*, 4> SINGLE_TAUNTS = { "taunt", "growl", "hand of reckoning", "dark command" };
+
+    bool CanTaunt(PlayerbotAI* botAI, Unit* unit)
+    {
+        for (char const* taunt : SINGLE_TAUNTS)
+            if (botAI->CanCastSpell(taunt, unit))
+                return true;
+        return false;
+    }
+
+    bool Taunt(PlayerbotAI* botAI, Unit* unit)
+    {
+        for (char const* taunt : SINGLE_TAUNTS)
+            if (botAI->CanCastSpell(taunt, unit) && botAI->CastSpell(taunt, unit))
+                return true;
         return false;
     }
 
@@ -366,7 +413,14 @@ bool RcOffTankTargetTrigger::IsActive()
         return false;
 
     Unit* want = PickOffTankTarget(botAI, bot, mainTank, attackers);
-    return want && want != AI_VALUE(Unit*, "current target");
+    if (!want)
+        return false;
+    if (want != AI_VALUE(Unit*, "current target"))
+        return true;
+
+    // Playerbots' "lose aggro" never taunts a mob off another tank, so an own-tank add sitting
+    // on the main tank has to be taunted from here.
+    return IsOwnTankAdd(want) && want->GetVictim() != bot && CanTaunt(botAI, want);
 }
 
 bool RcOffTankTargetAction::Execute(Event /*event*/)
@@ -379,8 +433,13 @@ bool RcOffTankTargetAction::Execute(Event /*event*/)
     if (!want)
         return false;
 
-    // The class tank strategies taunt a target that isn't attacking them ("lose aggro").
-    return Attack(want);
+    bool done = want == AI_VALUE(Unit*, "current target") || Attack(want);
+
+    // The class tank strategies taunt a target that isn't attacking them ("lose aggro"), but not
+    // off another tank: an own-tank add on the main tank is taunted here.
+    if (IsOwnTankAdd(want) && want->GetVictim() != bot)
+        done = Taunt(botAI, want) || done;
+    return done;
 }
 
 bool RcOffTankSeparateTrigger::IsActive()

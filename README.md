@@ -47,8 +47,10 @@ pile. In any raid:
   off-tank with no add to hold attacks the boss too, so it sits second on threat and catches the
   boss before it turns on a healer. The main tank taunts it back.
 - **Adds that need a tank of their own.** Some adds have to be tanked away from everyone (Blackwing
-  Lair's Death Talon Captain). The main tank leaves them alone, and an off-tank picks them up first,
-  off the main tank if need be, and drags them well clear of the main tank's mob.
+  Lair's Death Talon Captain). The main tank leaves them alone and drops one it already had. An
+  off-tank taunts them off whoever has them, the main tank included, drags them well clear of the
+  main tank's mob and keeps them until they die. With more of them than free off-tanks, the main
+  tank keeps the extra ones.
 - **Endless adds are ignored.** Off-tanks don't chase adds that respawn faster than anyone can
   tank them (Blackwing Lair's Suppression Room whelps).
 
@@ -79,7 +81,7 @@ and the fire resistance auras. On top of that:
 | Razorgore | Kill his adds in order: **Death Talon Dragonspawn**, then **Blackwing Mages**, then **Legionnaires**. The off-tank split stays out of the fight (playerbots places the tanks). |
 | Vaelastrasz | He can't be taunted, so the off-tank keeps itself second on threat for when **Burning Adrenaline** kills the main tank. |
 | Warlock packs | Kill the **Blackwing Warlocks** first: each one keeps opening Demon Portals that summon Enraged Felguards until it dies. Then Taskmasters and Spellbinders, then the felguards. |
-| Death Talon packs (Hall of the Dragonspawn) | The **Death Talon Captain** puts **Mark of Detonation** on whoever he hits, and every melee hit on that player then explodes on all of that player's allies within 30 yards. So he gets an off-tank of his own: the main tank leaves him alone, an off-tank takes him (off the main tank if needed) and holds him 36 yards from the main tank's mob, and every other non-tank stays 32 yards from anyone carrying the Mark, standing still near the edge so it doesn't walk back in. Kill order: **Wyrmkin** first (**Fireball Volley** hits everyone within 45 yards), then **Flamescales** and **Seethers**, the Captain last. Hunters **Tranquilizing Shot** an enraged Seether. |
+| Death Talon packs (Hall of the Dragonspawn) | The **Death Talon Captain** puts **Mark of Detonation** on whoever he hits, and every melee hit on that player then explodes on all of that player's allies within 30 yards. So he gets an off-tank of his own: the main tank leaves him alone, an off-tank taunts him off whoever has him and holds him 36 yards from the main tank's mob until he dies. Every other non-tank stays 32 yards from anyone carrying the Mark (moving out toward the main tank) and doesn't walk back toward a target inside that circle. Kill order: **Wyrmkin** first (**Fireball Volley** hits everyone within 45 yards), then **Flamescales** and **Seethers**, the Captain last, mostly by ranged; melee join in whenever the Mark is dispelled. The nearest hunter **Tranquilizing Shots** an enraged Seether. |
 | Wyrmguard packs | Two **Death Talon Wyrmguards** are tanked 30 yards apart (**War Stomp** reaches 15). |
 | Technician packs | Ranged bots and healers keep 6 yards from each other while **Blackwing Technicians** are fighting nearby, so one **Bomb** (5-yard splash) hits one bot. Only bots in a clump move, one short step every 1.5 seconds. |
 | Suppression Room | With the `raid` bot cheat on (the default), bots turn off every armed **Suppression Device** within 22 yards: the aura reaches 20, playerbots' own disarm only 15. Kill the Hatchers and Taskmasters before Broodlord if they come along. Off-tanks ignore the whelps. |

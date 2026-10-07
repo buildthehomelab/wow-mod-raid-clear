@@ -18,7 +18,8 @@
  *     off another tank, and makes the main tank taunt back.
  *   - Endless respawning adds a raid lists (BWL's Suppression Room whelps) are never picked up.
  *   - Adds a raid lists as needing their own tank (BWL's Death Talon Captain) go to an off-tank
- *     first, taken off the main tank if need be, and are dragged by their own splash radius.
+ *     first: it taunts them off whoever has them, the main tank included, keeps them until they
+ *     die and drags them by their own splash radius.
  *   - On trash, an off-tank holding a mob drags it away from the main tank's mob, so cleaves
  *     and stomps don't hit both tanks. The distance is measured mob to mob: the configured
  *     separation, or more for mobs with a big AoE (each raid lists those with their radius).
@@ -68,8 +69,14 @@ namespace RaidClear::Tanks
     // An add that gets an off-tank of its own (the raid lists them), even off the main tank.
     bool IsOwnTankAdd(Unit const* unit);
 
-    // The group has a living off-tank near the main tank.
-    bool HasOffTank(Group* group, Player* mainTank);
+    // The own-tank adds the main tank leaves to off-tanks: those an off-tank already holds, plus
+    // as many of the rest as there are off-tanks not holding one yet. Any left over are the main
+    // tank's own (a double pull with too few off-tanks).
+    GuidSet OwnTankAddsForOffTanks(PlayerbotAI* botAI, Player* mainTank, GuidVector const& attackers);
+
+    // Cast the first single-target taunt this bot has ready on the unit.
+    bool CanTaunt(PlayerbotAI* botAI, Unit* unit);
+    bool Taunt(PlayerbotAI* botAI, Unit* unit);
 
     // A living boss in the fight that cuts its tank's threat, which the off-tank co-tanks.
     Unit* CoTankBoss(PlayerbotAI* botAI, Player* bot, GuidVector const& attackers);
