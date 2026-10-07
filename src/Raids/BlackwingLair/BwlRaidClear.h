@@ -22,6 +22,16 @@
  *   - Broodlord: ranged and healers stay out of Blast Wave (20 yd around him).
  *   - Ebonroc: the off-tank taunts him off a tank with Shadow of Ebonroc (he heals on every hit on
  *     it), and that tank doesn't taunt him back while it lasts.
+ *   - Vaelastrasz is taunt immune, so the off-tank keeps itself second on threat for when Burning
+ *     Adrenaline kills the main tank. Razorgore's tanks are placed by playerbots and
+ *     mod-dungeon-clear, so the tank split stays out of that fight.
+ *   - Firemaw: Flame Buffet (23341) stacks on everyone in his line of sight every 5s. A non-tank
+ *     at 5 stacks hides behind cover until it drops off.
+ *   - Chromaggus: non-tanks duck behind cover while he casts a breath, except Time Lapse, which
+ *     everyone should take because it halves the threat of everyone it hits, tank included.
+ *   - Nefarian: ranged and healers stay out of Bellowing Roar (35 yd fear).
+ *   - Razorgore's and Nefarian's adds die in order: dragonkin first, then casters, then melee;
+ *     Drakonids and Bone Constructs before Nefarian.
  *   - Technician packs: Blackwing Technicians throw Bomb (22334, 5 yd splash) at random raiders
  *     within 30 yd, so ranged and healers keep 6 yd from each other while one is fighting nearby.
  *     Only bots in a clump move, one short step at a time.
@@ -60,6 +70,25 @@ namespace RaidClear::BlackwingLair
         NPC_DEATH_TALON_CAPTAIN   = 12467,  // Commanding Shout, Mark of Detonation
         NPC_DEATH_TALON_HATCHER   = 12468,  // Suppression Room elites
         NPC_BLACKWING_TECHNICIAN  = 13996,  // Bomb
+        NPC_DEATH_TALON_WYRMGUARD = 12460,  // War Stomp, 15 yd
+        NPC_DEATH_TALON_WYRMKIN   = 12465,  // Fireball Volley, Blast Wave
+
+        NPC_RAZORGORE             = 12435,
+        NPC_VAELASTRASZ           = 13020,
+        NPC_CHROMAGGUS            = 14020,
+        NPC_NEFARIAN              = 11583,
+
+        NPC_BLACKWING_LEGIONNAIRE = 12416,  // Razorgore adds
+        NPC_BLACKWING_MAGE        = 12420,
+        NPC_DEATH_TALON_DRAGONSPAWN = 12422,
+
+        NPC_BLUE_DRAKONID         = 14261,  // Nefarian adds
+        NPC_GREEN_DRAKONID        = 14262,
+        NPC_BRONZE_DRAKONID       = 14263,
+        NPC_RED_DRAKONID          = 14264,
+        NPC_BLACK_DRAKONID        = 14265,
+        NPC_CHROMATIC_DRAKONID    = 14302,
+        NPC_BONE_CONSTRUCT        = 14605,
         NPC_ENRAGED_FELGUARD      = 14101,  // from the warlocks' Demon Portals
 
         NPC_CORRUPTED_RED_WHELP    = 14022,
@@ -71,6 +100,14 @@ namespace RaidClear::BlackwingLair
     enum Spells : uint32
     {
         SPELL_SHADOW_OF_EBONROC = 23340,
+        SPELL_FLAME_BUFFET      = 23341,
+
+        // Chromaggus' breaths (two per instance, every 30s, 2s cast).
+        SPELL_INCINERATE        = 23308,
+        SPELL_TIME_LAPSE        = 23310,
+        SPELL_CORROSIVE_ACID    = 23313,
+        SPELL_IGNITE_FLESH      = 23315,
+        SPELL_FROST_BURN        = 23187,
     };
 
     enum GameObjects : uint32
@@ -93,6 +130,22 @@ namespace RaidClear::BlackwingLair
     constexpr float TECHNICIAN_STEP = 4.0f;
     constexpr uint32 TECHNICIAN_STEP_INTERVAL_MS = 1500;
 
+    // Firemaw: hide at 5-7 Flame Buffet stacks (each one adds fire damage taken), the exact
+    // number varying per bot so the raid doesn't leave at once. At most a third of the healers
+    // hide at the same time.
+    constexpr uint8 FLAME_BUFFET_HIDE_STACKS = 5;
+    constexpr uint8 FLAME_BUFFET_HIDE_SPREAD = 3;
+    constexpr uint32 FIREMAW_HEALER_HIDE_SHARE = 3;
+    // Cover search radius and the longest walk accepted: anywhere around a corner in Firemaw's
+    // room; Chromaggus' breath gives 2s, about 14 yd of running.
+    constexpr float FIREMAW_COVER_RANGE = 30.0f;
+    constexpr float FIREMAW_COVER_PATH = 45.0f;
+    constexpr float CHROMAGGUS_COVER_RANGE = 12.0f;
+    constexpr float CHROMAGGUS_COVER_PATH = 14.0f;
+    // Bellowing Roar (22686) fears everyone within 35 yd. Healers still reach a tank at his feet.
+    constexpr float NEFARIAN_RANGED_MIN = 36.0f;
+    constexpr float NEFARIAN_RANGED_TARGET = 37.5f;
+
     std::vector<KillOrderEntry> const& KillOrder();
 
     // Bosses that cut their tank's threat: the off-tank builds threat on them too.
@@ -100,6 +153,12 @@ namespace RaidClear::BlackwingLair
 
     // Adds the off-tank leaves alone (the Suppression Room's endless whelps).
     std::vector<uint32> const& TankSplitIgnore();
+
+    // Bosses whose tanks playerbots / mod-dungeon-clear place themselves (Razorgore).
+    std::vector<uint32> const& TankSplitSkipBosses();
+
+    // Trash whose AoE needs more room than the default tank separation.
+    std::vector<Tanks::SplashRadius> const& TankSplitSplashRadii();
 }
 
 class RaidClearBlackwingLairStrategy : public Strategy
@@ -136,7 +195,7 @@ public:
     bool IsActive() override;
 
 private:
-    uint32 _nextStepMs = 0;  // game time (ms) before which this bot doesn't step again
+    uint64 _nextStepMs = 0;  // game time (ms) before which this bot doesn't step again
 };
 
 class RcBwlTechnicianSpreadAction : public MovementAction
@@ -146,20 +205,100 @@ public:
     bool Execute(Event event) override;
 };
 
-// --- Broodlord Lashlayer --------------------------------------------------
+// --- Line-of-sight cover (Firemaw, Chromaggus) ----------------------------
 
-class RcBwlBroodlordRangedTrigger : public Trigger
+// Walks to the nearest reachable spot the boss can't see, and stays there while the trigger
+// holds. The spot is remembered so the search runs once per hide, not every tick.
+class RcBwlHideAction : public MovementAction
 {
 public:
-    RcBwlBroodlordRangedTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl broodlord ranged") {}
+    RcBwlHideAction(PlayerbotAI* botAI, std::string const& name, float range, float maxPath)
+        : MovementAction(botAI, name), _range(range), _maxPath(maxPath) {}
+    bool Execute(Event event) override;
+
+protected:
+    virtual Unit* HideFrom() = 0;
+
+private:
+    float _range;
+    float _maxPath;
+    ObjectGuid _coverFrom;
+    Position _cover;
+    uint64 _coverFoundMs = 0;
+    uint64 _noCoverUntilMs = 0;  // a search just found nothing; don't repeat it every tick
+};
+
+// While a bot is hidden, nothing else walks it back into view (its spells still go out).
+class RcBwlHoldCoverMultiplier : public Multiplier
+{
+public:
+    RcBwlHoldCoverMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl hold cover") {}
+    float GetValue(Action* action) override;
+};
+
+class RcBwlFiremawHideTrigger : public Trigger
+{
+public:
+    RcBwlFiremawHideTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl firemaw hide") {}
     bool IsActive() override;
 };
 
-class RcBwlBroodlordMoveOutAction : public MovementAction
+class RcBwlFiremawHideAction : public RcBwlHideAction
 {
 public:
-    RcBwlBroodlordMoveOutAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl broodlord move out") {}
+    RcBwlFiremawHideAction(PlayerbotAI* botAI) : RcBwlHideAction(botAI, "rc bwl firemaw hide", RaidClear::BlackwingLair::FIREMAW_COVER_RANGE,
+                          RaidClear::BlackwingLair::FIREMAW_COVER_PATH) {}
+
+protected:
+    Unit* HideFrom() override;
+};
+
+class RcBwlChromaggusBreathTrigger : public Trigger
+{
+public:
+    RcBwlChromaggusBreathTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl chromaggus breath") {}
+    bool IsActive() override;
+};
+
+class RcBwlChromaggusHideAction : public RcBwlHideAction
+{
+public:
+    RcBwlChromaggusHideAction(PlayerbotAI* botAI)
+        : RcBwlHideAction(botAI, "rc bwl chromaggus hide", RaidClear::BlackwingLair::CHROMAGGUS_COVER_RANGE,
+                          RaidClear::BlackwingLair::CHROMAGGUS_COVER_PATH) {}
+
+protected:
+    Unit* HideFrom() override;
+};
+
+// --- Keep out of a boss's AoE (Broodlord, Nefarian) -----------------------
+
+// Ranged and healers closer than `minDistance` (edge to edge) to the boss step straight out to
+// `targetDistance`. A healer only does so if it can still reach the boss's target from there.
+class RcBwlKeepOutTrigger : public Trigger
+{
+public:
+    RcBwlKeepOutTrigger(PlayerbotAI* botAI, std::string const& name, char const* bossName, float minDistance,
+                        float targetDistance)
+        : Trigger(botAI, name), _bossName(bossName), _minDistance(minDistance), _targetDistance(targetDistance) {}
+    bool IsActive() override;
+
+private:
+    char const* _bossName;
+    float _minDistance;
+    float _targetDistance;
+};
+
+class RcBwlKeepOutAction : public MovementAction
+{
+public:
+    RcBwlKeepOutAction(PlayerbotAI* botAI, std::string const& name, char const* bossName, float targetDistance)
+        : MovementAction(botAI, name), _bossName(bossName), _targetDistance(targetDistance) {}
     bool Execute(Event event) override;
+
+private:
+    char const* _bossName;
+    float _targetDistance;
 };
 
 // --- Ebonroc --------------------------------------------------------------

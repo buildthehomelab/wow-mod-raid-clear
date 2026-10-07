@@ -47,6 +47,9 @@ public:
         creators["rc bwl broodlord move out"] = &RaidClearActionContext::bwl_broodlord_move_out;
         creators["rc bwl ebonroc taunt"] = &RaidClearActionContext::bwl_ebonroc_taunt;
         creators["rc bwl technician spread"] = &RaidClearActionContext::bwl_technician_spread;
+        creators["rc bwl firemaw hide"] = &RaidClearActionContext::bwl_firemaw_hide;
+        creators["rc bwl chromaggus hide"] = &RaidClearActionContext::bwl_chromaggus_hide;
+        creators["rc bwl nefarian move out"] = &RaidClearActionContext::bwl_nefarian_move_out;
     }
 
 private:
@@ -59,9 +62,20 @@ private:
     static Action* mc_ragnaros_move_out(PlayerbotAI* botAI) { return new RcMcRagnarosMoveOutAction(botAI); }
 
     static Action* bwl_disarm_suppression(PlayerbotAI* botAI) { return new RcBwlDisarmSuppressionAction(botAI); }
-    static Action* bwl_broodlord_move_out(PlayerbotAI* botAI) { return new RcBwlBroodlordMoveOutAction(botAI); }
+    static Action* bwl_broodlord_move_out(PlayerbotAI* botAI)
+    {
+        return new RcBwlKeepOutAction(botAI, "rc bwl broodlord move out", "broodlord lashlayer",
+                                      RaidClear::BlackwingLair::BROODLORD_RANGED_TARGET);
+    }
     static Action* bwl_ebonroc_taunt(PlayerbotAI* botAI) { return new RcBwlEbonrocTauntAction(botAI); }
     static Action* bwl_technician_spread(PlayerbotAI* botAI) { return new RcBwlTechnicianSpreadAction(botAI); }
+    static Action* bwl_firemaw_hide(PlayerbotAI* botAI) { return new RcBwlFiremawHideAction(botAI); }
+    static Action* bwl_chromaggus_hide(PlayerbotAI* botAI) { return new RcBwlChromaggusHideAction(botAI); }
+    static Action* bwl_nefarian_move_out(PlayerbotAI* botAI)
+    {
+        return new RcBwlKeepOutAction(botAI, "rc bwl nefarian move out", "nefarian",
+                                      RaidClear::BlackwingLair::NEFARIAN_RANGED_TARGET);
+    }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -81,6 +95,9 @@ public:
         creators["rc bwl broodlord ranged"] = &RaidClearTriggerContext::bwl_broodlord_ranged;
         creators["rc bwl ebonroc taunt"] = &RaidClearTriggerContext::bwl_ebonroc_taunt;
         creators["rc bwl technician spread"] = &RaidClearTriggerContext::bwl_technician_spread;
+        creators["rc bwl firemaw hide"] = &RaidClearTriggerContext::bwl_firemaw_hide;
+        creators["rc bwl chromaggus breath"] = &RaidClearTriggerContext::bwl_chromaggus_breath;
+        creators["rc bwl nefarian ranged"] = &RaidClearTriggerContext::bwl_nefarian_ranged;
     }
 
 private:
@@ -93,9 +110,22 @@ private:
     static Trigger* mc_ragnaros_ranged(PlayerbotAI* botAI) { return new RcMcRagnarosRangedTrigger(botAI); }
 
     static Trigger* bwl_suppression_device(PlayerbotAI* botAI) { return new RcBwlSuppressionDeviceTrigger(botAI); }
-    static Trigger* bwl_broodlord_ranged(PlayerbotAI* botAI) { return new RcBwlBroodlordRangedTrigger(botAI); }
+    static Trigger* bwl_broodlord_ranged(PlayerbotAI* botAI)
+    {
+        return new RcBwlKeepOutTrigger(botAI, "rc bwl broodlord ranged", "broodlord lashlayer",
+                                       RaidClear::BlackwingLair::BROODLORD_RANGED_MIN,
+                                       RaidClear::BlackwingLair::BROODLORD_RANGED_TARGET);
+    }
     static Trigger* bwl_ebonroc_taunt(PlayerbotAI* botAI) { return new RcBwlEbonrocTauntTrigger(botAI); }
     static Trigger* bwl_technician_spread(PlayerbotAI* botAI) { return new RcBwlTechnicianSpreadTrigger(botAI); }
+    static Trigger* bwl_firemaw_hide(PlayerbotAI* botAI) { return new RcBwlFiremawHideTrigger(botAI); }
+    static Trigger* bwl_chromaggus_breath(PlayerbotAI* botAI) { return new RcBwlChromaggusBreathTrigger(botAI); }
+    static Trigger* bwl_nefarian_ranged(PlayerbotAI* botAI)
+    {
+        return new RcBwlKeepOutTrigger(botAI, "rc bwl nefarian ranged", "nefarian",
+                                       RaidClear::BlackwingLair::NEFARIAN_RANGED_MIN,
+                                       RaidClear::BlackwingLair::NEFARIAN_RANGED_TARGET);
+    }
 };
 
 #endif

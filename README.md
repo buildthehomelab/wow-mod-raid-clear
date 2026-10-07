@@ -73,11 +73,17 @@ and the fire resistance auras. On top of that:
 
 | Fight | What the bots do |
 |---|---|
+| Razorgore | Kill his adds in order: **Death Talon Dragonspawn**, then **Blackwing Mages**, then **Legionnaires**. The off-tank split stays out of the fight (playerbots places the tanks). |
+| Vaelastrasz | He can't be taunted, so the off-tank keeps itself second on threat for when **Burning Adrenaline** kills the main tank. |
 | Warlock packs | Kill the **Blackwing Warlocks** first: each one keeps opening Demon Portals that summon Enraged Felguards until it dies. Then Taskmasters, Spellbinders and Death Talon Captains, then the felguards. |
+| Death Talon packs | Casters (**Death Talon Wyrmkin**) first. Two **Wyrmguards** are tanked 30 yards apart (**War Stomp** reaches 15). |
 | Technician packs | Ranged bots and healers keep 6 yards from each other while **Blackwing Technicians** are fighting nearby, so one **Bomb** (5-yard splash) hits one bot. Only bots in a clump move, one short step every 1.5 seconds. |
 | Suppression Room | With the `raid` bot cheat on (the default), bots turn off every armed **Suppression Device** within 22 yards: the aura reaches 20, playerbots' own disarm only 15. Kill the Hatchers and Taskmasters before Broodlord if they come along. Off-tanks ignore the whelps. |
-| Broodlord Lashlayer | The off-tank co-tanks him through **Knock Away**. Ranged and healers stay out of **Blast Wave** (20 yards). |
+| Broodlord Lashlayer | The off-tank co-tanks him through **Knock Away**. Ranged and healers stay out of **Blast Wave** (20 yards); a healer only backs off as far as it can still reach the tank. |
 | Firemaw, Ebonroc, Flamegor | The off-tank co-tanks through **Wing Buffet**. |
+| Firemaw | At 5-7 stacks of **Flame Buffet** (varies per bot, so the raid doesn't leave together) a non-tank hides behind cover until the stacks drop. At most a third of the healers hide at once. Hidden bots keep healing and casting at anything they can see. |
+| Chromaggus | When he starts a breath, non-tanks with cover within a 2-second run duck behind it. **Time Lapse** is the exception: everyone takes it, because it halves the threat of everyone it hits, tank included. |
+| Nefarian | Ranged and healers stay out of **Bellowing Roar** (35-yard fear), healers only as far as they can still reach the tank. Kill the **Drakonids** and **Bone Constructs** before him. |
 | Ebonroc | The off-tank taunts him off a tank with **Shadow of Ebonroc** (he heals on every hit on it), and that tank leaves him alone until it wears off. |
 
 Disarmed Suppression Devices that keep slowing the raid are a core script bug that affects
@@ -132,6 +138,14 @@ Category: Raids
 - Broodlord Lashlayer: ranged bots and healers stay out of **Blast Wave**.
 - Ebonroc: bot tanks swap on **Shadow of Ebonroc**.
 - Blackwing Lair: ranged bots and healers spread out against the Technicians' **Bombs**.
+- Razorgore: bots kill the Dragonspawn, then the Mages, then the Legionnaires.
+- Vaelastrasz: the off-tank keeps up threat so it can take over when **Burning Adrenaline** kills the
+  main tank.
+- Blackwing Lair: bots kill the Death Talon casters first and tank the Wyrmguards well apart.
+- Firemaw: bots hide behind cover to drop **Flame Buffet** stacks, a few at a time, with healers
+  taking turns.
+- Chromaggus: bots duck behind cover when he breathes, except for **Time Lapse**.
+- Nefarian: ranged bots and healers stay out of **Bellowing Roar**, and bots kill his adds first.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.

@@ -10,7 +10,9 @@
 #include "GameTime.h"
 #include "Group.h"
 #include "Map.h"
+#include "PathGenerator.h"
 #include "Playerbots.h"
+#include "Spell.h"
 #include "PlayerbotAI.h"
 
 #include <array>
@@ -32,6 +34,22 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::BlackwingLair::KillOrde
         { NPC_DEATH_TALON_CAPTAIN, 1 },
         // The Suppression Room elites, before Broodlord if he gets pulled with them.
         { NPC_DEATH_TALON_HATCHER, 1 },
+        // Casters in the Death Talon packs go before the Overseers and Wyrmguards.
+        { NPC_DEATH_TALON_WYRMKIN, 1 },
+
+        // Razorgore's adds: dragonkin, then mages, then the melee.
+        { NPC_DEATH_TALON_DRAGONSPAWN, 1 },
+        { NPC_BLACKWING_MAGE, 2 },
+        { NPC_BLACKWING_LEGIONNAIRE, 3 },
+
+        // Nefarian: adds always before him.
+        { NPC_CHROMATIC_DRAKONID, 1 },
+        { NPC_BLUE_DRAKONID, 1 },
+        { NPC_GREEN_DRAKONID, 1 },
+        { NPC_BRONZE_DRAKONID, 1 },
+        { NPC_RED_DRAKONID, 1 },
+        { NPC_BLACK_DRAKONID, 1 },
+        { NPC_BONE_CONSTRUCT, 2 },
 
         // Whatever the portals let out before the warlocks died.
         { NPC_ENRAGED_FELGUARD, 2 },
@@ -42,9 +60,27 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::BlackwingLair::KillOrde
 std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitCoTankBosses()
 {
     // Broodlord: Knock Away (25778) halves his victim's threat. The drakes: Wing Buffet takes 75%.
-    // Ebonroc also needs a second tank for Shadow of Ebonroc.
-    static std::vector<uint32> const bosses = { NPC_BROODLORD, NPC_FIREMAW, NPC_EBONROC, NPC_FLAMEGOR };
+    // Ebonroc also needs a second tank for Shadow of Ebonroc. Vaelastrasz can't be taunted, so
+    // whoever is next on threat when Burning Adrenaline kills his tank gets him.
+    static std::vector<uint32> const bosses = {
+        NPC_BROODLORD, NPC_FIREMAW, NPC_EBONROC, NPC_FLAMEGOR, NPC_VAELASTRASZ,
+    };
     return bosses;
+}
+
+std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitSkipBosses()
+{
+    static std::vector<uint32> const bosses = { NPC_RAZORGORE };
+    return bosses;
+}
+
+std::vector<RaidClear::Tanks::SplashRadius> const& RaidClear::BlackwingLair::TankSplitSplashRadii()
+{
+    // War Stomp (24375) reaches 15 yd: two Wyrmguards end up 30 yd apart.
+    static std::vector<Tanks::SplashRadius> const radii = {
+        { NPC_DEATH_TALON_WYRMGUARD, 15.0f },
+    };
+    return radii;
 }
 
 std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitIgnore()
@@ -55,6 +91,15 @@ std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitIgnore()
         NPC_CORRUPTED_RED_WHELP, NPC_CORRUPTED_GREEN_WHELP, NPC_CORRUPTED_BLUE_WHELP, NPC_CORRUPTED_BRONZE_WHELP,
     };
     return whelps;
+}
+
+namespace
+{
+    Unit* LivingBossInCombat(PlayerbotAI* botAI, char const* name)
+    {
+        Unit* boss = botAI->GetAiObjectContext()->GetValue<Unit*>("find target", name)->Get();
+        return boss && boss->IsAlive() && boss->IsInCombat() ? boss : nullptr;
+    }
 }
 
 void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
@@ -72,11 +117,21 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
 
     triggers.push_back(
         new TriggerNode("rc bwl technician spread", { NextAction("rc bwl technician spread", ACTION_RAID) }));
+
+    triggers.push_back(
+        new TriggerNode("rc bwl firemaw hide", { NextAction("rc bwl firemaw hide", ACTION_RAID + 1) }));
+
+    triggers.push_back(
+        new TriggerNode("rc bwl chromaggus breath", { NextAction("rc bwl chromaggus hide", ACTION_RAID + 4) }));
+
+    triggers.push_back(
+        new TriggerNode("rc bwl nefarian ranged", { NextAction("rc bwl nefarian move out", ACTION_RAID + 1) }));
 }
 
 void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcBwlShadowOfEbonrocMultiplier(botAI));
+    multipliers.push_back(new RcBwlHoldCoverMultiplier(botAI));
 }
 
 // --- Suppression Room -----------------------------------------------------
@@ -191,7 +246,7 @@ bool RcBwlTechnicianSpreadTrigger::IsActive()
     if (!SpreadsFromBombs(bot) || !bot->IsInCombat())
         return false;
 
-    uint32 const now = GameTime::GetGameTimeMS().count();
+    uint64 const now = GameTime::GetGameTimeMS().count();
     if (now < _nextStepMs)
         return false;
 
@@ -243,31 +298,280 @@ bool RcBwlTechnicianSpreadAction::Execute(Event /*event*/)
     return false;
 }
 
-// --- Broodlord Lashlayer --------------------------------------------------
+// --- Line-of-sight cover (Firemaw, Chromaggus) ----------------------------
 
-bool RcBwlBroodlordRangedTrigger::IsActive()
+namespace
 {
-    if (PlayerbotAI::IsTank(bot) || !(PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot)))
-        return false;
+    // Eye height used for the boss-to-spot line of sight.
+    constexpr float COVER_EYE_HEIGHT = 2.0f;
+    // A spot more than this above or below the bot is a ledge or a pit.
+    constexpr float COVER_MAX_HEIGHT_DIFF = 5.0f;
+    // How long a found spot is trusted before searching again, and how long to wait after a
+    // search found nothing (each one is up to ~150 line-of-sight checks and paths).
+    constexpr uint64 COVER_REUSE_MS = 15000;
+    constexpr uint64 COVER_RETRY_MS = 3000;
 
-    Unit* boss = AI_VALUE2(Unit*, "find target", "broodlord lashlayer");
-    if (!boss || !boss->IsAlive() || !boss->IsInCombat())
-        return false;
+    bool SeesSpot(Unit* from, float x, float y, float z)
+    {
+        return from->IsWithinLOS(x, y, z + COVER_EYE_HEIGHT);
+    }
 
-    return bot->GetDistance2d(boss) < BROODLORD_RANGED_MIN;
+    // The nearest spot (by walking distance, at most `maxPath`) within `range` that `from` can't
+    // see. Rings of candidates from close to far; the first ring with any cover wins.
+    bool FindCover(Player* bot, Unit* from, float range, float maxPath, Position& out)
+    {
+        Map* map = bot->GetMap();
+        float const botZ = bot->GetPositionZ();
+        constexpr int ANGLES = 16;
+
+        for (float radius = 4.0f; radius <= range; radius += 3.0f)
+        {
+            float bestLength = 0.0f;
+            bool found = false;
+            for (int i = 0; i < ANGLES; ++i)
+            {
+                float const angle = float(i) * 2.0f * float(M_PI) / ANGLES;
+                float const x = bot->GetPositionX() + std::cos(angle) * radius;
+                float const y = bot->GetPositionY() + std::sin(angle) * radius;
+                float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + COVER_MAX_HEIGHT_DIFF);
+                if (z <= INVALID_HEIGHT || std::fabs(z - botZ) > COVER_MAX_HEIGHT_DIFF)
+                    continue;
+                if (SeesSpot(from, x, y, z))
+                    continue;
+
+                // Cover is usually around a corner, so the walk is checked, not the straight line.
+                PathGenerator path(bot);
+                if (!path.CalculatePath(x, y, z) || !(path.GetPathType() & PATHFIND_NORMAL))
+                    continue;
+                float const length = path.getPathLength();
+                if (length > maxPath)
+                    continue;
+
+                if (!found || length < bestLength)
+                {
+                    out.Relocate(x, y, z);
+                    bestLength = length;
+                    found = true;
+                }
+            }
+            if (found)
+                return true;
+        }
+        return false;
+    }
+
+    bool IsAvoidableBreath(uint32 spellId)
+    {
+        switch (spellId)
+        {
+            case SPELL_INCINERATE:
+            case SPELL_CORROSIVE_ACID:
+            case SPELL_IGNITE_FLESH:
+            case SPELL_FROST_BURN:
+                return true;
+            default:
+                return false;  // Time Lapse included: everyone should take it
+        }
+    }
+
+    // The breath Chromaggus is casting right now, or 0.
+    uint32 ChromaggusBreath(Unit* boss)
+    {
+        Spell* spell = boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        if (!spell || !spell->GetSpellInfo())
+            return 0;
+        uint32 const id = spell->GetSpellInfo()->Id;
+        return IsAvoidableBreath(id) ? id : 0;
+    }
 }
 
-bool RcBwlBroodlordMoveOutAction::Execute(Event /*event*/)
+bool RcBwlHideAction::Execute(Event /*event*/)
 {
-    Unit* boss = AI_VALUE2(Unit*, "find target", "broodlord lashlayer");
+    Unit* from = HideFrom();
+    if (!from)
+        return false;
+
+    // Already out of sight: nothing to do. RcBwlHoldCoverMultiplier keeps other movement from
+    // walking the bot back into view, while heals and casts at targets it can see go on.
+    if (!from->IsWithinLOSInMap(bot))
+        return false;
+
+    uint64 const now = GameTime::GetGameTimeMS().count();
+    bool const cached = _coverFrom == from->GetGUID() && now - _coverFoundMs < COVER_REUSE_MS &&
+                        !SeesSpot(from, _cover.GetPositionX(), _cover.GetPositionY(), _cover.GetPositionZ());
+    if (!cached)
+    {
+        if (now < _noCoverUntilMs)
+            return false;
+        if (!FindCover(bot, from, _range, _maxPath, _cover))
+        {
+            _noCoverUntilMs = now + COVER_RETRY_MS;
+            return false;  // nowhere to hide: fight on
+        }
+        _coverFrom = from->GetGUID();
+        _coverFoundMs = now;
+    }
+
+    return MoveTo(bot->GetMapId(), _cover.GetPositionX(), _cover.GetPositionY(), _cover.GetPositionZ(), false, false,
+                  false, false, MovementPriority::MOVEMENT_FORCED);
+}
+
+namespace
+{
+    // Hidden from Firemaw while Flame Buffet wears off, or from Chromaggus mid-breath.
+    bool HoldingCover(PlayerbotAI* botAI, Player* bot)
+    {
+        if (bot->HasAura(SPELL_FLAME_BUFFET))
+            if (Unit* boss = LivingBossInCombat(botAI, "firemaw"))
+                if (!boss->IsWithinLOSInMap(bot))
+                    return true;
+
+        if (Unit* boss = LivingBossInCombat(botAI, "chromaggus"))
+            if (ChromaggusBreath(boss) && !boss->IsWithinLOSInMap(bot))
+                return true;
+        return false;
+    }
+
+    // Firemaw stack threshold for this bot: 5 to 7, so the raid doesn't all leave together.
+    uint8 FlameBuffetThreshold(Player* bot)
+    {
+        return FLAME_BUFFET_HIDE_STACKS + uint8(bot->GetGUID().GetCounter() % FLAME_BUFFET_HIDE_SPREAD);
+    }
+
+    // Healers may hide only while enough of the others are still healing.
+    bool HealerMayHide(Player* bot, Unit* boss)
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return true;
+
+        uint32 healers = 0;
+        uint32 hidden = 0;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || !member->IsAlive() || member->GetMapId() != bot->GetMapId() || !PlayerbotAI::IsHeal(member))
+                continue;
+            ++healers;
+            if (member != bot && member->HasAura(SPELL_FLAME_BUFFET) && !boss->IsWithinLOSInMap(member))
+                ++hidden;
+        }
+        return hidden < std::max<uint32>(1, healers / FIREMAW_HEALER_HIDE_SHARE);
+    }
+}
+
+float RcBwlHoldCoverMultiplier::GetValue(Action* action)
+{
+    if (!action || dynamic_cast<RcBwlHideAction*>(action) || !dynamic_cast<MovementAction*>(action) ||
+        PlayerbotAI::IsTank(bot))
+        return 1.0f;
+    return HoldingCover(botAI, bot) ? 0.0f : 1.0f;
+}
+
+bool RcBwlFiremawHideTrigger::IsActive()
+{
+    if (PlayerbotAI::IsTank(bot))
+        return false;
+
+    Aura* buffet = bot->GetAura(SPELL_FLAME_BUFFET);
+    if (!buffet)
+        return false;
+
+    Unit* boss = LivingBossInCombat(botAI, "firemaw");
     if (!boss)
         return false;
 
-    float const distance = BROODLORD_RANGED_TARGET - bot->GetDistance2d(boss);
-    if (distance <= 0.0f)
+    // Once hidden, stay hidden until the last stack is gone.
+    if (!boss->IsWithinLOSInMap(bot))
+        return true;
+
+    // Thresholds are staggered per bot, and healers take turns, so the tanks always have heals.
+    if (buffet->GetStackAmount() < FlameBuffetThreshold(bot))
+        return false;
+    return !PlayerbotAI::IsHeal(bot) || HealerMayHide(bot, boss);
+}
+
+Unit* RcBwlFiremawHideAction::HideFrom()
+{
+    return LivingBossInCombat(botAI, "firemaw");
+}
+
+bool RcBwlChromaggusBreathTrigger::IsActive()
+{
+    if (PlayerbotAI::IsTank(bot))
         return false;
 
-    return MoveAway(boss, distance);
+    Unit* boss = LivingBossInCombat(botAI, "chromaggus");
+    return boss && ChromaggusBreath(boss) != 0;
+}
+
+Unit* RcBwlChromaggusHideAction::HideFrom()
+{
+    Unit* boss = LivingBossInCombat(botAI, "chromaggus");
+    return boss && ChromaggusBreath(boss) ? boss : nullptr;
+}
+
+// --- Keep out of a boss's AoE (Broodlord, Nefarian) -----------------------
+
+namespace
+{
+    // Healers stay this close to the boss's target, whatever the AoE: an out-of-range healer
+    // costs more than one Blast Wave or fear.
+    constexpr float HEALER_REACH = 38.0f;
+
+    bool KeepsOut(Player* bot)
+    {
+        return !PlayerbotAI::IsTank(bot) && (PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot));
+    }
+
+    // The spot `distance` yards (edge to edge) straight out from the boss through the bot.
+    Position KeepOutSpot(Player* bot, Unit* boss, float distance)
+    {
+        float angle = boss->GetAngle(bot);
+        if (boss->GetExactDist2d(bot) < 0.5f)
+            angle = boss->GetOrientation() + float(M_PI);
+
+        float const reach = distance + boss->GetObjectSize() + bot->GetObjectSize();
+        float const x = boss->GetPositionX() + std::cos(angle) * reach;
+        float const y = boss->GetPositionY() + std::sin(angle) * reach;
+        float const z = bot->GetMap()->GetHeight(bot->GetPhaseMask(), x, y, bot->GetPositionZ() + 5.0f);
+        return Position(x, y, z > INVALID_HEIGHT ? z : bot->GetPositionZ());
+    }
+
+    // A healer only backs off if it can still reach whoever the boss is hitting from there.
+    bool SpotKeepsHealerInReach(Player* bot, Unit* boss, Position const& spot)
+    {
+        if (!PlayerbotAI::IsHeal(bot))
+            return true;
+        Unit* victim = boss->GetVictim();
+        return !victim || victim->GetExactDist2d(spot.GetPositionX(), spot.GetPositionY()) <= HEALER_REACH;
+    }
+}
+
+bool RcBwlKeepOutTrigger::IsActive()
+{
+    if (!KeepsOut(bot))
+        return false;
+
+    Unit* boss = LivingBossInCombat(botAI, _bossName);
+    if (!boss || bot->GetDistance2d(boss) >= _minDistance)
+        return false;
+
+    return SpotKeepsHealerInReach(bot, boss, KeepOutSpot(bot, boss, _targetDistance));
+}
+
+bool RcBwlKeepOutAction::Execute(Event /*event*/)
+{
+    Unit* boss = LivingBossInCombat(botAI, _bossName);
+    if (!boss || bot->GetDistance2d(boss) >= _targetDistance)
+        return false;
+
+    Position const spot = KeepOutSpot(bot, boss, _targetDistance);
+    if (!SpotKeepsHealerInReach(bot, boss, spot))
+        return false;
+
+    return MoveTo(bot->GetMapId(), spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), false, false, false,
+                  false, MovementPriority::MOVEMENT_COMBAT);
 }
 
 // --- Ebonroc --------------------------------------------------------------
@@ -282,12 +586,6 @@ namespace
         "taunt", "growl", "hand of reckoning", "dark command",
         "mocking blow", "righteous defense", "challenging shout", "challenging roar",
     };
-
-    Unit* EbonrocInCombat(PlayerbotAI* botAI)
-    {
-        Unit* boss = botAI->GetAiObjectContext()->GetValue<Unit*>("find target", "ebonroc")->Get();
-        return boss && boss->IsAlive() && boss->IsInCombat() ? boss : nullptr;
-    }
 }
 
 bool RcBwlEbonrocTauntTrigger::IsActive()
@@ -295,7 +593,7 @@ bool RcBwlEbonrocTauntTrigger::IsActive()
     if (!PlayerbotAI::IsTank(bot) || bot->HasAura(SPELL_SHADOW_OF_EBONROC))
         return false;
 
-    Unit* boss = EbonrocInCombat(botAI);
+    Unit* boss = LivingBossInCombat(botAI, "ebonroc");
     if (!boss)
         return false;
 
@@ -305,7 +603,7 @@ bool RcBwlEbonrocTauntTrigger::IsActive()
 
 bool RcBwlEbonrocTauntAction::Execute(Event /*event*/)
 {
-    Unit* boss = EbonrocInCombat(botAI);
+    Unit* boss = LivingBossInCombat(botAI, "ebonroc");
     if (!boss)
         return false;
 
@@ -317,7 +615,7 @@ bool RcBwlEbonrocTauntAction::Execute(Event /*event*/)
 
 float RcBwlShadowOfEbonrocMultiplier::GetValue(Action* action)
 {
-    if (!action || !bot->HasAura(SPELL_SHADOW_OF_EBONROC) || !EbonrocInCombat(botAI))
+    if (!action || !bot->HasAura(SPELL_SHADOW_OF_EBONROC) || !LivingBossInCombat(botAI, "ebonroc"))
         return 1.0f;
 
     std::string const name = action->getName();
