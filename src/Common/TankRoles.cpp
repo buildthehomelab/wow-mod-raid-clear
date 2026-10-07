@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <list>
 
 namespace RaidClear::Tanks
 {
@@ -31,6 +32,8 @@ namespace RaidClear::Tanks
         constexpr float SEPARATION_SLACK = 3.0f;
         // A spot more than this above or below the main tank is a ledge or a pit.
         constexpr float MAX_HEIGHT_DIFF = 5.0f;
+        // A skip-listed boss this close and in combat owns the fight even when it isn't attacking.
+        constexpr float SKIP_BOSS_RANGE = 80.0f;
 
         // Bosses whose own strategy (mod-playerbots or ours) places the tanks itself.
         std::vector<uint32> const& SkipBosses(uint32 mapId)
@@ -38,8 +41,9 @@ namespace RaidClear::Tanks
             static std::vector<uint32> const none;
             switch (mapId)
             {
-                case MoltenCore::MAP_ID: return MoltenCore::TankSplitSkipBosses();
-                default:                 return none;
+                case MoltenCore::MAP_ID:    return MoltenCore::TankSplitSkipBosses();
+                case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitSkipBosses();
+                default:                    return none;
             }
         }
 
@@ -82,6 +86,14 @@ namespace RaidClear::Tanks
                 if (Unit* unit = botAI->GetUnit(guid))
                     if (unit->IsAlive() && std::find(skip.begin(), skip.end(), unit->GetEntry()) != skip.end())
                         return true;
+
+            // A boss can be in the fight without attacking anyone: Razorgore spends his whole
+            // first phase mind-controlled by the raid while his adds are what attack.
+            std::list<Creature*> nearby;
+            bot->GetCreatureListWithEntryInGrid(nearby, skip, SKIP_BOSS_RANGE);
+            for (Creature* boss : nearby)
+                if (boss && boss->IsAlive() && boss->IsInCombat())
+                    return true;
             return false;
         }
 
@@ -91,8 +103,9 @@ namespace RaidClear::Tanks
             static std::vector<SplashRadius> const none;
             switch (mapId)
             {
-                case MoltenCore::MAP_ID: return MoltenCore::TankSplitSplashRadii();
-                default:                 return none;
+                case MoltenCore::MAP_ID:    return MoltenCore::TankSplitSplashRadii();
+                case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitSplashRadii();
+                default:                    return none;
             }
         }
 

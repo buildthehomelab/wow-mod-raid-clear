@@ -46,8 +46,8 @@ RaidClear.Tanks.AssignMainTank = 1
 #        Description: In every raid, the other tanks act as off-tanks: they never take the main
 #                     tank's target, they pick up mobs hitting non-tanks first, then extra mobs on
 #                     the main tank, and leave mobs another off-tank holds.
-#                     On bosses that cut their tank's threat (Broodlord Lashlayer, Firemaw, Ebonroc,
-#                     Flamegor) an off-tank with no add to hold attacks the boss too, so it catches
+#                     On bosses that cut their tank's threat or can't be taunted (Broodlord
+#                     Lashlayer, Firemaw, Ebonroc, Flamegor, Vaelastrasz) an off-tank with no add to hold attacks the boss too, so it catches
 #                     the boss after a Knock Away / Wing Buffet. Blackwing Lair's Suppression Room
 #                     whelps are never picked up.
 #        Default:     1
@@ -91,7 +91,11 @@ RaidClear.MoltenCore.Enable = 1
 #    RaidClear.BlackwingLair.Enable
 #        Description: Blackwing Lair strategy (map 469): warlocks first in the kill order, bots
 #                     turn off Suppression Devices within 22 yd (needs the "raid" bot cheat, or a
-#                     rogue), ranged out of Broodlord's Blast Wave, tank swap on Shadow of Ebonroc.
+#                     rogue), ranged out of Broodlord's Blast Wave, tank swap on Shadow of Ebonroc,
+#                     ranged/healers 6 yd apart while Blackwing Technicians (Bomb) are fighting,
+#                     hide from Firemaw at 5-7 Flame Buffet stacks, duck Chromaggus' breaths (not
+#                     Time Lapse), stay out of Nefarian's Bellowing Roar, Razorgore/Nefarian add
+#                     kill order, Vaelastrasz co-tanked.
 #        Default:     1
 #
 
