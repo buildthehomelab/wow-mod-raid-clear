@@ -89,6 +89,18 @@ and the fire resistance auras. On top of that:
 Disarmed Suppression Devices that keep slowing the raid are a core script bug that affects
 players too; [mod-raid-bwl](https://github.com/buildthehomelab/wow-mod-raid-bwl) fixes it.
 
+## Requirements
+
+- An AzerothCore WotLK server running [mod-playerbots](https://github.com/mod-playerbots/mod-playerbots)
+  on its core fork
+  ([mod-playerbots/azerothcore-wotlk](https://github.com/mod-playerbots/azerothcore-wotlk),
+  `Playerbot` branch). The module uses playerbots APIs directly, so the stock core won't build it.
+- `AiPlayerbot.ApplyInstanceStrategies = 1` in the playerbots config (the default), so the bots
+  keep playerbots' own raid strategies alongside this module's.
+- Optional: [mod-dungeon-clear](https://github.com/jrad7/mod-dungeon-clear), which walks a bot
+  raid from boss to boss. The mechanics also apply when you lead the raid yourself.
+- WoW 3.3.5a (12340) client.
+
 ## Install
 
 1. Clone into `modules/mod-raid-clear`. The folder name must be exactly that, because
@@ -150,6 +162,26 @@ Category: Raids
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.
 
+## Troubleshooting
+
+- **Bots don't use any of the raid mechanics.** Check that `AiPlayerbot.ApplyInstanceStrategies`
+  is `1`, that `RaidClear.Enable` and the raid's own setting (`RaidClear.MoltenCore.Enable`,
+  `RaidClear.BlackwingLair.Enable`) are `1`, and restart the worldserver: `RaidClear.Enable` is
+  read at startup only.
+- **The worldserver doesn't start or the module doesn't link.** The folder must be named exactly
+  `mod-raid-clear`, because AzerothCore derives the loader function from it. Re-run CMake after
+  cloning.
+- **Off-tanks don't pull their mob away during a boss fight.** `RaidClear.Tanks.SeparateOnBosses`
+  is `0` by default; separation only happens on trash.
+
+## Credits
+
+Built on [mod-dungeon-clear](https://github.com/jrad7/mod-dungeon-clear) by jrad7, whose way of
+adding strategies to playerbots this module follows, and on
+[mod-playerbots](https://github.com/mod-playerbots/mod-playerbots).
+
+Author: [buildthehomelab](https://github.com/buildthehomelab)
+
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
