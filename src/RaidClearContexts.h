@@ -46,6 +46,7 @@ public:
         creators["rc bwl disarm suppression"] = &RaidClearActionContext::bwl_disarm_suppression;
         creators["rc bwl broodlord move out"] = &RaidClearActionContext::bwl_broodlord_move_out;
         creators["rc bwl ebonroc taunt"] = &RaidClearActionContext::bwl_ebonroc_taunt;
+        creators["rc bwl technician spread"] = &RaidClearActionContext::bwl_technician_spread;
     }
 
 private:
@@ -60,6 +61,7 @@ private:
     static Action* bwl_disarm_suppression(PlayerbotAI* botAI) { return new RcBwlDisarmSuppressionAction(botAI); }
     static Action* bwl_broodlord_move_out(PlayerbotAI* botAI) { return new RcBwlBroodlordMoveOutAction(botAI); }
     static Action* bwl_ebonroc_taunt(PlayerbotAI* botAI) { return new RcBwlEbonrocTauntAction(botAI); }
+    static Action* bwl_technician_spread(PlayerbotAI* botAI) { return new RcBwlTechnicianSpreadAction(botAI); }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -78,6 +80,7 @@ public:
         creators["rc bwl suppression device"] = &RaidClearTriggerContext::bwl_suppression_device;
         creators["rc bwl broodlord ranged"] = &RaidClearTriggerContext::bwl_broodlord_ranged;
         creators["rc bwl ebonroc taunt"] = &RaidClearTriggerContext::bwl_ebonroc_taunt;
+        creators["rc bwl technician spread"] = &RaidClearTriggerContext::bwl_technician_spread;
     }
 
 private:
@@ -92,6 +95,7 @@ private:
     static Trigger* bwl_suppression_device(PlayerbotAI* botAI) { return new RcBwlSuppressionDeviceTrigger(botAI); }
     static Trigger* bwl_broodlord_ranged(PlayerbotAI* botAI) { return new RcBwlBroodlordRangedTrigger(botAI); }
     static Trigger* bwl_ebonroc_taunt(PlayerbotAI* botAI) { return new RcBwlEbonrocTauntTrigger(botAI); }
+    static Trigger* bwl_technician_spread(PlayerbotAI* botAI) { return new RcBwlTechnicianSpreadTrigger(botAI); }
 };
 
 #endif

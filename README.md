@@ -74,6 +74,7 @@ and the fire resistance auras. On top of that:
 | Fight | What the bots do |
 |---|---|
 | Warlock packs | Kill the **Blackwing Warlocks** first: each one keeps opening Demon Portals that summon Enraged Felguards until it dies. Then Taskmasters, Spellbinders and Death Talon Captains, then the felguards. |
+| Technician packs | Ranged bots and healers keep 6 yards from each other while **Blackwing Technicians** are fighting nearby, so one **Bomb** (5-yard splash) hits one bot. Only bots in a clump move, one short step every 1.5 seconds. |
 | Suppression Room | With the `raid` bot cheat on (the default), bots turn off every armed **Suppression Device** within 22 yards: the aura reaches 20, playerbots' own disarm only 15. Kill the Hatchers and Taskmasters before Broodlord if they come along. Off-tanks ignore the whelps. |
 | Broodlord Lashlayer | The off-tank co-tanks him through **Knock Away**. Ranged and healers stay out of **Blast Wave** (20 yards). |
 | Firemaw, Ebonroc, Flamegor | The off-tank co-tanks through **Wing Buffet**. |
@@ -130,6 +131,7 @@ Category: Raids
   **Knock Away** and **Wing Buffet** no longer send the boss onto the healers.
 - Broodlord Lashlayer: ranged bots and healers stay out of **Blast Wave**.
 - Ebonroc: bot tanks swap on **Shadow of Ebonroc**.
+- Blackwing Lair: ranged bots and healers spread out against the Technicians' **Bombs**.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.

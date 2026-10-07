@@ -91,7 +91,8 @@ RaidClear.MoltenCore.Enable = 1
 #    RaidClear.BlackwingLair.Enable
 #        Description: Blackwing Lair strategy (map 469): warlocks first in the kill order, bots
 #                     turn off Suppression Devices within 22 yd (needs the "raid" bot cheat, or a
-#                     rogue), ranged out of Broodlord's Blast Wave, tank swap on Shadow of Ebonroc.
+#                     rogue), ranged out of Broodlord's Blast Wave, tank swap on Shadow of Ebonroc,
+#                     ranged/healers 6 yd apart while Blackwing Technicians (Bomb) are fighting.
 #        Default:     1
 #
 

@@ -7,10 +7,14 @@
 #include "BwlRaidClear.h"
 
 #include "GameObject.h"
+#include "GameTime.h"
+#include "Group.h"
+#include "Map.h"
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
 
 #include <array>
+#include <cmath>
 #include <list>
 #include <string>
 
@@ -65,6 +69,9 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
 
     triggers.push_back(
         new TriggerNode("rc bwl ebonroc taunt", { NextAction("rc bwl ebonroc taunt", ACTION_RAID + 3) }));
+
+    triggers.push_back(
+        new TriggerNode("rc bwl technician spread", { NextAction("rc bwl technician spread", ACTION_RAID) }));
 }
 
 void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
@@ -123,6 +130,117 @@ bool RcBwlDisarmSuppressionAction::Execute(Event /*event*/)
     for (GameObject* go : armed)
         go->SetGoState(GO_STATE_ACTIVE);
     return !armed.empty();
+}
+
+// --- Technician packs -----------------------------------------------------
+
+namespace
+{
+    bool SpreadsFromBombs(Player* bot)
+    {
+        return !PlayerbotAI::IsTank(bot) && (PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot));
+    }
+
+    // Push away from every living group member closer than TECHNICIAN_SPREAD, nearer ones
+    // harder. Zero when nobody is that close.
+    void Repulsion(Player* bot, float& outX, float& outY)
+    {
+        outX = 0.0f;
+        outY = 0.0f;
+        Group* group = bot->GetGroup();
+        if (!group)
+            return;
+
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+                continue;
+
+            float const dist = bot->GetExactDist2d(member);
+            if (dist >= TECHNICIAN_SPREAD)
+                continue;
+
+            float const weight = 1.0f - dist / TECHNICIAN_SPREAD;
+            if (dist < 0.1f)
+            {
+                // Standing on top of each other: split by GUID so the two go opposite ways.
+                float const angle = bot->GetGUID() < member->GetGUID() ? 0.0f : float(M_PI);
+                outX += std::cos(angle) * weight;
+                outY += std::sin(angle) * weight;
+                continue;
+            }
+            outX += (bot->GetPositionX() - member->GetPositionX()) / dist * weight;
+            outY += (bot->GetPositionY() - member->GetPositionY()) / dist * weight;
+        }
+    }
+
+    bool TechnicianFighting(Player* bot)
+    {
+        std::list<Creature*> technicians;
+        bot->GetCreatureListWithEntryInGrid(technicians, NPC_BLACKWING_TECHNICIAN, TECHNICIAN_RANGE);
+        for (Creature* technician : technicians)
+            if (technician && technician->IsAlive() && technician->IsInCombat())
+                return true;
+        return false;
+    }
+}
+
+bool RcBwlTechnicianSpreadTrigger::IsActive()
+{
+    if (!SpreadsFromBombs(bot) || !bot->IsInCombat())
+        return false;
+
+    uint32 const now = GameTime::GetGameTimeMS().count();
+    if (now < _nextStepMs)
+        return false;
+
+    // The cheap test first: only a bot in a clump has anything to do.
+    float x, y;
+    Repulsion(bot, x, y);
+    if (x == 0.0f && y == 0.0f)
+        return false;
+
+    if (!TechnicianFighting(bot))
+        return false;
+
+    _nextStepMs = now + TECHNICIAN_STEP_INTERVAL_MS;
+    return true;
+}
+
+bool RcBwlTechnicianSpreadAction::Execute(Event /*event*/)
+{
+    float pushX, pushY;
+    Repulsion(bot, pushX, pushY);
+    float const length = std::sqrt(pushX * pushX + pushY * pushY);
+    if (length < 0.01f)
+        return false;
+
+    Map* map = bot->GetMap();
+    Unit* target = AI_VALUE(Unit*, "current target");
+    float const base = std::atan2(pushY, pushX);
+
+    // Straight out of the clump first, then slide along walls; keep sight of the target so
+    // casters don't step out of their own fight.
+    static float const offsets[] = { 0.0f, float(M_PI_4), -float(M_PI_4), float(M_PI_2), -float(M_PI_2) };
+    for (float const offset : offsets)
+    {
+        float const angle = base + offset;
+        float const x = bot->GetPositionX() + std::cos(angle) * TECHNICIAN_STEP;
+        float const y = bot->GetPositionY() + std::sin(angle) * TECHNICIAN_STEP;
+        float const z = map->GetHeight(bot->GetPhaseMask(), x, y, bot->GetPositionZ() + 3.0f);
+
+        if (z <= INVALID_HEIGHT || std::fabs(z - bot->GetPositionZ()) > 3.0f)
+            continue;
+        if (!bot->IsWithinLOS(x, y, z + 2.0f))
+            continue;
+        if (target && !target->IsWithinLOS(x, y, z + 2.0f))
+            continue;
+
+        if (MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT))
+            return true;
+    }
+    return false;
 }
 
 // --- Broodlord Lashlayer --------------------------------------------------

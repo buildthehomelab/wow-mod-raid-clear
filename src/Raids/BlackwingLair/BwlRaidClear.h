@@ -22,6 +22,9 @@
  *   - Broodlord: ranged and healers stay out of Blast Wave (20 yd around him).
  *   - Ebonroc: the off-tank taunts him off a tank with Shadow of Ebonroc (he heals on every hit on
  *     it), and that tank doesn't taunt him back while it lasts.
+ *   - Technician packs: Blackwing Technicians throw Bomb (22334, 5 yd splash) at random raiders
+ *     within 30 yd, so ranged and healers keep 6 yd from each other while one is fighting nearby.
+ *     Only bots in a clump move, one short step at a time.
  *
  * Released under the MIT License.
  */
@@ -56,6 +59,7 @@ namespace RaidClear::BlackwingLair
         NPC_BLACKWING_WARLOCK     = 12459,  // Demon Portal
         NPC_DEATH_TALON_CAPTAIN   = 12467,  // Commanding Shout, Mark of Detonation
         NPC_DEATH_TALON_HATCHER   = 12468,  // Suppression Room elites
+        NPC_BLACKWING_TECHNICIAN  = 13996,  // Bomb
         NPC_ENRAGED_FELGUARD      = 14101,  // from the warlocks' Demon Portals
 
         NPC_CORRUPTED_RED_WHELP    = 14022,
@@ -79,6 +83,15 @@ namespace RaidClear::BlackwingLair
     // Blast Wave (23331) radius is 20 yd.
     constexpr float BROODLORD_RANGED_MIN = 23.0f;
     constexpr float BROODLORD_RANGED_TARGET = 26.0f;
+
+    // Bomb (22334) splashes 5 yd; a yard more so the edge of one doesn't reach the next bot.
+    constexpr float TECHNICIAN_SPREAD = 6.0f;
+    // Technicians fighting this close count; Bomb's own range is 30 yd.
+    constexpr float TECHNICIAN_RANGE = 35.0f;
+    // Each step out of a clump, and the pause before the next one. Re-deciding every tick makes
+    // the whole camp zigzag as every bot reacts to every other bot's last move.
+    constexpr float TECHNICIAN_STEP = 4.0f;
+    constexpr uint32 TECHNICIAN_STEP_INTERVAL_MS = 1500;
 
     std::vector<KillOrderEntry> const& KillOrder();
 
@@ -111,6 +124,25 @@ class RcBwlDisarmSuppressionAction : public Action
 {
 public:
     RcBwlDisarmSuppressionAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl disarm suppression") {}
+    bool Execute(Event event) override;
+};
+
+// --- Technician packs -----------------------------------------------------
+
+class RcBwlTechnicianSpreadTrigger : public Trigger
+{
+public:
+    RcBwlTechnicianSpreadTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl technician spread") {}
+    bool IsActive() override;
+
+private:
+    uint32 _nextStepMs = 0;  // game time (ms) before which this bot doesn't step again
+};
+
+class RcBwlTechnicianSpreadAction : public MovementAction
+{
+public:
+    RcBwlTechnicianSpreadAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl technician spread") {}
     bool Execute(Event event) override;
 };
 
