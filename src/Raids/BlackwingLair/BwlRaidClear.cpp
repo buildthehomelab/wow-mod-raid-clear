@@ -147,6 +147,10 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
         new TriggerNode("rc bwl detonation keep away", { NextAction("rc bwl detonation keep away", ACTION_RAID + 1) }));
 
     triggers.push_back(new TriggerNode("rc bwl seether tranq", { NextAction("rc bwl seether tranq", ACTION_RAID) }));
+
+    // Above playerbots' "tank assist" (50), below the raid mechanics.
+    triggers.push_back(
+        new TriggerNode("rc bwl captain hand off", { NextAction("rc bwl captain hand off", ACTION_RAID - 3) }));
 }
 
 void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
@@ -652,32 +656,27 @@ float RcBwlShadowOfEbonrocMultiplier::GetValue(Action* action)
 
 namespace
 {
-    // The main tank of a group that has an off-tank to give the Captain to, while there's
-    // something else in the fight for the main tank to hold.
-    bool MainTankLeavesCaptain(PlayerbotAI* botAI, Player* bot)
+    // A Captain the main tank leaves to an off-tank (see Tanks::OwnTankAddsForOffTanks).
+    bool MainTankLeaves(PlayerbotAI* botAI, Player* bot, Unit* unit)
     {
-        if (!RaidClear::GetConfig().tankSplit || !bot->IsInCombat())
+        if (!RaidClear::GetConfig().tankSplit || !unit || !RaidClear::Tanks::IsOwnTankAdd(unit))
+            return false;
+        if (RaidClear::Tanks::ActingMainTank(bot->GetGroup()) != bot)
             return false;
 
-        Group* group = bot->GetGroup();
-        if (RaidClear::Tanks::ActingMainTank(group) != bot || !RaidClear::Tanks::HasOffTank(group, bot))
-            return false;
-
-        for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
-            if (Unit* unit = botAI->GetUnit(guid))
-                if (unit->IsAlive() && !RaidClear::Tanks::IsOwnTankAdd(unit))
-                    return true;
-        return false;
+        GuidVector const& attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        return RaidClear::Tanks::OwnTankAddsForOffTanks(botAI, bot, attackers).count(unit->GetGUID()) != 0;
     }
 
-    // The explosion hits the marked player's allies, not the player; tanks stay with their mobs.
+    // The explosion hits the marked player's allies; tanks stay with their mobs. A non-tank that
+    // carries a Mark itself still keeps out of another one.
     bool AvoidsDetonation(Player* bot)
     {
-        return !PlayerbotAI::IsTank(bot) && !bot->HasAura(SPELL_MARK_OF_DETONATION);
+        return !PlayerbotAI::IsTank(bot);
     }
 
-    // The nearest other group member carrying Mark of Detonation, closer than `range`.
-    Player* MarkedAllyWithin(Player* bot, float range)
+    // The nearest other group member carrying Mark of Detonation within `range` of `pos`.
+    Player* MarkedAllyNear(Player* bot, WorldObject const* pos, float range)
     {
         Group* group = bot->GetGroup();
         if (!group)
@@ -688,11 +687,11 @@ namespace
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->GetSource();
-            if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId() ||
+            if (!member || member == bot || !member->IsAlive() || !member->IsInMap(bot) ||
                 !member->HasAura(SPELL_MARK_OF_DETONATION))
                 continue;
 
-            float const dist = bot->GetExactDist(member);
+            float const dist = pos->GetExactDist(member);
             if (dist < best)
             {
                 nearest = member;
@@ -705,35 +704,60 @@ namespace
 
 void RaidClearBlackwingLairStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type)
 {
-    // The main tank's own target picking skips the Captain; an off-tank takes him.
-    if (type != TargetValueExclusionType::Tank)
+    // The main tank's own target picking skips the Captains its off-tanks take.
+    if (type != TargetValueExclusionType::Tank || !RaidClear::GetConfig().tankSplit)
         return;
 
     Player* bot = botAI->GetBot();
-    if (!MainTankLeavesCaptain(botAI, bot))
+    if (RaidClear::Tanks::ActingMainTank(bot->GetGroup()) != bot)
         return;
 
-    for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
-        if (RaidClear::Tanks::IsOwnTankAdd(botAI->GetUnit(guid)))
-            exclusions.insert(guid);
+    GuidVector const& attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+    for (ObjectGuid const& guid : RaidClear::Tanks::OwnTankAddsForOffTanks(botAI, bot, attackers))
+        exclusions.insert(guid);
+}
+
+bool RcBwlCaptainHandOffTrigger::IsActive()
+{
+    return bot->IsInCombat() && MainTankLeaves(botAI, bot, AI_VALUE(Unit*, "current target"));
+}
+
+bool RcBwlCaptainHandOffAction::Execute(Event /*event*/)
+{
+    // "tank target" already skips the Captain (the exclusions above). "tank assist" only switches
+    // targets while the tank has aggro on its current one, so it never moves off him by itself.
+    Unit* next = AI_VALUE(Unit*, "tank target");
+    if (next && next != AI_VALUE(Unit*, "current target") && !MainTankLeaves(botAI, bot, next))
+        return Attack(next);
+
+    // Nothing else to hold: stop rather than follow him to his tank.
+    bot->AttackStop();
+    context->GetValue<Unit*>("current target")->Set(nullptr);
+    return true;
 }
 
 bool RcBwlDetonationKeepAwayTrigger::IsActive()
 {
-    return bot->IsInCombat() && AvoidsDetonation(bot) && MarkedAllyWithin(bot, DETONATION_KEEP_AWAY);
+    return bot->IsInCombat() && AvoidsDetonation(bot) && MarkedAllyNear(bot, bot, DETONATION_KEEP_AWAY);
 }
 
 bool RcBwlDetonationKeepAwayAction::Execute(Event /*event*/)
 {
-    Player* marked = MarkedAllyWithin(bot, DETONATION_KEEP_AWAY);
-    if (!marked)
+    Player* marked = MarkedAllyNear(bot, bot, DETONATION_KEEP_AWAY);
+    Group* group = bot->GetGroup();
+    if (!marked || !group)
         return false;
 
-    // Straight away from the marked player first, then fanning out to either side.
+    // Out of the circle, on the side nearest the main tank: that's where the healers, the melee
+    // and the rest of the pack are.
+    Player* mainTank = RaidClear::Tanks::ActingMainTank(bot->GetGroup());
     Map* map = bot->GetMap();
     float const base = marked->GetAngle(bot);
     float const reach = DETONATION_KEEP_AWAY_TARGET + marked->GetObjectSize() + bot->GetObjectSize();
-    static float const offsets[] = { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f };
+
+    static float const offsets[] = { 0.0f, 0.5f, -0.5f, 1.0f, -1.0f, 1.5f, -1.5f, 2.0f, -2.0f };
+    bool found = false;
+    float bestX = 0.0f, bestY = 0.0f, bestZ = 0.0f, bestScore = 0.0f;
     for (float const offset : offsets)
     {
         float const angle = base + offset;
@@ -742,11 +766,32 @@ bool RcBwlDetonationKeepAwayAction::Execute(Event /*event*/)
         float const z = map->GetHeight(bot->GetPhaseMask(), x, y, bot->GetPositionZ() + 5.0f);
         if (z <= INVALID_HEIGHT || std::fabs(z - bot->GetPositionZ()) > 5.0f)
             continue;
+        if (!bot->IsWithinLOS(x, y, z + 2.0f))
+            continue;
+        // Not into another marked player's circle.
+        Position const spot(x, y, z);
+        bool inOther = false;
+        for (GroupReference* ref = group->GetFirstMember(); ref && !inOther; ref = ref->next())
+            if (Player* member = ref->GetSource())
+                inOther = member != bot && member != marked && member->IsAlive() && member->IsInMap(bot) &&
+                          member->HasAura(SPELL_MARK_OF_DETONATION) &&
+                          member->GetExactDist(&spot) < DETONATION_KEEP_AWAY;
+        if (inOther)
+            continue;
 
-        if (MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT))
-            return true;
+        float const score = mainTank && mainTank != marked ? mainTank->GetExactDist(&spot) : bot->GetExactDist(&spot);
+        if (!found || score < bestScore)
+        {
+            found = true;
+            bestX = x;
+            bestY = y;
+            bestZ = z;
+            bestScore = score;
+        }
     }
-    return false;
+
+    return found &&
+           MoveTo(bot->GetMapId(), bestX, bestY, bestZ, false, false, false, false, MovementPriority::MOVEMENT_COMBAT);
 }
 
 float RcBwlDetonationHoldMultiplier::GetValue(Action* action)
@@ -759,42 +804,75 @@ float RcBwlDetonationHoldMultiplier::GetValue(Action* action)
     if (!bot->IsInCombat() || !AvoidsDetonation(bot))
         return 1.0f;
 
-    return MarkedAllyWithin(bot, DETONATION_HOLD) ? 0.0f : 1.0f;
+    // Only movement toward something inside a marked player's circle, and only once the bot is
+    // already close enough to work from where it stands. A healer further out may still come in
+    // to heal the marked tank; it stops at spell range, outside the circle.
+    Unit* target = action->GetTarget();
+    if (!target || target == bot)
+        return 1.0f;
+
+    // Walking toward the marked player itself only happens to heal it (into range or line of
+    // sight); keep-away pulls the healer back out if that takes it too close.
+    if (target->ToPlayer() && target->ToPlayer()->HasAura(SPELL_MARK_OF_DETONATION))
+        return 1.0f;
+
+    Player* marked = MarkedAllyNear(bot, target, DETONATION_KEEP_AWAY);
+    if (!marked || bot->GetExactDist(marked) > DETONATION_HOLD + 4.0f)
+        return 1.0f;
+    return 0.0f;
 }
 
 float RcBwlCaptainMainTankMultiplier::GetValue(Action* action)
 {
-    if (!PlayerbotAI::IsTank(bot) || !RaidClear::Tanks::IsOwnTankAdd(action->GetTarget()))
-        return 1.0f;
-
     bool const taunt = std::find(TAUNT_ACTIONS.begin(), TAUNT_ACTIONS.end(), action->getName()) != TAUNT_ACTIONS.end();
     if (!taunt && !dynamic_cast<AttackAction*>(action))
         return 1.0f;
+    if (dynamic_cast<RcBwlCaptainHandOffAction*>(action) || !PlayerbotAI::IsTank(bot))
+        return 1.0f;
 
-    return MainTankLeavesCaptain(botAI, bot) ? 0.0f : 1.0f;
+    return MainTankLeaves(botAI, bot, action->GetTarget()) ? 0.0f : 1.0f;
+}
+
+namespace
+{
+    // An enraged Seether within Tranquilizing Shot range that this hunter should take: the nearest
+    // of the group's hunter bots that can shoot it now, so they don't all fire at the same one.
+    Creature* SeetherToTranq(PlayerbotAI* botAI, Player* bot)
+    {
+        std::list<Creature*> seethers;
+        bot->GetCreatureListWithEntryInGrid(seethers, NPC_DEATH_TALON_SEETHER, TRANQUILIZING_SHOT_RANGE);
+        for (Creature* seether : seethers)
+        {
+            if (!seether->IsAlive() || !seether->HasAura(SPELL_SEETHER_ENRAGE) ||
+                !botAI->CanCastSpell("tranquilizing shot", seether))
+                continue;
+
+            float const mine = bot->GetExactDist(seether);
+            bool closer = false;
+            if (Group* group = bot->GetGroup())
+                for (GroupReference* ref = group->GetFirstMember(); ref && !closer; ref = ref->next())
+                    if (Player* member = ref->GetSource())
+                    {
+                        if (member == bot || !member->IsAlive() || !member->IsClass(CLASS_HUNTER) ||
+                            !member->IsInMap(bot) || member->GetExactDist(seether) >= mine)
+                            continue;
+                        PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member);
+                        closer = memberAI && memberAI->CanCastSpell("tranquilizing shot", seether);
+                    }
+            if (!closer)
+                return seether;
+        }
+        return nullptr;
+    }
 }
 
 bool RcBwlSeetherTranqTrigger::IsActive()
 {
-    if (!bot->IsClass(CLASS_HUNTER) || !bot->IsInCombat())
-        return false;
-
-    std::list<Creature*> seethers;
-    bot->GetCreatureListWithEntryInGrid(seethers, NPC_DEATH_TALON_SEETHER, TRANQUILIZING_SHOT_RANGE);
-    for (Creature* seether : seethers)
-        if (seether->IsAlive() && seether->HasAura(SPELL_SEETHER_ENRAGE) &&
-            botAI->CanCastSpell("tranquilizing shot", seether))
-            return true;
-    return false;
+    return bot->IsClass(CLASS_HUNTER) && bot->IsInCombat() && SeetherToTranq(botAI, bot);
 }
 
 bool RcBwlSeetherTranqAction::Execute(Event /*event*/)
 {
-    std::list<Creature*> seethers;
-    bot->GetCreatureListWithEntryInGrid(seethers, NPC_DEATH_TALON_SEETHER, TRANQUILIZING_SHOT_RANGE);
-    for (Creature* seether : seethers)
-        if (seether->IsAlive() && seether->HasAura(SPELL_SEETHER_ENRAGE) &&
-            botAI->CanCastSpell("tranquilizing shot", seether))
-            return botAI->CastSpell("tranquilizing shot", seether);
-    return false;
+    Creature* seether = SeetherToTranq(botAI, bot);
+    return seether && botAI->CastSpell("tranquilizing shot", seether);
 }

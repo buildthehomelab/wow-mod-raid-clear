@@ -52,6 +52,7 @@ public:
         creators["rc bwl nefarian move out"] = &RaidClearActionContext::bwl_nefarian_move_out;
         creators["rc bwl detonation keep away"] = &RaidClearActionContext::bwl_detonation_keep_away;
         creators["rc bwl seether tranq"] = &RaidClearActionContext::bwl_seether_tranq;
+        creators["rc bwl captain hand off"] = &RaidClearActionContext::bwl_captain_hand_off;
     }
 
 private:
@@ -80,6 +81,7 @@ private:
     }
     static Action* bwl_detonation_keep_away(PlayerbotAI* botAI) { return new RcBwlDetonationKeepAwayAction(botAI); }
     static Action* bwl_seether_tranq(PlayerbotAI* botAI) { return new RcBwlSeetherTranqAction(botAI); }
+    static Action* bwl_captain_hand_off(PlayerbotAI* botAI) { return new RcBwlCaptainHandOffAction(botAI); }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -104,6 +106,7 @@ public:
         creators["rc bwl nefarian ranged"] = &RaidClearTriggerContext::bwl_nefarian_ranged;
         creators["rc bwl detonation keep away"] = &RaidClearTriggerContext::bwl_detonation_keep_away;
         creators["rc bwl seether tranq"] = &RaidClearTriggerContext::bwl_seether_tranq;
+        creators["rc bwl captain hand off"] = &RaidClearTriggerContext::bwl_captain_hand_off;
     }
 
 private:
@@ -134,6 +137,7 @@ private:
     }
     static Trigger* bwl_detonation_keep_away(PlayerbotAI* botAI) { return new RcBwlDetonationKeepAwayTrigger(botAI); }
     static Trigger* bwl_seether_tranq(PlayerbotAI* botAI) { return new RcBwlSeetherTranqTrigger(botAI); }
+    static Trigger* bwl_captain_hand_off(PlayerbotAI* botAI) { return new RcBwlCaptainHandOffTrigger(botAI); }
 };
 
 #endif

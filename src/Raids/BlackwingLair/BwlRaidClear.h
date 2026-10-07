@@ -39,11 +39,13 @@
  *     Flamescale each). The Captain puts Mark of Detonation (22438, 30s, magic) on whoever he
  *     hits; every melee hit on that player then explodes (22439) for 657-844 fire on all of that
  *     player's allies within 30 yd. So the Captain gets an off-tank of his own: the main tank
- *     leaves him alone, an off-tank picks him up (taking him off the main tank if needed) and
- *     drags him 36 yd from the main tank's mob, and every other non-tank stays 32 yd away from
- *     anyone carrying the Mark. He dies last. Wyrmkin die first (Fireball Volley hits the whole
- *     raid within 45 yd), then Flamescales and Seethers; hunters Tranquilizing Shot an enraged
- *     Seether (22428: +100% attack speed).
+ *     leaves him alone (and drops him if it had him), an off-tank taunts him off whoever has him
+ *     and drags him 36 yd from the main tank's mob, and keeps him until he dies. Every other
+ *     non-tank stays 32 yd away from anyone carrying the Mark, moving out toward the main tank,
+ *     and doesn't walk back toward a target inside that circle. He dies last, mostly to ranged.
+ *     With more Captains than free off-tanks, the main tank keeps the extra one. Wyrmkin die
+ *     first (Fireball Volley hits the whole raid within 45 yd), then Flamescales and Seethers;
+ *     the nearest hunter Tranquilizing Shots an enraged Seether (22428: +100% attack speed).
  *
  * Released under the MIT License.
  */
@@ -160,8 +162,8 @@ namespace RaidClear::BlackwingLair
     constexpr float NEFARIAN_RANGED_TARGET = 37.5f;
 
     // Mark of Detonation's explosion (22439) hits the marked player's allies within 30 yd.
-    // Non-tanks keep a margin beyond it, and stand still while close to the edge so that their
-    // own movement doesn't walk them back in.
+    // Non-tanks keep a margin beyond it. Within DETONATION_HOLD (+4) of the marked player they
+    // don't walk toward a target inside the circle.
     constexpr float DETONATION_RADIUS = 30.0f;
     constexpr float DETONATION_KEEP_AWAY = 32.0f;
     constexpr float DETONATION_KEEP_AWAY_TARGET = 35.0f;
@@ -372,13 +374,28 @@ public:
     bool Execute(Event event) override;
 };
 
-// Near a marked player, a non-tank's other movement (chasing its target into melee, following)
-// is held, so it doesn't walk back into the explosion it just left.
+// A non-tank doesn't walk toward a target inside a marked player's circle (chasing a mob next
+// to the Captain's tank), so it doesn't walk back into the explosion it just left.
 class RcBwlDetonationHoldMultiplier : public Multiplier
 {
 public:
     RcBwlDetonationHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl detonation hold") {}
     float GetValue(Action* action) override;
+};
+
+// The main tank drops a Captain it is still targeting once he is an off-tank's.
+class RcBwlCaptainHandOffTrigger : public Trigger
+{
+public:
+    RcBwlCaptainHandOffTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl captain hand off") {}
+    bool IsActive() override;
+};
+
+class RcBwlCaptainHandOffAction : public AttackAction
+{
+public:
+    RcBwlCaptainHandOffAction(PlayerbotAI* botAI) : AttackAction(botAI, "rc bwl captain hand off") {}
+    bool Execute(Event event) override;
 };
 
 // The main tank doesn't taunt a Captain back from the off-tank that came for him.
