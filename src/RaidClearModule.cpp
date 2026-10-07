@@ -19,6 +19,7 @@
 #include "RaidClearConfig.h"
 #include "RaidClearContexts.h"
 #include "RaidClearRegistry.h"
+#include "Common/DeathLog.h"
 #include "Common/TankRoles.h"
 
 #include "Config.h"
@@ -61,6 +62,7 @@ namespace RaidClear
         sConfig.tankSplit = sConfigMgr->GetOption<bool>("RaidClear.Tanks.Split", true);
         sConfig.tankSeparation = sConfigMgr->GetOption<float>("RaidClear.Tanks.Separation", 12.0f);
         sConfig.separateOnBosses = sConfigMgr->GetOption<bool>("RaidClear.Tanks.SeparateOnBosses", false);
+        sConfig.deathLog = sConfigMgr->GetOption<bool>("RaidClear.DeathLog", true);
         sConfig.raidEnabled.clear();
         for (RaidEntry const& raid : Raids)
             sConfig.raidEnabled[raid.mapId] =
@@ -189,4 +191,5 @@ void AddRaidClearScripts()
 {
     new RaidClearWorldScript();
     new RaidClearPlayerScript();
+    DeathLog::AddScripts();
 }

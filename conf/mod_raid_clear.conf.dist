@@ -45,7 +45,9 @@ RaidClear.Tanks.AssignMainTank = 1
 #    RaidClear.Tanks.Split
 #        Description: In every raid, the other tanks act as off-tanks: they never take the main
 #                     tank's target, they pick up mobs hitting non-tanks first, then extra mobs on
-#                     the main tank, and leave mobs another off-tank holds.
+#                     the main tank, and leave mobs another off-tank holds. In packs where every
+#                     tank should hold one (BWL's Death Talon Wyrmguards) each off-tank is handed
+#                     one at the pull and taunts it off the main tank.
 #                     On bosses that cut their tank's threat or can't be taunted (Broodlord
 #                     Lashlayer, Firemaw, Ebonroc, Flamegor, Vaelastrasz) an off-tank with no add to hold attacks the boss too, so it catches
 #                     the boss after a Knock Away / Wing Buffet. Blackwing Lair's Suppression Room
@@ -60,7 +62,9 @@ RaidClear.Tanks.Split = 1
 #        Description: Minimum distance (yards) between the off-tank's mob and the main tank's mob
 #                     on trash. Mobs with a big AoE get more: each raid lists their radius and the
 #                     pair is kept at least the sum apart (Molten Core: Molten Giants 30 yd apart,
-#                     Molten Destroyers 36). Only spots on dry ground at about the same height and
+#                     Molten Destroyers 36). Each off-tank also keeps its mob that far from the
+#                     mobs of the off-tanks ahead of it in group order (BWL's three Wyrmguards end
+#                     up 30 yd from each other). Only spots on dry ground at about the same height and
 #                     in the main tank's line of sight are used. 0 = don't move.
 #        Default:     12
 #
@@ -76,6 +80,19 @@ RaidClear.Tanks.Separation = 12
 #
 
 RaidClear.Tanks.SeparateOnBosses = 0
+
+#
+#    RaidClear.DeathLog
+#        Description: In every raid, write a line to the server log (logger "module", so it lands
+#                     in Server.log) for every player or bot death: class and role, the boss being
+#                     fought with its health, buffs, distance and line of sight (or "trash"), the
+#                     killing blow, the last 6 seconds of damage grouped by spell and source, and
+#                     the victim's debuffs. When a boss dies or resets after deaths, one more
+#                     line tallies what killed people in that pull. grep "[RaidClear]" to read it.
+#        Default:     1
+#
+
+RaidClear.DeathLog = 1
 
 #
 #    RaidClear.MoltenCore.Enable
@@ -94,7 +111,7 @@ RaidClear.MoltenCore.Enable = 1
 #                     rogue), ranged out of Broodlord's Blast Wave, tank swap on Shadow of Ebonroc,
 #                     ranged/healers 6 yd apart while Blackwing Technicians (Bomb) are fighting,
 #                     hide from Firemaw at 5-7 Flame Buffet stacks, duck Chromaggus' breaths (not
-#                     Time Lapse), stay out of Nefarian's Bellowing Roar, Razorgore/Nefarian add
+#                     Time Lapse) and remove his Brood Affliction: Black first, stay out of Nefarian's Bellowing Roar, Razorgore/Nefarian add
 #                     kill order, Vaelastrasz co-tanked.
 #        Default:     1
 #

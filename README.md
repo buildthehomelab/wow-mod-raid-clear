@@ -54,6 +54,19 @@ pile. In any raid:
 - **Endless adds are ignored.** Off-tanks don't chase adds that respawn faster than anyone can
   tank them (Blackwing Lair's Suppression Room whelps).
 
+### Death log (all raids)
+
+Every death in a raid gets one line in the server log, so a bad night can be read back and the
+mechanic that's killing the bots found:
+
+```
+[RaidClear] death: Name (Mage, dps, bot) map 469 instance 1 | Chromaggus 41% [Frenzy, ...] 22 yd, in LOS | killed by Incinerate (Chromaggus) 3120 | last 6s: Incinerate (Chromaggus) 3120; melee (Chromaggus) 2x 1850 | debuffs: Brood Affliction: Black, ...
+[RaidClear] Chromaggus killed (map 469 instance 1): 24 deaths | Incinerate (Chromaggus) 9, melee (Chromaggus) 6, ...
+```
+
+Damage is what was actually dealt. A hit whose spell can't be matched shows as `unknown`.
+`grep "\[RaidClear\]" Server.log` pulls them out.
+
 ## Raids
 
 ### Molten Core
@@ -82,13 +95,13 @@ and the fire resistance auras. On top of that:
 | Vaelastrasz | He can't be taunted, so the off-tank keeps itself second on threat for when **Burning Adrenaline** kills the main tank. |
 | Warlock packs | Kill the **Blackwing Warlocks** first: each one keeps opening Demon Portals that summon Enraged Felguards until it dies. Then Taskmasters and Spellbinders, then the felguards. |
 | Death Talon packs (Hall of the Dragonspawn) | The **Death Talon Captain** puts **Mark of Detonation** on whoever he hits, and every melee hit on that player then explodes on all of that player's allies within 30 yards. So he gets an off-tank of his own: the main tank leaves him alone, an off-tank taunts him off whoever has him and holds him 36 yards from the main tank's mob until he dies. Every other non-tank stays 32 yards from anyone carrying the Mark (moving out toward the main tank) and doesn't walk back toward a target inside that circle. Kill order: **Wyrmkin** first (**Fireball Volley** hits everyone within 45 yards), then **Flamescales** and **Seethers**, the Captain last, mostly by ranged; melee join in whenever the Mark is dispelled. The nearest hunter **Tranquilizing Shots** an enraged Seether. |
-| Wyrmguard packs | Two **Death Talon Wyrmguards** are tanked 30 yards apart (**War Stomp** reaches 15). |
+| Wyrmguard packs | Every **Death Talon Wyrmguard** gets its own tank. As soon as a pack is pulled (like the three before Ebonroc), the main tank keeps one and each off-tank runs in, taunts another off whoever has it and holds it. Then they spread 30 yards from each other (**War Stomp** reaches 15): the first off-tank drags its Wyrmguard away from the main tank's, the next one away from both. With fewer tanks than Wyrmguards the main tank keeps the extra ones. |
 | Technician packs | Ranged bots and healers keep 6 yards from each other while **Blackwing Technicians** are fighting nearby, so one **Bomb** (5-yard splash) hits one bot. Only bots in a clump move, one short step every 1.5 seconds. |
 | Suppression Room | With the `raid` bot cheat on (the default), bots turn off every armed **Suppression Device** within 22 yards: the aura reaches 20, playerbots' own disarm only 15. Kill the Hatchers and Taskmasters before Broodlord if they come along. Off-tanks ignore the whelps. |
 | Broodlord Lashlayer | The off-tank co-tanks him through **Knock Away**. Ranged and healers stay out of **Blast Wave** (20 yards); a healer only backs off as far as it can still reach the tank. |
 | Firemaw, Ebonroc, Flamegor | The off-tank co-tanks through **Wing Buffet**. |
 | Firemaw | At 5-7 stacks of **Flame Buffet** (varies per bot, so the raid doesn't leave together) a non-tank hides behind cover until the stacks drop. At most a third of the healers hide at once. Hidden bots keep healing and casting at anything they can see. |
-| Chromaggus | When he starts a breath, non-tanks with cover within a 2-second run duck behind it. **Time Lapse** is the exception: everyone takes it, because it halves the threat of everyone it hits, tank included. |
+| Chromaggus | When he starts a breath, non-tanks with cover within a 2-second run duck behind it. **Time Lapse** is the exception: everyone takes it, because it halves the threat of everyone it hits, tank included. **Brood Affliction: Black** (more fire damage taken) comes off before anything else: mages, druids and Cleanse Spirit shamans split the cursed players between them, tanks first, then the lowest on health; healers leave it to the others while a tank is below half health. Bronze is already handled by playerbots (Hourglass Sand). |
 | Nefarian | Ranged and healers stay out of **Bellowing Roar** (35-yard fear), healers only as far as they can still reach the tank. Kill the **Drakonids** and **Bone Constructs** before him. |
 | Ebonroc | The off-tank taunts him off a tank with **Shadow of Ebonroc** (he heals on every hit on it), and that tank leaves him alone until it wears off. |
 
@@ -132,6 +145,7 @@ also keep playerbots' own raid strategies.
 | `RaidClear.Tanks.Split` | 1 | Off-tanks leave the main tank's target and pick up the rest. |
 | `RaidClear.Tanks.Separation` | 12 | Minimum yards between the two tanks' mobs on trash; big-AoE mobs get more (0 = off). |
 | `RaidClear.Tanks.SeparateOnBosses` | 0 | Also separate during boss fights. |
+| `RaidClear.DeathLog` | 1 | Log every raid death (cause, last 6s of damage, debuffs, boss) and a per-pull tally. |
 | `RaidClear.MoltenCore.Enable` | 1 | Molten Core strategy. |
 | `RaidClear.BlackwingLair.Enable` | 1 | Blackwing Lair strategy. |
 
@@ -160,6 +174,12 @@ Category: Raids
 - Vaelastrasz: the off-tank keeps up threat so it can take over when **Burning Adrenaline** kills the
   main tank.
 - Blackwing Lair: bots kill the Death Talon casters first and tank the Wyrmguards well apart.
+- Blackwing Lair: the three **Death Talon Wyrmguards** before Ebonroc no longer all land on the
+  main tank. Three tanks run in and each taunts one of its own, then they spread 30 yards apart.
+- Chromaggus: mages, druids and shamans remove **Brood Affliction: Black** before anything else,
+  so his fire breaths stop one-shotting the cursed.
+- Raids: every death is written to the server log with what killed it, so wipes can be traced to
+  the mechanic behind them.
 - Firemaw: bots hide behind cover to drop **Flame Buffet** stacks, a few at a time, with healers
   taking turns.
 - Chromaggus: bots duck behind cover when he breathes, except for **Time Lapse**.

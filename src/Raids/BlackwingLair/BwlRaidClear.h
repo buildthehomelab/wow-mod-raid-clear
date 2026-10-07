@@ -29,6 +29,10 @@
  *     at 5 stacks hides behind cover until it drops off.
  *   - Chromaggus: non-tanks duck behind cover while he casts a breath, except Time Lapse, which
  *     everyone should take because it halves the threat of everyone it hits, tank included.
+ *     Brood Affliction: Black (a curse that makes its target take more fire damage, which
+ *     Incinerate and Ignite Flesh deal) is removed before anything else the curse removers would
+ *     do: mages, druids and Cleanse Spirit shamans split the cursed players between them, tanks
+ *     first, then the lowest on health. Healers leave it while a tank is below half health.
  *   - Nefarian: ranged and healers stay out of Bellowing Roar (35 yd fear).
  *   - Razorgore's and Nefarian's adds die in order: dragonkin first, then casters, then melee;
  *     Drakonids and Bone Constructs before Nefarian.
@@ -116,6 +120,12 @@ namespace RaidClear::BlackwingLair
         SPELL_FLAME_BUFFET      = 23341,
         SPELL_MARK_OF_DETONATION = 22438,  // Death Talon Captain
         SPELL_SEETHER_ENRAGE    = 22428,
+        SPELL_BROOD_AFFLICTION_BLACK = 23154,  // Chromaggus: curse, more fire damage taken
+
+        // Curse removal, for telling who in the group can take Black off.
+        SPELL_MAGE_REMOVE_CURSE   = 475,
+        SPELL_DRUID_REMOVE_CURSE  = 2782,
+        SPELL_CLEANSE_SPIRIT      = 51886,
 
         // Chromaggus' breaths (two per instance, every 30s, 2s cast).
         SPELL_INCINERATE        = 23308,
@@ -189,6 +199,9 @@ namespace RaidClear::BlackwingLair
 
     // Adds that get an off-tank of their own (the Death Talon Captain).
     std::vector<uint32> const& TankSplitOwnTankAdds();
+
+    // Packs where every tank takes one (the Death Talon Wyrmguards).
+    std::vector<uint32> const& TankSplitSpreadAdds();
 }
 
 class RaidClearBlackwingLairStrategy : public Strategy
@@ -404,6 +417,20 @@ class RcBwlCaptainMainTankMultiplier : public Multiplier
 public:
     RcBwlCaptainMainTankMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl captain main tank") {}
     float GetValue(Action* action) override;
+};
+
+class RcBwlBlackAfflictionTrigger : public Trigger
+{
+public:
+    RcBwlBlackAfflictionTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl black affliction") {}
+    bool IsActive() override;
+};
+
+class RcBwlBlackAfflictionAction : public Action
+{
+public:
+    RcBwlBlackAfflictionAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl remove black affliction") {}
+    bool Execute(Event event) override;
 };
 
 class RcBwlSeetherTranqTrigger : public Trigger
