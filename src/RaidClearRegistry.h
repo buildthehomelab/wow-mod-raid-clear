@@ -28,8 +28,9 @@ namespace RaidClear
     // Main tank / off-tank split, installed on every raid map (see Common/TankRoles.h).
     inline constexpr char const* TANKS_STRATEGY = "rc raid tanks";
 
-    inline constexpr std::array<RaidEntry, 1> Raids = {{
+    inline constexpr std::array<RaidEntry, 2> Raids = {{
         { 409, "rc moltencore", "MoltenCore" },
+        { 469, "rc bwl", "BlackwingLair" },
     }};
 
     // The raid entry for a map, or nullptr when mod-raid-clear has nothing for it.

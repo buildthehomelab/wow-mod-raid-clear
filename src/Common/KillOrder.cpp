@@ -7,6 +7,7 @@
 #include "KillOrder.h"
 
 #include "RaidClearConfig.h"
+#include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/MoltenCore/McRaidClear.h"
 
 #include "Group.h"
@@ -37,8 +38,9 @@ namespace RaidClear
         static std::vector<KillOrderEntry> const none;
         switch (mapId)
         {
-            case MoltenCore::MAP_ID: return MoltenCore::KillOrder();
-            default:                 return none;
+            case MoltenCore::MAP_ID:    return MoltenCore::KillOrder();
+            case BlackwingLair::MAP_ID: return BlackwingLair::KillOrder();
+            default:                    return none;
         }
     }
 

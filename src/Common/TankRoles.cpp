@@ -7,6 +7,7 @@
 #include "TankRoles.h"
 
 #include "RaidClearConfig.h"
+#include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/MoltenCore/McRaidClear.h"
 
 #include "ChooseTargetActions.h"
@@ -40,6 +41,35 @@ namespace RaidClear::Tanks
                 case MoltenCore::MAP_ID: return MoltenCore::TankSplitSkipBosses();
                 default:                 return none;
             }
+        }
+
+        // Bosses that cut their tank's threat (Knock Away, Wing Buffet): the off-tank builds threat
+        // on them as well, so the boss lands on a tank instead of the top damage dealer.
+        std::vector<uint32> const& CoTankBosses(uint32 mapId)
+        {
+            static std::vector<uint32> const none;
+            switch (mapId)
+            {
+                case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitCoTankBosses();
+                default:                    return none;
+            }
+        }
+
+        // Adds an off-tank never picks up (endless respawning whelps and the like).
+        std::vector<uint32> const& IgnoredAdds(uint32 mapId)
+        {
+            static std::vector<uint32> const none;
+            switch (mapId)
+            {
+                case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitIgnore();
+                default:                    return none;
+            }
+        }
+
+        bool IsIgnoredAdd(Unit const* unit)
+        {
+            std::vector<uint32> const& ignore = IgnoredAdds(unit->GetMapId());
+            return std::find(ignore.begin(), ignore.end(), unit->GetEntry()) != ignore.end();
         }
 
         bool SkipFight(PlayerbotAI* botAI, Player* bot, GuidVector const& attackers)
@@ -136,9 +166,24 @@ namespace RaidClear::Tanks
                mainTank->GetMapId() == bot->GetMapId();
     }
 
+    Unit* CoTankBoss(PlayerbotAI* botAI, Player* bot, GuidVector const& attackers)
+    {
+        std::vector<uint32> const& bosses = CoTankBosses(bot->GetMapId());
+        if (bosses.empty())
+            return nullptr;
+
+        for (ObjectGuid const& guid : attackers)
+            if (Unit* unit = botAI->GetUnit(guid))
+                if (unit->IsAlive() && std::find(bosses.begin(), bosses.end(), unit->GetEntry()) != bosses.end() &&
+                    bot->IsValidAttackTarget(unit) && bot->GetDistance(unit) <= PICKUP_RANGE)
+                    return unit;
+        return nullptr;
+    }
+
     Unit* PickOffTankTarget(PlayerbotAI* botAI, Player* bot, Player* mainTank, GuidVector const& attackers)
     {
         Unit* mainTarget = mainTank->GetVictim();
+        Unit* coBoss = CoTankBoss(botAI, bot, attackers);
 
         // 0 = already on me, 1 = loose on a non-tank, 2 = extra mob on the main tank,
         // 3 = attacking nobody. Mobs held by another off-tank are left alone.
@@ -166,7 +211,8 @@ namespace RaidClear::Tanks
         for (ObjectGuid const& guid : attackers)
         {
             Unit* unit = botAI->GetUnit(guid);
-            if (!unit || unit == mainTarget || !unit->IsAlive() || !bot->IsValidAttackTarget(unit))
+            if (!unit || unit == mainTarget || unit == coBoss || !unit->IsAlive() || !bot->IsValidAttackTarget(unit) ||
+                IsIgnoredAdd(unit))
                 continue;
 
             float const dist = bot->GetDistance(unit);
@@ -188,6 +234,10 @@ namespace RaidClear::Tanks
                 bestDist = dist;
             }
         }
+
+        // Adds that hit somebody come first; otherwise build threat on a boss that sheds it.
+        if (coBoss && (!best || bestRank >= 3))
+            return coBoss;
         return best;
     }
 
@@ -237,7 +287,7 @@ bool RcOffTankTargetTrigger::IsActive()
         return false;
 
     GuidVector const& attackers = AI_VALUE(GuidVector, "attackers");
-    if (attackers.size() < 2 || SkipFight(botAI, bot, attackers))
+    if ((attackers.size() < 2 && !CoTankBoss(botAI, bot, attackers)) || SkipFight(botAI, bot, attackers))
         return false;
 
     Unit* want = PickOffTankTarget(botAI, bot, mainTank, attackers);
@@ -348,9 +398,10 @@ float RcOffTankMultiplier::GetValue(Action* action)
         return 1.0f;
 
     // Only hold back while there is something else to pick up; alone with the main tank's mob,
-    // an off-tank may as well hit it.
+    // an off-tank may as well hit it. A boss that sheds threat is itself what the off-tank wants.
     GuidVector const& attackers = AI_VALUE(GuidVector, "attackers");
     if (SkipFight(botAI, bot, attackers))
         return 1.0f;
-    return PickOffTankTarget(botAI, bot, mainTank, attackers) ? 0.0f : 1.0f;
+    Unit* want = PickOffTankTarget(botAI, bot, mainTank, attackers);
+    return want && want != mainTarget ? 0.0f : 1.0f;
 }

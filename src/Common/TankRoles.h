@@ -12,6 +12,11 @@
  *   - Every other tank is an off-tank. It never takes the main tank's target. It picks up mobs
  *     that are hitting someone who isn't a tank first, then extra mobs on the main tank, and
  *     leaves mobs another off-tank already holds.
+ *   - On bosses that cut their tank's threat (Broodlord's Knock Away, the BWL drakes' Wing
+ *     Buffet) the off-tank attacks the boss whenever no add needs it, so it sits second on
+ *     threat and catches the boss. Playerbots' "lose aggro" never makes a non-main tank taunt
+ *     off another tank, and makes the main tank taunt back.
+ *   - Endless respawning adds a raid lists (BWL's Suppression Room whelps) are never picked up.
  *   - On trash, an off-tank holding a mob drags it away from the main tank's mob, so cleaves
  *     and stomps don't hit both tanks. The distance is measured mob to mob: the configured
  *     separation, or more for mobs with a big AoE (each raid lists those with their radius).
@@ -57,6 +62,9 @@ namespace RaidClear::Tanks
 
     // A tank bot that isn't the acting main tank, in a group that has one.
     bool IsOffTank(Player* bot, Player* mainTank);
+
+    // A living boss in the fight that cuts its tank's threat, which the off-tank co-tanks.
+    Unit* CoTankBoss(PlayerbotAI* botAI, Player* bot, GuidVector const& attackers);
 
     // The mob this off-tank should hold, or nullptr when there's nothing for it.
     Unit* PickOffTankTarget(PlayerbotAI* botAI, Player* bot, Player* mainTank, GuidVector const& attackers);
