@@ -221,7 +221,6 @@ namespace RaidClear::Tanks
         if (!group)
             return result;
 
-        // No distance limit: an off-tank holding one of these is meant to be far from the main tank.
         std::vector<Player*> offTanks;
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
             if (Player* member = ref->GetSource())
@@ -229,6 +228,14 @@ namespace RaidClear::Tanks
                     offTanks.push_back(member);
         if (offTanks.empty())
             return result;
+
+        // Only a bot off-tank close enough to come for one is free to take a new one: a player
+        // tank or one running back from a rez wouldn't. One that already holds one is meant to be
+        // far from the main tank, so that one counts at any distance.
+        auto canTakeOne = [&](Player* offTank)
+        {
+            return GET_PLAYERBOT_AI(offTank) && offTank->GetDistance(mainTank) <= PICKUP_RANGE;
+        };
 
         std::vector<Player*> holding;
         std::vector<Unit*> loose;
@@ -249,17 +256,24 @@ namespace RaidClear::Tanks
                 loose.push_back(unit);
         }
 
-        size_t const free = offTanks.size() - holding.size();
+        size_t free = 0;
+        for (Player* offTank : offTanks)
+            if (std::find(holding.begin(), holding.end(), offTank) == holding.end() && canTakeOne(offTank))
+                ++free;
         for (size_t i = 0; i < loose.size() && i < free; ++i)
             result.insert(loose[i]->GetGUID());
         return result;
     }
 
-    // Single-target taunts, by their playerbots spell names.
+    // Single-target taunts, by their playerbots spell names; all reach 30 yd.
     constexpr std::array<char const*, 4> SINGLE_TAUNTS = { "taunt", "growl", "hand of reckoning", "dark command" };
+    constexpr float TAUNT_RANGE = 30.0f;
 
     bool CanTaunt(PlayerbotAI* botAI, Unit* unit)
     {
+        // CanCastSpell lets an out-of-range target through, and the cast then fails every tick.
+        if (!unit || botAI->GetBot()->GetDistance(unit) > TAUNT_RANGE)
+            return false;
         for (char const* taunt : SINGLE_TAUNTS)
             if (botAI->CanCastSpell(taunt, unit))
                 return true;
@@ -268,6 +282,8 @@ namespace RaidClear::Tanks
 
     bool Taunt(PlayerbotAI* botAI, Unit* unit)
     {
+        if (!unit || botAI->GetBot()->GetDistance(unit) > TAUNT_RANGE)
+            return false;
         for (char const* taunt : SINGLE_TAUNTS)
             if (botAI->CanCastSpell(taunt, unit) && botAI->CastSpell(taunt, unit))
                 return true;
@@ -409,7 +425,12 @@ bool RcOffTankTargetTrigger::IsActive()
         return false;
 
     GuidVector const& attackers = AI_VALUE(GuidVector, "attackers");
-    if ((attackers.size() < 2 && !CoTankBoss(botAI, bot, attackers)) || SkipFight(botAI, bot, attackers))
+    // Alone with the main tank's mob there's nothing to split, unless it's a boss to co-tank or an
+    // add that needs its own tank (the main tank hands those off even when they're the last one).
+    bool const ownTankAdd = std::any_of(attackers.begin(), attackers.end(),
+        [&](ObjectGuid const& guid) { return IsOwnTankAdd(botAI->GetUnit(guid)); });
+    if ((attackers.size() < 2 && !ownTankAdd && !CoTankBoss(botAI, bot, attackers)) ||
+        SkipFight(botAI, bot, attackers))
         return false;
 
     Unit* want = PickOffTankTarget(botAI, bot, mainTank, attackers);
@@ -433,13 +454,17 @@ bool RcOffTankTargetAction::Execute(Event /*event*/)
     if (!want)
         return false;
 
-    bool done = want == AI_VALUE(Unit*, "current target") || Attack(want);
-
     // The class tank strategies taunt a target that isn't attacking them ("lose aggro"), but not
     // off another tank: an own-tank add on the main tank is taunted here.
-    if (IsOwnTankAdd(want) && want->GetVictim() != bot)
-        done = Taunt(botAI, want) || done;
-    return done;
+    bool const taunt = IsOwnTankAdd(want) && want->GetVictim() != bot;
+
+    // Already on it: only the taunt is left to do. Returning true without casting would starve
+    // the rotation and "reach melee" every tick.
+    if (want == AI_VALUE(Unit*, "current target"))
+        return taunt && Taunt(botAI, want);
+
+    bool const attacked = Attack(want);
+    return (taunt && Taunt(botAI, want)) || attacked;
 }
 
 bool RcOffTankSeparateTrigger::IsActive()

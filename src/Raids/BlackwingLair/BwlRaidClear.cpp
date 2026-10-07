@@ -744,7 +744,8 @@ bool RcBwlDetonationKeepAwayTrigger::IsActive()
 bool RcBwlDetonationKeepAwayAction::Execute(Event /*event*/)
 {
     Player* marked = MarkedAllyNear(bot, bot, DETONATION_KEEP_AWAY);
-    if (!marked)
+    Group* group = bot->GetGroup();
+    if (!marked || !group)
         return false;
 
     // Out of the circle, on the side nearest the main tank: that's where the healers, the melee
@@ -770,7 +771,7 @@ bool RcBwlDetonationKeepAwayAction::Execute(Event /*event*/)
         // Not into another marked player's circle.
         Position const spot(x, y, z);
         bool inOther = false;
-        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref && !inOther; ref = ref->next())
+        for (GroupReference* ref = group->GetFirstMember(); ref && !inOther; ref = ref->next())
             if (Player* member = ref->GetSource())
                 inOther = member != bot && member != marked && member->IsAlive() && member->IsInMap(bot) &&
                           member->HasAura(SPELL_MARK_OF_DETONATION) &&
@@ -810,6 +811,11 @@ float RcBwlDetonationHoldMultiplier::GetValue(Action* action)
     if (!target || target == bot)
         return 1.0f;
 
+    // Walking toward the marked player itself only happens to heal it (into range or line of
+    // sight); keep-away pulls the healer back out if that takes it too close.
+    if (target->ToPlayer() && target->ToPlayer()->HasAura(SPELL_MARK_OF_DETONATION))
+        return 1.0f;
+
     Player* marked = MarkedAllyNear(bot, target, DETONATION_KEEP_AWAY);
     if (!marked || bot->GetExactDist(marked) > DETONATION_HOLD + 4.0f)
         return 1.0f;
@@ -829,8 +835,8 @@ float RcBwlCaptainMainTankMultiplier::GetValue(Action* action)
 
 namespace
 {
-    // An enraged Seether within Tranquilizing Shot range that this hunter should take: the group's
-    // hunter nearest to it, so they don't all fire at the same one.
+    // An enraged Seether within Tranquilizing Shot range that this hunter should take: the nearest
+    // of the group's hunter bots that can shoot it now, so they don't all fire at the same one.
     Creature* SeetherToTranq(PlayerbotAI* botAI, Player* bot)
     {
         std::list<Creature*> seethers;
@@ -846,8 +852,13 @@ namespace
             if (Group* group = bot->GetGroup())
                 for (GroupReference* ref = group->GetFirstMember(); ref && !closer; ref = ref->next())
                     if (Player* member = ref->GetSource())
-                        closer = member != bot && member->IsAlive() && member->IsClass(CLASS_HUNTER) &&
-                                 member->IsInMap(bot) && member->GetExactDist(seether) < mine;
+                    {
+                        if (member == bot || !member->IsAlive() || !member->IsClass(CLASS_HUNTER) ||
+                            !member->IsInMap(bot) || member->GetExactDist(seether) >= mine)
+                            continue;
+                        PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member);
+                        closer = memberAI && memberAI->CanCastSpell("tranquilizing shot", seether);
+                    }
             if (!closer)
                 return seether;
         }
