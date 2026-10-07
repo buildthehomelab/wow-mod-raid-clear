@@ -42,6 +42,12 @@ pile. In any raid:
   Core, two Molten Giants end up 30 yards apart and two Molten Destroyers 36). It only picks dry
   ground (no lava) at about the same height and in the main tank's line of sight. In boss fights
   it stays put unless configured otherwise.
+- **Co-tanking bosses that drop threat.** Some bosses knock their tank away and wipe part of its
+  threat (Broodlord Lashlayer's Knock Away, the Blackwing drakes' Wing Buffet). On those, an
+  off-tank with no add to hold attacks the boss too, so it sits second on threat and catches the
+  boss before it turns on a healer. The main tank taunts it back.
+- **Endless adds are ignored.** Off-tanks don't chase adds that respawn faster than anyone can
+  tank them (Blackwing Lair's Suppression Room whelps).
 
 ## Raids
 
@@ -58,6 +64,23 @@ Core Rager tank split (the off-tank split stays out of that fight), Core Hound p
 | Sulfuron Harbinger | Kill the Flamewaker Priests first. |
 | Majordomo Executus | Healers first, then Elites. No spells into **Magic Reflection**; melee stop swinging into **Damage Reflection** (tanks keep going). |
 | Ragnaros | Ranged and healers stay out of **Wrath of Ragnaros** range. Kill the **Sons of Flame** when he submerges. |
+
+### Blackwing Lair
+
+Playerbots already handles the Onyxia Scale Cloak, Razorgore's egg phase, Vaelastrasz's Burning
+Adrenaline, Chromaggus's Bronze affliction, Nefarian's Wild Magic and Fear Ward, Wyrmguard spacing
+and the fire resistance auras. On top of that:
+
+| Fight | What the bots do |
+|---|---|
+| Warlock packs | Kill the **Blackwing Warlocks** first: each one keeps opening Demon Portals that summon Enraged Felguards until it dies. Then Taskmasters, Spellbinders and Death Talon Captains, then the felguards. |
+| Suppression Room | With the `raid` bot cheat on (the default), bots turn off every armed **Suppression Device** within 22 yards: the aura reaches 20, playerbots' own disarm only 15. Kill the Hatchers and Taskmasters before Broodlord if they come along. Off-tanks ignore the whelps. |
+| Broodlord Lashlayer | The off-tank co-tanks him through **Knock Away**. Ranged and healers stay out of **Blast Wave** (20 yards). |
+| Firemaw, Ebonroc, Flamegor | The off-tank co-tanks through **Wing Buffet**. |
+| Ebonroc | The off-tank taunts him off a tank with **Shadow of Ebonroc** (he heals on every hit on it), and that tank leaves him alone until it wears off. |
+
+Disarmed Suppression Devices that keep slowing the raid are a core script bug that affects
+players too; [mod-raid-bwl](https://github.com/buildthehomelab/wow-mod-raid-bwl) fixes it.
 
 ## Install
 
@@ -85,12 +108,13 @@ also keep playerbots' own raid strategies.
 | `RaidClear.Tanks.Separation` | 12 | Minimum yards between the two tanks' mobs on trash; big-AoE mobs get more (0 = off). |
 | `RaidClear.Tanks.SeparateOnBosses` | 0 | Also separate during boss fights. |
 | `RaidClear.MoltenCore.Enable` | 1 | Molten Core strategy. |
+| `RaidClear.BlackwingLair.Enable` | 1 | Blackwing Lair strategy. |
 
 ## Patch Notes: Raid Clear
 
 Category: Raids
 
-- Bot raids now know more of Molten Core's boss mechanics.
+- Bot raids now know more of Molten Core's and Blackwing Lair's boss mechanics.
 - Bot raids now have a main tank and off-tanks. Off-tanks pick up the mobs the main tank isn't
   holding and tank them a few steps away, so one cleave doesn't hit both tanks.
 - Bots kill the dangerous adds first: **Lava Spawn**, then the Flamewaker healers and priests,
@@ -98,6 +122,14 @@ Category: Raids
 - Shamans drop **Tremor Totem** for Magmadar's **Panic**.
 - Bots stop attacking Majordomo's adds while **Magic Reflection** or **Damage Reflection** is up.
 - Ranged bots and healers keep out of reach of **Wrath of Ragnaros**.
+- Blackwing Lair: bots kill the **Blackwing Warlocks** before the felguards their portals keep
+  summoning, then the Taskmasters, Spellbinders and Death Talon Captains.
+- Blackwing Lair: bots turn off **Suppression Devices** within the aura's full reach, not just the
+  ones right next to them.
+- Broodlord Lashlayer, Firemaw, Ebonroc and Flamegor: the off-tank builds threat on the boss, so
+  **Knock Away** and **Wing Buffet** no longer send the boss onto the healers.
+- Broodlord Lashlayer: ranged bots and healers stay out of **Blast Wave**.
+- Ebonroc: bot tanks swap on **Shadow of Ebonroc**.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.
