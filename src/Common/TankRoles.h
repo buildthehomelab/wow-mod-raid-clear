@@ -20,9 +20,15 @@
  *   - Adds a raid lists as needing their own tank (BWL's Death Talon Captain) go to an off-tank
  *     first: it taunts them off whoever has them, the main tank included, keeps them until they
  *     die and drags them by their own splash radius.
+ *   - Packs where every tank should hold one (BWL's Wyrmguards, also listed by each raid): the
+ *     main tank keeps one and each off-tank is handed another the moment the pack is pulled,
+ *     taunts it off whoever has it and holds it.
  *   - On trash, an off-tank holding a mob drags it away from the main tank's mob, so cleaves
- *     and stomps don't hit both tanks. The distance is measured mob to mob: the configured
- *     separation, or more for mobs with a big AoE (each raid lists those with their radius).
+ *     and stomps don't hit both tanks, and from the mobs held by off-tanks ahead of it in group
+ *     order (those don't move for it), so three or more mobs end up spread out instead of two
+ *     off-tanks dragging theirs to the same spot. The distance is measured mob to mob: the
+ *     configured separation, or more for mobs with a big AoE (each raid lists those with their
+ *     radius).
  *     The spot is on dry ground (no lava or water), at about the same height and in line of
  *     sight of the main tank.
  *
@@ -38,6 +44,8 @@
 #include "ObjectGuid.h"
 #include "Strategy.h"
 #include "Trigger.h"
+
+#include <map>
 
 class Group;
 class Player;
@@ -73,6 +81,19 @@ namespace RaidClear::Tanks
     // as many of the rest as there are off-tanks not holding one yet. Any left over are the main
     // tank's own (a double pull with too few off-tanks).
     GuidSet OwnTankAddsForOffTanks(PlayerbotAI* botAI, Player* mainTank, GuidVector const& attackers);
+
+    // A mob of a pack where every tank takes one (the raid lists them: BWL's Wyrmguards).
+    bool IsSpreadAdd(Unit const* unit);
+
+    // Which off-tank takes which spread add (those fighting the group within 60 yd of the main
+    // tank, read from the world so every tank sees the same ones). Off-tanks keep the one they
+    // hold; the main tank keeps the one it's on (else the first by GUID); the rest go one each to
+    // the bot off-tanks near the main tank, in group order: idle ones first, then ones holding some
+    // other mob; never one on an own-tank add. Any left over stay on the main tank.
+    std::map<ObjectGuid, Player*> SpreadAddsForOffTanks(PlayerbotAI* botAI, Player* mainTank, GuidVector const& attackers);
+
+    // Everything the main tank leaves to its off-tanks: own-tank adds and handed-out spread adds.
+    GuidSet HandedOffAdds(PlayerbotAI* botAI, Player* mainTank, GuidVector const& attackers);
 
     // Cast the first single-target taunt this bot has ready on the unit.
     bool CanTaunt(PlayerbotAI* botAI, Unit* unit);
@@ -123,6 +144,10 @@ class RcOffTankSeparateAction : public MovementAction
 public:
     RcOffTankSeparateAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc offtank separate") {}
     bool Execute(Event event) override;
+    bool isUseful() override;
+
+private:
+    uint32 lastFailMs = 0;
 };
 
 // Keeps off-tanks' own target switching (tank assist and friends) off the main tank's mob.

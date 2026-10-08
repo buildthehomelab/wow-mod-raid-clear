@@ -12,6 +12,7 @@
 #include "GameTime.h"
 #include "Group.h"
 #include "Map.h"
+#include "ObjectAccessor.h"
 #include "PathGenerator.h"
 #include "Playerbots.h"
 #include "Spell.h"
@@ -99,6 +100,14 @@ std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitOwnTankAdds()
     return adds;
 }
 
+std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitSpreadAdds()
+{
+    // Three of them before Ebonroc (and before Flamegor), each hitting like a drake and stomping
+    // 15 yd: two on one tank kill it.
+    static std::vector<uint32> const adds = { NPC_DEATH_TALON_WYRMGUARD };
+    return adds;
+}
+
 std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitIgnore()
 {
     // ~160 of them on a 30s respawn; there's no picking them all up, and every one an off-tank
@@ -147,6 +156,8 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
         new TriggerNode("rc bwl detonation keep away", { NextAction("rc bwl detonation keep away", ACTION_RAID + 1) }));
 
     triggers.push_back(new TriggerNode("rc bwl seether tranq", { NextAction("rc bwl seether tranq", ACTION_RAID) }));
+    triggers.push_back(new TriggerNode("rc bwl black affliction",
+                                       { NextAction("rc bwl remove black affliction", ACTION_RAID + 1) }));
 
     // Above playerbots' "tank assist" (50), below the raid mechanics.
     triggers.push_back(
@@ -656,16 +667,17 @@ float RcBwlShadowOfEbonrocMultiplier::GetValue(Action* action)
 
 namespace
 {
-    // A Captain the main tank leaves to an off-tank (see Tanks::OwnTankAddsForOffTanks).
+    // A Captain or a Wyrmguard the main tank leaves to an off-tank (see Tanks::HandedOffAdds).
     bool MainTankLeaves(PlayerbotAI* botAI, Player* bot, Unit* unit)
     {
-        if (!RaidClear::GetConfig().tankSplit || !unit || !RaidClear::Tanks::IsOwnTankAdd(unit))
+        if (!RaidClear::GetConfig().tankSplit || !unit ||
+            (!RaidClear::Tanks::IsOwnTankAdd(unit) && !RaidClear::Tanks::IsSpreadAdd(unit)))
             return false;
         if (RaidClear::Tanks::ActingMainTank(bot->GetGroup()) != bot)
             return false;
 
         GuidVector const& attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
-        return RaidClear::Tanks::OwnTankAddsForOffTanks(botAI, bot, attackers).count(unit->GetGUID()) != 0;
+        return RaidClear::Tanks::HandedOffAdds(botAI, bot, attackers).count(unit->GetGUID()) != 0;
     }
 
     // The explosion hits the marked player's allies; tanks stay with their mobs. A non-tank that
@@ -704,7 +716,7 @@ namespace
 
 void RaidClearBlackwingLairStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type)
 {
-    // The main tank's own target picking skips the Captains its off-tanks take.
+    // The main tank's own target picking skips the Captains and Wyrmguards its off-tanks take.
     if (type != TargetValueExclusionType::Tank || !RaidClear::GetConfig().tankSplit)
         return;
 
@@ -713,7 +725,7 @@ void RaidClearBlackwingLairStrategy::AppendTargetExclusions(GuidSet& exclusions,
         return;
 
     GuidVector const& attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
-    for (ObjectGuid const& guid : RaidClear::Tanks::OwnTankAddsForOffTanks(botAI, bot, attackers))
+    for (ObjectGuid const& guid : RaidClear::Tanks::HandedOffAdds(botAI, bot, attackers))
         exclusions.insert(guid);
 }
 
@@ -875,4 +887,138 @@ bool RcBwlSeetherTranqAction::Execute(Event /*event*/)
 {
     Creature* seether = SeetherToTranq(botAI, bot);
     return seether && botAI->CastSpell("tranquilizing shot", seether);
+}
+
+// --- Chromaggus: Brood Affliction: Black ----------------------------------
+
+namespace
+{
+    // Remove Curse (mage and druid) and Cleanse Spirit all reach 40 yd.
+    constexpr float CURSE_REMOVAL_RANGE = 40.0f;
+    constexpr std::array<char const*, 2> CURSE_REMOVALS = { "remove curse", "cleanse spirit" };
+    // Healers leave Black alone while a tank is this low: their global cooldown is a heal first.
+    constexpr float BLACK_HEALER_TANK_PCT = 50.0f;
+    // The trigger's answer, reused by the action that follows it on the same tick.
+    constexpr uint32 BLACK_CACHE_MS = 100;
+
+    bool CanRemoveCurses(Player* player)
+    {
+        switch (player->getClass())
+        {
+            case CLASS_MAGE:   return player->HasSpell(SPELL_MAGE_REMOVE_CURSE);
+            case CLASS_DRUID:  return player->HasSpell(SPELL_DRUID_REMOVE_CURSE);
+            case CLASS_SHAMAN: return player->HasSpell(SPELL_CLEANSE_SPIRIT);
+            default:           return false;
+        }
+    }
+
+    // The Black-afflicted group member this bot should cleanse. Everyone who can remove curses
+    // takes every n-th cursed player (n = removers), so they don't all hit the same one and waste
+    // the global cooldown; if its own is out of reach, the first one it can reach. Healers sit it
+    // out while a tank is low.
+    Player* FindBlackToRemove(PlayerbotAI* botAI, Player* bot)
+    {
+        Group* group = bot->GetGroup();
+        if (!group || !CanRemoveCurses(bot) || !LivingBossInCombat(botAI, "chromaggus"))
+            return nullptr;
+
+        std::vector<Player*> cursed;
+        std::vector<Player*> members;
+        bool tankLow = false;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || !member->IsAlive() || !member->IsInMap(bot))
+                continue;
+            members.push_back(member);
+            if (member->HasAura(SPELL_BROOD_AFFLICTION_BLACK))
+                cursed.push_back(member);
+            if (PlayerbotAI::IsTank(member) && member->GetHealthPct() < BLACK_HEALER_TANK_PCT)
+                tankLow = true;
+        }
+        if (cursed.empty())
+            return nullptr;
+
+        auto removes = [&](Player* member)
+        {
+            return GET_PLAYERBOT_AI(member) && CanRemoveCurses(member) && !(tankLow && PlayerbotAI::IsHeal(member));
+        };
+        if (!removes(bot))
+            return nullptr;
+
+        size_t removers = 0;
+        size_t mine = 0;
+        for (Player* member : members)
+            if (removes(member))
+            {
+                if (member == bot)
+                    mine = removers;
+                ++removers;
+            }
+
+        std::stable_sort(cursed.begin(), cursed.end(), [](Player* a, Player* b)
+        {
+            bool const aTank = PlayerbotAI::IsTank(a);
+            bool const bTank = PlayerbotAI::IsTank(b);
+            if (aTank != bTank)
+                return aTank;
+            return a->GetHealthPct() < b->GetHealthPct();
+        });
+
+        auto reachable = [&](Player* target)
+        {
+            if (bot->GetExactDist(target) > CURSE_REMOVAL_RANGE)
+                return false;
+            bool castable = false;
+            for (char const* spell : CURSE_REMOVALS)
+                castable = castable || botAI->CanCastSpell(spell, target);
+            return castable && bot->IsWithinLOSInMap(target);
+        };
+
+        Player* assigned = cursed[mine % cursed.size()];
+        if (reachable(assigned))
+            return assigned;
+        for (Player* target : cursed)
+            if (target != assigned && reachable(target))
+                return target;
+        return nullptr;
+    }
+
+    struct BlackCache
+    {
+        ObjectGuid bot;
+        ObjectGuid target;
+        uint32 ms = 0;
+    };
+    thread_local BlackCache tBlackCache;
+
+    Player* BlackToRemove(PlayerbotAI* botAI, Player* bot, bool fresh)
+    {
+        uint32 const now = getMSTime();
+        if (!fresh && tBlackCache.bot == bot->GetGUID() && getMSTimeDiff(tBlackCache.ms, now) <= BLACK_CACHE_MS)
+        {
+            Player* target = tBlackCache.target ? ObjectAccessor::GetPlayer(*bot, tBlackCache.target) : nullptr;
+            return target && target->IsAlive() && target->HasAura(SPELL_BROOD_AFFLICTION_BLACK) ? target : nullptr;
+        }
+
+        Player* target = FindBlackToRemove(botAI, bot);
+        tBlackCache = { bot->GetGUID(), target ? target->GetGUID() : ObjectGuid::Empty, now };
+        return target;
+    }
+}
+
+bool RcBwlBlackAfflictionTrigger::IsActive()
+{
+    return bot->IsInCombat() && BlackToRemove(botAI, bot, true);
+}
+
+bool RcBwlBlackAfflictionAction::Execute(Event /*event*/)
+{
+    Player* target = BlackToRemove(botAI, bot, false);
+    if (!target)
+        return false;
+    for (char const* spell : CURSE_REMOVALS)
+        if (botAI->CanCastSpell(spell, target) && botAI->CastSpell(spell, target))
+            return true;
+    return false;
 }
