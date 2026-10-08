@@ -21,6 +21,7 @@
 #include "RaidClearRegistry.h"
 #include "Common/DeathLog.h"
 #include "Common/TankRoles.h"
+#include "Raids/BlackwingLair/BwlRaidClear.h"
 
 #include "Config.h"
 #include "Log.h"
@@ -192,4 +193,5 @@ void AddRaidClearScripts()
     new RaidClearWorldScript();
     new RaidClearPlayerScript();
     DeathLog::AddScripts();
+    BlackwingLair::AddScripts();
 }

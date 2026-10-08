@@ -102,7 +102,8 @@ and the fire resistance auras. On top of that:
 | Firemaw, Ebonroc, Flamegor | The off-tank co-tanks through **Wing Buffet**. |
 | Firemaw | At 5-7 stacks of **Flame Buffet** (varies per bot, so the raid doesn't leave together) a non-tank hides behind cover until the stacks drop. At most a third of the healers hide at once. Hidden bots keep healing and casting at anything they can see. |
 | Chromaggus | When he starts a breath, non-tanks with cover within a 2-second run duck behind it. **Time Lapse** is the exception: everyone takes it, because it halves the threat of everyone it hits, tank included. **Brood Affliction: Black** (more fire damage taken) comes off before anything else: mages, druids and Cleanse Spirit shamans split the cursed players between them, tanks first, then the lowest on health; healers leave it to the others while a tank is below half health. Bronze is already handled by playerbots (Hourglass Sand). |
-| Nefarian | Ranged and healers stay out of **Bellowing Roar** (35-yard fear), healers only as far as they can still reach the tank. Kill the **Drakonids** and **Bone Constructs** before him. |
+| Nefarian | Ranged and healers stay out of **Bellowing Roar** (35-yard fear), healers only as far as they can still reach the tank. Kill the **Drakonids** and **Bone Constructs** before him. Class calls: priests stop healing while **Corrupted Healing** is on them (their heals would put a shadow DoT on the tanks; shields still go out). Priests still heal a tank below 35%. After the shaman call, the corrupted **Healing Stream** totem dies before anything else, then Stoneskin and Windfury; everyone but the tanks walks 13 yards away from the **Fire Nova** totem before it goes off. The warlock call's **Corrupted Infernals** die with the drakonids. |
+| Onyxia Scale Cloak | Playerbots gives its bots the cloak's protection in Blackwing Lair, but only re-adds it every few seconds after a rez. A bot revived here gets it back the moment it stands up, so it can't be caught by a **Shadow Flame** in between. |
 | Ebonroc | The off-tank taunts him off a tank with **Shadow of Ebonroc** (he heals on every hit on it), and that tank leaves him alone until it wears off. |
 
 Disarmed Suppression Devices that keep slowing the raid are a core script bug that affects
@@ -180,6 +181,12 @@ Category: Raids
   so his fire breaths stop one-shotting the cursed.
 - Raids: every death is written to the server log with what killed it, so wipes can be traced to
   the mechanic behind them.
+- Nefarian: priests stop healing while **Corrupted Healing** is on them, so the tanks no longer
+  die to their own healers (a tank below 35% still gets healed). Bots kill the **corrupted
+  totems** from the shaman call, walk away from the **Fire Nova** totem before it goes off, and
+  kill the warlock call's **Infernals** with the drakonids.
+- Blackwing Lair: bots revived mid-fight get their Onyxia Scale Cloak protection back at once, so
+  a **Shadow Flame** can't catch them in the gap.
 - Firemaw: bots hide behind cover to drop **Flame Buffet** stacks, a few at a time, with healers
   taking turns.
 - Chromaggus: bots duck behind cover when he breathes, except for **Time Lapse**.

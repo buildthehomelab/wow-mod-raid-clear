@@ -13,7 +13,9 @@
 #include "Group.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
+#include "GenericSpellActions.h"
 #include "PathGenerator.h"
+#include "PlayerScript.h"
 #include "Playerbots.h"
 #include "Spell.h"
 #include "PlayerbotAI.h"
@@ -21,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <list>
 #include <string>
 
@@ -51,6 +54,14 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::BlackwingLair::KillOrde
         { NPC_BLACKWING_MAGE, 2 },
         { NPC_BLACKWING_LEGIONNAIRE, 3 },
 
+        // Nefarian's shaman call: corrupted totems. The Healing Stream heals him, so it dies first;
+        // Stoneskin and Windfury buff him and his adds within 40 yd. They're immune to area
+        // damage, so it takes the skull. The Fire Nova totem isn't here: it goes off 4s after it
+        // lands whatever happens, so bots walk away from it instead of running onto it.
+        { NPC_CORRUPTED_HEALING_TOTEM, 0 },
+        { NPC_CORRUPTED_STONESKIN_TOTEM, 1 },
+        { NPC_CORRUPTED_WINDFURY_TOTEM, 1 },
+
         // Nefarian: adds always before him.
         { NPC_CHROMATIC_DRAKONID, 1 },
         { NPC_BLUE_DRAKONID, 1 },
@@ -59,6 +70,8 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::BlackwingLair::KillOrde
         { NPC_RED_DRAKONID, 1 },
         { NPC_BLACK_DRAKONID, 1 },
         { NPC_BONE_CONSTRUCT, 2 },
+        // His warlock call summons them on the warlocks, in the middle of the ranged and healers.
+        { NPC_CORRUPTED_INFERNAL, 1 },
 
         // Whatever the portals let out before the warlocks died.
         { NPC_ENRAGED_FELGUARD, 2 },
@@ -156,6 +169,8 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
         new TriggerNode("rc bwl detonation keep away", { NextAction("rc bwl detonation keep away", ACTION_RAID + 1) }));
 
     triggers.push_back(new TriggerNode("rc bwl seether tranq", { NextAction("rc bwl seether tranq", ACTION_RAID) }));
+    triggers.push_back(new TriggerNode("rc bwl fire nova totem",
+                                       { NextAction("rc bwl fire nova totem move away", ACTION_RAID + 3) }));
     triggers.push_back(new TriggerNode("rc bwl black affliction",
                                        { NextAction("rc bwl remove black affliction", ACTION_RAID + 1) }));
 
@@ -170,6 +185,7 @@ void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& m
     multipliers.push_back(new RcBwlHoldCoverMultiplier(botAI));
     multipliers.push_back(new RcBwlDetonationHoldMultiplier(botAI));
     multipliers.push_back(new RcBwlCaptainMainTankMultiplier(botAI));
+    multipliers.push_back(new RcBwlCorruptedHealingMultiplier(botAI));
 }
 
 // --- Suppression Room -----------------------------------------------------
@@ -1021,4 +1037,90 @@ bool RcBwlBlackAfflictionAction::Execute(Event /*event*/)
         if (botAI->CanCastSpell(spell, target) && botAI->CastSpell(spell, target))
             return true;
     return false;
+}
+
+// --- Nefarian: class calls -------------------------------------------------
+
+namespace
+{
+    // The priests' debuff. Matched by id and, as a fallback, by name, in case the call applies
+    // its aura under a different id than the call spell itself.
+    bool HasCorruptedHealing(Player* bot)
+    {
+        if (bot->HasAura(SPELL_CORRUPTED_HEALING))
+            return true;
+        for (auto const& [id, aurApp] : bot->GetAppliedAuras())
+            if (!aurApp->IsPositive() &&
+                std::strcmp(aurApp->GetBase()->GetSpellInfo()->SpellName[LOCALE_enUS], "Corrupted Healing") == 0)
+                return true;
+        return false;
+    }
+
+    Creature* FireNovaTotemNear(Player* bot)
+    {
+        std::list<Creature*> totems;
+        bot->GetCreatureListWithEntryInGrid(totems, NPC_CORRUPTED_FIRE_NOVA_TOTEM, FIRE_NOVA_KEEP_AWAY);
+        for (Creature* totem : totems)
+            if (totem->IsAlive())
+                return totem;
+        return nullptr;
+    }
+}
+
+float RcBwlCorruptedHealingMultiplier::GetValue(Action* action)
+{
+    // Every heal a priest casts under Corrupted Healing puts a shadow DoT on its target, so the
+    // priests' heals land on the tanks as damage. Power Word: Shield isn't a heal and still goes
+    // out, and a tank about to die still gets healed (the DoT is the lesser evil); otherwise the
+    // other healers carry the raid until the call wears off.
+    if (!action || !bot->IsClass(CLASS_PRIEST))
+        return 1.0f;
+    auto* heal = dynamic_cast<CastHealingSpellAction*>(action);
+    if (!heal || heal->getSpell() == "power word: shield" || !LivingBossInCombat(botAI, "nefarian") ||
+        !HasCorruptedHealing(bot))
+        return 1.0f;
+
+    Unit* target = action->GetTarget();
+    Player* player = target ? target->ToPlayer() : nullptr;
+    if (player && PlayerbotAI::IsTank(player) && player->GetHealthPct() < CORRUPTED_HEALING_TANK_PCT)
+        return 1.0f;
+    return 0.0f;
+}
+
+bool RcBwlFireNovaTotemTrigger::IsActive()
+{
+    // Tanks stay with their mobs; everyone else walks out before the totem goes off.
+    return bot->IsInCombat() && !PlayerbotAI::IsTank(bot) && LivingBossInCombat(botAI, "nefarian") &&
+           FireNovaTotemNear(bot);
+}
+
+bool RcBwlFireNovaTotemMoveAwayAction::Execute(Event /*event*/)
+{
+    Creature* totem = FireNovaTotemNear(bot);
+    if (!totem)
+        return false;
+    return MoveAway(totem, FIRE_NOVA_KEEP_AWAY + 2.0f - bot->GetExactDist2d(totem));
+}
+
+class RaidClearBwlPlayerScript : public PlayerScript
+{
+public:
+    RaidClearBwlPlayerScript() : PlayerScript("RaidClearBwlPlayerScript", { PLAYERHOOK_ON_PLAYER_RESURRECT }) {}
+
+    // Playerbots puts the Onyxia Scale Cloak's aura on its bots in Blackwing Lair from a random
+    // check every few seconds, so a bot revived in front of Nefarian or a drake could eat a
+    // Shadow Flame without it. Death strips it; this puts it back the moment the bot stands up.
+    void OnPlayerResurrect(Player* player, float /*restorePercent*/, bool& /*applySickness*/) override
+    {
+        using namespace RaidClear::BlackwingLair;
+        if (player->GetMapId() != MAP_ID || !RaidClear::GetConfig().IsRaidEnabled(MAP_ID) || !GET_PLAYERBOT_AI(player))
+            return;
+        if (!player->HasAura(SPELL_ONYXIA_SCALE_CLOAK))
+            player->AddAura(SPELL_ONYXIA_SCALE_CLOAK, player);
+    }
+};
+
+void RaidClear::BlackwingLair::AddScripts()
+{
+    new RaidClearBwlPlayerScript();
 }
