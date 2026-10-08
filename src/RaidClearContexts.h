@@ -53,6 +53,7 @@ public:
         creators["rc bwl detonation keep away"] = &RaidClearActionContext::bwl_detonation_keep_away;
         creators["rc bwl seether tranq"] = &RaidClearActionContext::bwl_seether_tranq;
         creators["rc bwl remove black affliction"] = &RaidClearActionContext::bwl_remove_black_affliction;
+        creators["rc bwl fire nova totem move away"] = &RaidClearActionContext::bwl_fire_nova_totem_move_away;
         creators["rc bwl captain hand off"] = &RaidClearActionContext::bwl_captain_hand_off;
     }
 
@@ -83,6 +84,7 @@ private:
     static Action* bwl_detonation_keep_away(PlayerbotAI* botAI) { return new RcBwlDetonationKeepAwayAction(botAI); }
     static Action* bwl_seether_tranq(PlayerbotAI* botAI) { return new RcBwlSeetherTranqAction(botAI); }
     static Action* bwl_remove_black_affliction(PlayerbotAI* botAI) { return new RcBwlBlackAfflictionAction(botAI); }
+    static Action* bwl_fire_nova_totem_move_away(PlayerbotAI* botAI) { return new RcBwlFireNovaTotemMoveAwayAction(botAI); }
     static Action* bwl_captain_hand_off(PlayerbotAI* botAI) { return new RcBwlCaptainHandOffAction(botAI); }
 };
 
@@ -109,6 +111,7 @@ public:
         creators["rc bwl detonation keep away"] = &RaidClearTriggerContext::bwl_detonation_keep_away;
         creators["rc bwl seether tranq"] = &RaidClearTriggerContext::bwl_seether_tranq;
         creators["rc bwl black affliction"] = &RaidClearTriggerContext::bwl_black_affliction;
+        creators["rc bwl fire nova totem"] = &RaidClearTriggerContext::bwl_fire_nova_totem;
         creators["rc bwl captain hand off"] = &RaidClearTriggerContext::bwl_captain_hand_off;
     }
 
@@ -141,6 +144,7 @@ private:
     static Trigger* bwl_detonation_keep_away(PlayerbotAI* botAI) { return new RcBwlDetonationKeepAwayTrigger(botAI); }
     static Trigger* bwl_seether_tranq(PlayerbotAI* botAI) { return new RcBwlSeetherTranqTrigger(botAI); }
     static Trigger* bwl_black_affliction(PlayerbotAI* botAI) { return new RcBwlBlackAfflictionTrigger(botAI); }
+    static Trigger* bwl_fire_nova_totem(PlayerbotAI* botAI) { return new RcBwlFireNovaTotemTrigger(botAI); }
     static Trigger* bwl_captain_hand_off(PlayerbotAI* botAI) { return new RcBwlCaptainHandOffTrigger(botAI); }
 };
 

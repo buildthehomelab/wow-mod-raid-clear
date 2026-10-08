@@ -111,7 +111,10 @@ RaidClear.MoltenCore.Enable = 1
 #                     rogue), ranged out of Broodlord's Blast Wave, tank swap on Shadow of Ebonroc,
 #                     ranged/healers 6 yd apart while Blackwing Technicians (Bomb) are fighting,
 #                     hide from Firemaw at 5-7 Flame Buffet stacks, duck Chromaggus' breaths (not
-#                     Time Lapse) and remove his Brood Affliction: Black first, stay out of Nefarian's Bellowing Roar, Razorgore/Nefarian add
+#                     Time Lapse) and remove his Brood Affliction: Black first, Nefarian's class
+#                     calls (priests stop healing under Corrupted Healing unless a tank is below
+#                     35%, corrupted totems and Infernals die first, everyone but the tanks walks
+#                     away from the Fire Nova totem), Onyxia Scale Cloak aura back on revived bots, stay out of Nefarian's Bellowing Roar, Razorgore/Nefarian add
 #                     kill order, Vaelastrasz co-tanked.
 #        Default:     1
 #

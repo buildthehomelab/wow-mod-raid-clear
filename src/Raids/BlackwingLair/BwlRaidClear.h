@@ -34,6 +34,13 @@
  *     do: mages, druids and Cleanse Spirit shamans split the cursed players between them, tanks
  *     first, then the lowest on health. Healers leave it while a tank is below half health.
  *   - Nefarian: ranged and healers stay out of Bellowing Roar (35 yd fear).
+ *     Class calls: priests stop healing while Corrupted Healing is on them (every heal would put
+ *     a shadow DoT on its target; shields still go out, and a tank below 35% still gets healed);
+ *     the shaman call's corrupted Healing Stream totem dies first, then Stoneskin and Windfury,
+ *     and non-tanks walk 13 yd away from the Fire Nova totem before it goes off; the warlock
+ *     call's Infernals die with the drakonids.
+ *   - A bot revived in Blackwing Lair gets the Onyxia Scale Cloak aura back at once (playerbots
+ *     only re-adds it on a random check every few seconds, and Shadow Flame kills without it).
  *   - Razorgore's and Nefarian's adds die in order: dragonkin first, then casters, then melee;
  *     Drakonids and Bone Constructs before Nefarian.
  *   - Technician packs: Blackwing Technicians throw Bomb (22334, 5 yd splash) at random raiders
@@ -108,6 +115,13 @@ namespace RaidClear::BlackwingLair
         NPC_BONE_CONSTRUCT        = 14605,
         NPC_ENRAGED_FELGUARD      = 14101,  // from the warlocks' Demon Portals
 
+        // Nefarian's class calls.
+        NPC_CORRUPTED_FIRE_NOVA_TOTEM = 14662,
+        NPC_CORRUPTED_STONESKIN_TOTEM = 14663,
+        NPC_CORRUPTED_HEALING_TOTEM   = 14664,
+        NPC_CORRUPTED_WINDFURY_TOTEM  = 14666,
+        NPC_CORRUPTED_INFERNAL        = 14668,
+
         NPC_CORRUPTED_RED_WHELP    = 14022,
         NPC_CORRUPTED_GREEN_WHELP  = 14023,
         NPC_CORRUPTED_BLUE_WHELP   = 14024,
@@ -121,6 +135,8 @@ namespace RaidClear::BlackwingLair
         SPELL_MARK_OF_DETONATION = 22438,  // Death Talon Captain
         SPELL_SEETHER_ENRAGE    = 22428,
         SPELL_BROOD_AFFLICTION_BLACK = 23154,  // Chromaggus: curse, more fire damage taken
+        SPELL_CORRUPTED_HEALING = 23401,       // Nefarian's priest call
+        SPELL_ONYXIA_SCALE_CLOAK = 22683,      // the cloak's aura; Shadow Flame checks for it
 
         // Curse removal, for telling who in the group can take Black off.
         SPELL_MAGE_REMOVE_CURSE   = 475,
@@ -180,6 +196,10 @@ namespace RaidClear::BlackwingLair
     constexpr float DETONATION_HOLD = 36.0f;
     // The Captain's off-tank keeps him this far from the main tank's mob (and its melee).
     constexpr float CAPTAIN_SPLASH = 36.0f;
+    // The corrupted Fire Nova totem's blast (Fire Nova 11307, about 10 yd), with a margin.
+    constexpr float FIRE_NOVA_KEEP_AWAY = 13.0f;
+    // Priests under Corrupted Healing still heal a tank below this.
+    constexpr float CORRUPTED_HEALING_TANK_PCT = 35.0f;
     // Tranquilizing Shot's range.
     constexpr float TRANQUILIZING_SHOT_RANGE = 35.0f;
 
@@ -202,6 +222,9 @@ namespace RaidClear::BlackwingLair
 
     // Packs where every tank takes one (the Death Talon Wyrmguards).
     std::vector<uint32> const& TankSplitSpreadAdds();
+
+    // Player hooks for Blackwing Lair (the Onyxia Scale Cloak aura on revived bots).
+    void AddScripts();
 }
 
 class RaidClearBlackwingLairStrategy : public Strategy
@@ -417,6 +440,29 @@ class RcBwlCaptainMainTankMultiplier : public Multiplier
 public:
     RcBwlCaptainMainTankMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl captain main tank") {}
     float GetValue(Action* action) override;
+};
+
+// Priests under Nefarian's Corrupted Healing don't cast heals (shields are fine, and a tank
+// below 35% still gets one).
+class RcBwlCorruptedHealingMultiplier : public Multiplier
+{
+public:
+    RcBwlCorruptedHealingMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl corrupted healing") {}
+    float GetValue(Action* action) override;
+};
+
+class RcBwlFireNovaTotemTrigger : public Trigger
+{
+public:
+    RcBwlFireNovaTotemTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl fire nova totem") {}
+    bool IsActive() override;
+};
+
+class RcBwlFireNovaTotemMoveAwayAction : public MovementAction
+{
+public:
+    RcBwlFireNovaTotemMoveAwayAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl fire nova totem move away") {}
+    bool Execute(Event event) override;
 };
 
 class RcBwlBlackAfflictionTrigger : public Trigger
