@@ -207,8 +207,10 @@ namespace
         return bot->IsClass(CLASS_ROGUE) || botAI->HasCheat(BotCheatMask::raid);
     }
 
-    // Armed devices in reach, despawned ones included: without mod-raid-bwl, a device a player
-    // disarmed is invisible but still in the "ready" state and still casting.
+    // Armed devices in reach, despawned ones included: before core 2a2211c, a device a player
+    // disarmed despawns but stays in the "ready" state and keeps casting. From 2a2211c the
+    // device script retracts a player-disarmed device instead (GO_STATE_ACTIVE), so the state
+    // check below skips it.
     void ArmedDevicesInReach(Player* bot, std::list<GameObject*>& out)
     {
         std::list<GameObject*> found;
@@ -234,8 +236,10 @@ bool RcBwlDisarmSuppressionAction::Execute(Event /*event*/)
     std::list<GameObject*> armed;
     ArmedDevicesInReach(bot, armed);
 
-    // What mod-playerbots' disarm does. mod-raid-bwl, if installed, passes it on to the device's
-    // script.
+    // What mod-playerbots' disarm does. The device's cast checks for GO_STATE_READY, so this stops
+    // it on any core. From core 2a2211c the device script re-arms a device 30-120s after a
+    // player's Disarm Trap, but it only hears about loot state changes, so a device turned off
+    // here stays off.
     for (GameObject* go : armed)
         go->SetGoState(GO_STATE_ACTIVE);
     return !armed.empty();
