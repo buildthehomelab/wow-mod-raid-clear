@@ -106,8 +106,9 @@ and the fire resistance auras. On top of that:
 | Onyxia Scale Cloak | Playerbots gives its bots the cloak's protection in Blackwing Lair, but only re-adds it every few seconds after a rez. A bot revived here gets it back the moment it stands up, so it can't be caught by a **Shadow Flame** in between. |
 | Ebonroc | The off-tank taunts him off a tank with **Shadow of Ebonroc** (he heals on every hit on it), and that tank leaves him alone until it wears off. |
 
-Disarmed Suppression Devices that keep slowing the raid are a core script bug that affects
-players too; [mod-raid-bwl](https://github.com/buildthehomelab/wow-mod-raid-bwl) fixes it.
+On older cores, a Suppression Device a player disarms with Disarm Trap disappears but keeps
+slowing the raid. The core fixes this from Playerbot core `2a2211c` onward ([azerothcore-wotlk#27774](https://github.com/azerothcore/azerothcore-wotlk/pull/27774)):
+the disarmed device retracts and re-arms after 30-120 seconds.
 
 ## Requirements
 
