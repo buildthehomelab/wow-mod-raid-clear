@@ -12,6 +12,14 @@
  *     from his victim, from whoever tops his threat, and from any tank or pet standing within a
  *     jump of those. Melee don't walk toward anything inside that zone at all; ranged and healers
  *     stop outside it. At 50% he turns into a snake, Holy Wrath stops and melee go in.
+ *   - Hakkar keeps taking his tank away. Cause Insanity (24327) mind-controls whoever tops his
+ *     threat for 10 s, every 35-40 s. For every High Priest still alive he also has that priest's
+ *     Aspect: Arlokk's (24690, every 10-15 s) and Mar'li's (24686, every 45 s) stun the top-threat
+ *     player in melee range and wipe that player's threat. Arlokk only appears when someone
+ *     rings the Gong of Bethekk, so a bot raid usually arrives with her Aspect on him. Each time,
+ *     he turns to whoever is next on threat, and once Frenzy (24318) is up he kills a mage in two
+ *     swings. So he is listed as a boss whose threat the tanks share and the damage dealers stay
+ *     under (see Common/TankRoles.h): the next in line is always a tank.
  *
  * Released under the MIT License.
  */
@@ -37,6 +45,7 @@ namespace RaidClear::ZulGurub
     {
         NPC_VENOXIS        = 14507,
         NPC_RAZZASHI_COBRA = 11373,  // four of them guard Venoxis
+        NPC_HAKKAR         = 14834,
     };
 
     enum Spells : uint32
@@ -60,6 +69,11 @@ namespace RaidClear::ZulGurub
     constexpr float HOLY_WRATH_SPOT_HEIGHT = 3.0f;
 
     std::vector<KillOrderEntry> const& KillOrder();
+
+    // Bosses the off-tanks build threat on as well (see Common/TankRoles.h).
+    std::vector<uint32> const& TankSplitCoTankBosses();
+    // Bosses whose threat the tanks share with taunts and the damage dealers stay under.
+    std::vector<uint32> const& TankSplitThreatShareBosses();
 }
 
 class RaidClearZulGurubStrategy : public Strategy

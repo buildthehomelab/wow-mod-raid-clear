@@ -9,14 +9,20 @@
 #include "RaidClearConfig.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/MoltenCore/McRaidClear.h"
+#include "Raids/ZulGurub/ZgRaidClear.h"
 
 #include "ChooseTargetActions.h"
 #include "Creature.h"
+#include "GenericSpellActions.h"
 #include "Group.h"
 #include "Map.h"
 #include "Player.h"
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
+#include "SpellAuraEffects.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
+#include "ThreatManager.h"
 
 #include <algorithm>
 #include <array>
@@ -51,15 +57,31 @@ namespace RaidClear::Tanks
             }
         }
 
-        // Bosses that cut their tank's threat (Knock Away, Wing Buffet): the off-tank builds threat
-        // on them as well, so the boss lands on a tank instead of the top damage dealer.
+        // Bosses that cut their tank's threat (Knock Away, Wing Buffet) or take their tank away
+        // (Hakkar's mind control): the off-tank builds threat on them as well, so the boss lands
+        // on a tank instead of the top damage dealer.
         std::vector<uint32> const& CoTankBosses(uint32 mapId)
         {
             static std::vector<uint32> const none;
             switch (mapId)
             {
                 case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitCoTankBosses();
+                case ZulGurub::MAP_ID:      return ZulGurub::TankSplitCoTankBosses();
                 default:                    return none;
+            }
+        }
+
+        // Bosses that keep taking their tank away: the tanks share their threat with taunts and
+        // the damage dealers stay under it. Part of the raid's own strategy, so off with it.
+        std::vector<uint32> const& ThreatShareBosses(uint32 mapId)
+        {
+            static std::vector<uint32> const none;
+            if (!GetConfig().IsRaidEnabled(mapId))
+                return none;
+            switch (mapId)
+            {
+                case ZulGurub::MAP_ID: return ZulGurub::TankSplitThreatShareBosses();
+                default:               return none;
             }
         }
 
@@ -601,6 +623,117 @@ namespace RaidClear::Tanks
         }
         return false;
     }
+
+    namespace
+    {
+        // A tank under this share of a threat-share boss's highest threat taunts to catch up...
+        constexpr float THREAT_SHARE = 0.9f;
+        // ...at once if it is under this share (it has lost its threat), else at most this often.
+        constexpr float THREAT_LOST = 0.5f;
+        constexpr uint32 THREAT_DRIFT_INTERVAL_MS = 30000;
+        // Damage dealers stay under this share of the threat of the tank who catches the boss next.
+        constexpr float DAMAGE_SHARE = 0.9f;
+        // A second tank with less than this share of the threat of the tank the boss is on has
+        // just lost its own and taunts within seconds: until then the tank the boss is on is the
+        // limit, so the raid doesn't stop dead every time.
+        constexpr float BACKUP_COUNTS = 0.5f;
+
+        // A tank the boss can stay on: alive and not mind-controlled.
+        bool CanHoldBoss(Unit* unit)
+        {
+            Player* player = unit ? unit->ToPlayer() : nullptr;
+            return player && player->IsAlive() && !player->IsCharmed() && PlayerbotAI::IsTank(player);
+        }
+
+        // The boss's highest threat among the players it can attack right now. Not pets: no tank
+        // should chase a pet's threat. Not immune players (Ice Block): a taunt only matches the
+        // highest attackable one. The list puts a taunting tank first whatever its threat, so the
+        // first entry isn't always the highest.
+        float TopPlayerThreat(Unit* boss)
+        {
+            float top = 0.0f;
+            for (ThreatReference const* ref : boss->GetThreatMgr().GetSortedThreatList())
+                if (ref->IsOnline() && ref->GetVictim()->IsPlayer())
+                    top = std::max(top, ref->GetThreat());
+            return top;
+        }
+
+        // A taunt from a tank that can hold the boss is still running: it is on its way to that
+        // tank (its victim only changes on its next update) or staying on it.
+        bool TauntedByTank(Unit* boss)
+        {
+            for (AuraEffect const* effect : boss->GetAuraEffectsByType(SPELL_AURA_MOD_TAUNT))
+                if (CanHoldBoss(effect->GetCaster()))
+                    return true;
+            return false;
+        }
+    }
+
+    bool HasThreatShareBosses(uint32 mapId)
+    {
+        return !ThreatShareBosses(mapId).empty();
+    }
+
+    bool IsThreatShareBoss(Unit const* unit)
+    {
+        if (!unit || !unit->IsCreature())
+            return false;
+        std::vector<uint32> const& bosses = ThreatShareBosses(unit->GetMapId());
+        return std::find(bosses.begin(), bosses.end(), unit->GetEntry()) != bosses.end() && unit->IsAlive() &&
+               unit->IsInCombat();
+    }
+
+    Unit* ThreatShareBoss(PlayerbotAI* botAI, Player* bot, GuidVector const& attackers)
+    {
+        if (!HasThreatShareBosses(bot->GetMapId()))
+            return nullptr;
+        for (ObjectGuid const& guid : attackers)
+            if (Unit* unit = botAI->GetUnit(guid))
+                if (IsThreatShareBoss(unit))
+                    return unit;
+        return nullptr;
+    }
+
+    ShareNeed NeedsThreatShare(Player* bot, Unit* boss)
+    {
+        if (TauntedByTank(boss))
+            return ShareNeed::None;
+
+        Unit* victim = boss->GetVictim();
+        if (!victim || victim == bot)
+            return ShareNeed::None;
+        // On a pet nobody is about to die; on a player who can't hold the boss, somebody is.
+        if (!CanHoldBoss(victim))
+            return victim->IsPlayer() ? ShareNeed::Catch : ShareNeed::Drift;
+
+        float const top = TopPlayerThreat(boss);
+        float const mine = boss->GetThreatMgr().GetThreat(bot);
+        if (mine >= top * THREAT_SHARE)
+            return ShareNeed::None;
+        return mine < top * THREAT_LOST ? ShareNeed::Lost : ShareNeed::Drift;
+    }
+
+    float ThreatShareLimit(Player* bot, Unit* boss)
+    {
+        // Loose on someone who can't hold it: a tank taunts and lands on top of the list whatever
+        // anyone adds meanwhile, and stopping the whole raid helps nobody.
+        Unit* victim = boss->GetVictim();
+        if (!CanHoldBoss(victim))
+            return 0.0f;
+
+        ThreatManager const& threat = boss->GetThreatMgr();
+        float const holder = threat.GetThreat(victim);
+        float backup = 0.0f;
+        if (Group* group = bot->GetGroup())
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (member && member != victim && member->IsInMap(bot) && CanHoldBoss(member))
+                    backup = std::max(backup, threat.GetThreat(member));
+            }
+
+        return backup >= holder * BACKUP_COUNTS ? backup : holder;
+    }
 }
 
 using namespace RaidClear;
@@ -624,11 +757,15 @@ void RaidClearTanksStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode("rc offtank target", { NextAction("rc offtank target", ACTION_RAID - 4) }));
     triggers.push_back(
         new TriggerNode("rc offtank separate", { NextAction("rc offtank separate", ACTION_RAID - 5) }));
+    // With the raid mechanics: a boss loose on a mage doesn't wait for anything.
+    triggers.push_back(
+        new TriggerNode("rc tank share threat", { NextAction("rc tank share threat", ACTION_RAID + 3) }));
 }
 
 void RaidClearTanksStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcOffTankMultiplier(botAI));
+    multipliers.push_back(new RcTankThreatCapMultiplier(botAI));
 }
 
 bool RcOffTankTargetTrigger::IsActive()
@@ -815,4 +952,100 @@ float RcOffTankMultiplier::GetValue(Action* action)
         return 1.0f;
     Unit* want = PickOffTankTarget(botAI, bot, mainTank, attackers);
     return want && want != mainTarget ? 0.0f : 1.0f;
+}
+
+bool RcTankShareThreatTrigger::IsActive()
+{
+    if (!GetConfig().tankSplit || !bot->IsInCombat() || !PlayerbotAI::IsTank(bot))
+        return false;
+
+    // From the fight's attackers, not from the bot's own threat: a tank revived mid-fight isn't on
+    // the boss's threat list yet.
+    Unit* boss = ThreatShareBoss(botAI, bot, AI_VALUE(GuidVector, "attackers"));
+    return boss && NeedsThreatShare(bot, boss) != ShareNeed::None && CanTaunt(botAI, boss);
+}
+
+bool RcTankShareThreatAction::isUseful()
+{
+    Unit* boss = ThreatShareBoss(botAI, bot, AI_VALUE(GuidVector, "attackers"));
+    if (!boss)
+        return false;
+
+    switch (NeedsThreatShare(bot, boss))
+    {
+        case ShareNeed::None:  return false;
+        // Early in a fight the threat is small and an off-tank drifts behind within seconds of
+        // every taunt; taunting each time would keep every tank's taunt on cooldown.
+        case ShareNeed::Drift: return !lastTauntMs || getMSTimeDiff(lastTauntMs, getMSTime()) >= THREAT_DRIFT_INTERVAL_MS;
+        default:               return true;
+    }
+}
+
+bool RcTankShareThreatAction::Execute(Event /*event*/)
+{
+    Unit* boss = ThreatShareBoss(botAI, bot, AI_VALUE(GuidVector, "attackers"));
+    if (!boss || !Taunt(botAI, boss))
+        return false;
+    lastTauntMs = getMSTime();
+    return true;
+}
+
+namespace
+{
+    // What the threat cap holds back: anything that does damage or is cast for its threat. A
+    // debuff that does neither (a curse, Hunter's Mark) costs next to no threat and still goes
+    // out, and so does Tranquilizing Shot: the enrage it removes hurts the tanks far more.
+    bool HeldByThreatCap(PlayerbotAI* botAI, Action* action)
+    {
+        if (action->getName() == "tranquilizing shot")
+            return false;
+        auto* debuff = dynamic_cast<CastDebuffSpellAction*>(action);
+        if (!debuff)
+            return true;
+
+        uint32 const spellId = botAI->GetAiObjectContext()->GetValue<uint32>("spell id", debuff->getSpell())->Get();
+        SpellInfo const* info = spellId ? sSpellMgr->GetSpellInfo(spellId) : nullptr;
+        if (!info)
+            return true;
+
+        static SpellEffects const damageEffects[] = {
+            SPELL_EFFECT_SCHOOL_DAMAGE, SPELL_EFFECT_HEALTH_LEECH, SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL,
+            SPELL_EFFECT_WEAPON_PERCENT_DAMAGE, SPELL_EFFECT_WEAPON_DAMAGE, SPELL_EFFECT_NORMALIZED_WEAPON_DMG,
+            SPELL_EFFECT_POWER_BURN, SPELL_EFFECT_THREAT,
+        };
+        for (SpellEffects const effect : damageEffects)
+            if (info->HasEffect(effect))
+                return true;
+        static AuraType const damageAuras[] = {
+            SPELL_AURA_PERIODIC_DAMAGE, SPELL_AURA_PERIODIC_DAMAGE_PERCENT, SPELL_AURA_PERIODIC_LEECH,
+            SPELL_AURA_PERIODIC_TRIGGER_SPELL,
+        };
+        for (AuraType const aura : damageAuras)
+            if (info->HasAura(aura))
+                return true;
+
+        // Flat threat from spell_threat (Sunder Armor).
+        SpellThreatEntry const* threat = sSpellMgr->GetSpellThreatEntry(spellId);
+        return threat && (threat->flatMod > 0 || threat->apPctMod > 0.0f);
+    }
+}
+
+float RcTankThreatCapMultiplier::GetValue(Action* action)
+{
+    // Melee swings and pets carry on; spells and special attacks are what's held.
+    if (!GetConfig().tankSplit || !action || action->getThreatType() == Action::ActionThreatType::None)
+        return 1.0f;
+    // Nothing to look up in the raids that have no such boss; in the others the action's own target
+    // tells.
+    if (!HasThreatShareBosses(bot->GetMapId()) || !bot->IsInCombat() || PlayerbotAI::IsTank(bot))
+        return 1.0f;
+
+    Unit* boss = action->GetTarget();
+    if (!IsThreatShareBoss(boss) || !HeldByThreatCap(botAI, action))
+        return 1.0f;
+
+    float const limit = ThreatShareLimit(bot, boss);
+    if (limit <= 0.0f)
+        return 1.0f;
+    return boss->GetThreatMgr().GetThreat(bot) >= limit * DAMAGE_SHARE ? 0.0f : 1.0f;
 }
