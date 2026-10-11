@@ -11,6 +11,7 @@
 #include "Common/TankRoles.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/MoltenCore/McRaidClear.h"
+#include "Raids/ZulGurub/ZgRaidClear.h"
 
 #include "NamedObjectContext.h"
 
@@ -22,12 +23,14 @@ public:
         creators["rc raid tanks"] = &RaidClearStrategyContext::raid_tanks;
         creators["rc moltencore"] = &RaidClearStrategyContext::moltencore;
         creators["rc bwl"] = &RaidClearStrategyContext::bwl;
+        creators["rc zg"] = &RaidClearStrategyContext::zg;
     }
 
 private:
     static Strategy* raid_tanks(PlayerbotAI* botAI) { return new RaidClearTanksStrategy(botAI); }
     static Strategy* moltencore(PlayerbotAI* botAI) { return new RaidClearMoltenCoreStrategy(botAI); }
     static Strategy* bwl(PlayerbotAI* botAI) { return new RaidClearBlackwingLairStrategy(botAI); }
+    static Strategy* zg(PlayerbotAI* botAI) { return new RaidClearZulGurubStrategy(botAI); }
 };
 
 class RaidClearActionContext : public NamedObjectContext<Action>
@@ -55,6 +58,8 @@ public:
         creators["rc bwl remove black affliction"] = &RaidClearActionContext::bwl_remove_black_affliction;
         creators["rc bwl fire nova totem move away"] = &RaidClearActionContext::bwl_fire_nova_totem_move_away;
         creators["rc bwl captain hand off"] = &RaidClearActionContext::bwl_captain_hand_off;
+
+        creators["rc zg holy wrath keep away"] = &RaidClearActionContext::zg_holy_wrath_keep_away;
     }
 
 private:
@@ -86,6 +91,8 @@ private:
     static Action* bwl_remove_black_affliction(PlayerbotAI* botAI) { return new RcBwlBlackAfflictionAction(botAI); }
     static Action* bwl_fire_nova_totem_move_away(PlayerbotAI* botAI) { return new RcBwlFireNovaTotemMoveAwayAction(botAI); }
     static Action* bwl_captain_hand_off(PlayerbotAI* botAI) { return new RcBwlCaptainHandOffAction(botAI); }
+
+    static Action* zg_holy_wrath_keep_away(PlayerbotAI* botAI) { return new RcZgHolyWrathKeepAwayAction(botAI); }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -113,6 +120,8 @@ public:
         creators["rc bwl black affliction"] = &RaidClearTriggerContext::bwl_black_affliction;
         creators["rc bwl fire nova totem"] = &RaidClearTriggerContext::bwl_fire_nova_totem;
         creators["rc bwl captain hand off"] = &RaidClearTriggerContext::bwl_captain_hand_off;
+
+        creators["rc zg holy wrath keep away"] = &RaidClearTriggerContext::zg_holy_wrath_keep_away;
     }
 
 private:
@@ -146,6 +155,8 @@ private:
     static Trigger* bwl_black_affliction(PlayerbotAI* botAI) { return new RcBwlBlackAfflictionTrigger(botAI); }
     static Trigger* bwl_fire_nova_totem(PlayerbotAI* botAI) { return new RcBwlFireNovaTotemTrigger(botAI); }
     static Trigger* bwl_captain_hand_off(PlayerbotAI* botAI) { return new RcBwlCaptainHandOffTrigger(botAI); }
+
+    static Trigger* zg_holy_wrath_keep_away(PlayerbotAI* botAI) { return new RcZgHolyWrathKeepAwayTrigger(botAI); }
 };
 
 #endif

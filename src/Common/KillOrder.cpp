@@ -9,6 +9,7 @@
 #include "RaidClearConfig.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/MoltenCore/McRaidClear.h"
+#include "Raids/ZulGurub/ZgRaidClear.h"
 
 #include "Group.h"
 #include "Player.h"
@@ -40,6 +41,7 @@ namespace RaidClear
         {
             case MoltenCore::MAP_ID:    return MoltenCore::KillOrder();
             case BlackwingLair::MAP_ID: return BlackwingLair::KillOrder();
+            case ZulGurub::MAP_ID:      return ZulGurub::KillOrder();
             default:                    return none;
         }
     }

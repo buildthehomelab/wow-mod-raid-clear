@@ -110,6 +110,14 @@ On older cores, a Suppression Device a player disarms with Disarm Trap disappear
 slowing the raid. The core fixes this from Playerbot core `2a2211c` onward ([azerothcore-wotlk#27774](https://github.com/azerothcore/azerothcore-wotlk/pull/27774)):
 the disarmed device retracts and re-arms after 30-120 seconds.
 
+### Zul'Gurub
+
+Playerbots has no Zul'Gurub strategy, so everything here is new.
+
+| Fight | What the bots do |
+|---|---|
+| High Priest Venoxis | Kill his four **Razzashi Cobras** first. While he's a troll (above 50%), **Holy Wrath** hits his target and chains to the nearest player within 10 yards, over and over, about 30% harder each jump: nine jumps in, it hits for more than 40,000. So the chain gets nowhere to go. Everyone but the tanks stays about 16 yards away from his target, from whoever is top of his threat (Holy Wrath starts there, even if he's still hitting the tank), and from any tank or pet standing within a jump of those. Melee don't walk in at all; ranged and healers work from range. At 50% he turns into a snake, Holy Wrath stops and melee go in. |
+
 ## Requirements
 
 - An AzerothCore WotLK server running [mod-playerbots](https://github.com/mod-playerbots/mod-playerbots)
@@ -150,6 +158,7 @@ also keep playerbots' own raid strategies.
 | `RaidClear.DeathLog` | 1 | Log every raid death (cause, last 6s of damage, debuffs, boss) and a per-pull tally. |
 | `RaidClear.MoltenCore.Enable` | 1 | Molten Core strategy. |
 | `RaidClear.BlackwingLair.Enable` | 1 | Blackwing Lair strategy. |
+| `RaidClear.ZulGurub.Enable` | 1 | Zul'Gurub strategy. |
 
 ## Patch Notes: Raid Clear
 
@@ -195,6 +204,9 @@ Category: Raids
 - Blackwing Lair, Death Talon packs: an off-tank takes the **Death Talon Captain** away from the
   raid, and everyone else stays out of the **Mark of Detonation** explosion. Bots kill the Wyrmkin
   first and the Captain last, and hunters **Tranquilizing Shot** enraged Seethers.
+- Zul'Gurub, High Priest Venoxis: bots no longer let **Holy Wrath** chain through the whole raid.
+  Everyone but the tanks keeps about 16 yards from his target while he's a troll, melee wait for
+  his snake form, and his cobras die first.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.
@@ -203,7 +215,7 @@ Category: Raids
 
 - **Bots don't use any of the raid mechanics.** Check that `AiPlayerbot.ApplyInstanceStrategies`
   is `1`, that `RaidClear.Enable` and the raid's own setting (`RaidClear.MoltenCore.Enable`,
-  `RaidClear.BlackwingLair.Enable`) are `1`, and restart the worldserver: `RaidClear.Enable` is
+  `RaidClear.BlackwingLair.Enable`, `RaidClear.ZulGurub.Enable`) are `1`, and restart the worldserver: `RaidClear.Enable` is
   read at startup only.
 - **The worldserver doesn't start or the module doesn't link.** The folder must be named exactly
   `mod-raid-clear`, because AzerothCore derives the loader function from it. Re-run CMake after
