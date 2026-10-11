@@ -173,6 +173,9 @@ namespace
             Aura const* aura = aurApp->GetBase();
             if (aurApp->IsPositive() == debuffs || aura->IsPassive() || aura->GetMaxDuration() <= 0)
                 continue;
+            // The unit's own channel (a mage's Arcane Missiles) counts as a negative aura on it.
+            if (aura->GetCasterGUID() == unit->GetGUID() && aura->GetSpellInfo()->IsChanneled())
+                continue;
             out << (first ? "" : ", ") << aura->GetSpellInfo()->SpellName[LOCALE_enUS];
             if (aura->GetStackAmount() > 1)
                 out << " x" << uint32(aura->GetStackAmount());

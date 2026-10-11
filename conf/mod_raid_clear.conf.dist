@@ -120,3 +120,15 @@ RaidClear.MoltenCore.Enable = 1
 #
 
 RaidClear.BlackwingLair.Enable = 1
+
+#
+#    RaidClear.ZulGurub.Enable
+#        Description: Zul'Gurub strategy (map 309): High Priest Venoxis' Razzashi Cobras die first,
+#                     and while he is a troll (above 50%) everyone but the tanks stays about 16 yd
+#                     from his target, from whoever tops his threat and from any tank or pet
+#                     within a jump of those, so Holy Wrath has nobody to chain to. Melee go in
+#                     once he turns into a snake.
+#        Default:     1
+#
+
+RaidClear.ZulGurub.Enable = 1
