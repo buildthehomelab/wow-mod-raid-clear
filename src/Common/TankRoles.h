@@ -16,6 +16,18 @@
  *     Buffet) the off-tank attacks the boss whenever no add needs it, so it sits second on
  *     threat and catches the boss. Playerbots' "lose aggro" never makes a non-main tank taunt
  *     off another tank, and makes the main tank taunt back.
+ *   - On bosses that keep taking their tank away (each raid lists them: Hakkar's mind control and
+ *     threat wipes) the tanks share the boss's threat and the damage dealers stay under it, so
+ *     whoever the boss turns to next is a tank:
+ *       - a tank the boss isn't on taunts when its threat has dropped under 90% of the highest
+ *         player's (a taunt lifts it to the top). Under half, it has lost its threat and taunts
+ *         at once; between half and 90% it has only drifted behind, and does so at most every
+ *         30 s, so the taunts aren't all on cooldown when they are needed;
+ *       - any tank taunts the moment the boss is on a player who isn't a tank;
+ *       - one tank at a time: nobody taunts while another tank's taunt is still running.
+ *       - Playerbots' damage dealers don't watch their threat at all (its "threat" strategy is
+ *         off by default). On these bosses they hold their damage while they are within 10% of
+ *         the threat of the tank who would catch the boss next.
  *   - Endless respawning adds a raid lists (BWL's Suppression Room whelps) are never picked up.
  *   - Adds a raid lists as needing their own tank (BWL's Death Talon Captain) go to an off-tank
  *     first: it taunts them off whoever has them, the main tank included, keeps them until they
@@ -38,6 +50,7 @@
 #ifndef MOD_RAID_CLEAR_TANK_ROLES_H
 #define MOD_RAID_CLEAR_TANK_ROLES_H
 
+#include "Action.h"
 #include "AttackAction.h"
 #include "MovementActions.h"
 #include "Multiplier.h"
@@ -107,6 +120,25 @@ namespace RaidClear::Tanks
 
     // A boss is among the attackers (separation is trash-only unless configured).
     bool BossInFight(PlayerbotAI* botAI, GuidVector const& attackers);
+
+    // A living boss in combat whose threat the tanks share (the raid lists them), and whether the
+    // map has any at all.
+    bool HasThreatShareBosses(uint32 mapId);
+    bool IsThreatShareBoss(Unit const* unit);
+    Unit* ThreatShareBoss(PlayerbotAI* botAI, Player* bot, GuidVector const& attackers);
+
+    // Why this tank should taunt a threat-share boss it isn't tanking.
+    enum class ShareNeed
+    {
+        None,
+        Drift,  // somewhat behind on threat, or the boss is on a pet: no hurry
+        Lost,   // has lost its threat (wiped, revived): catch up now
+        Catch,  // the boss is on a player who isn't a tank
+    };
+    ShareNeed NeedsThreatShare(Player* bot, Unit* boss);
+
+    // The threat a damage dealer stays under on a threat-share boss; 0 = no limit right now.
+    float ThreatShareLimit(Player* bot, Unit* boss);
 }
 
 class RaidClearTanksStrategy : public Strategy
@@ -148,6 +180,32 @@ public:
 
 private:
     uint32 lastFailMs = 0;
+};
+
+class RcTankShareThreatTrigger : public Trigger
+{
+public:
+    RcTankShareThreatTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc tank share threat") {}
+    bool IsActive() override;
+};
+
+class RcTankShareThreatAction : public Action
+{
+public:
+    RcTankShareThreatAction(PlayerbotAI* botAI) : Action(botAI, "rc tank share threat") {}
+    bool Execute(Event event) override;
+    bool isUseful() override;
+
+private:
+    uint32 lastTauntMs = 0;
+};
+
+// Keeps damage dealers under the tank who catches a threat-share boss next.
+class RcTankThreatCapMultiplier : public Multiplier
+{
+public:
+    RcTankThreatCapMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc tank threat cap") {}
+    float GetValue(Action* action) override;
 };
 
 // Keeps off-tanks' own target switching (tank assist and friends) off the main tank's mob.

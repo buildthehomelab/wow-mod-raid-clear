@@ -51,6 +51,13 @@ pile. In any raid:
   off-tank taunts them off whoever has them, the main tank included, drags them well clear of the
   main tank's mob and keeps them until they die. With more of them than free off-tanks, the main
   tank keeps the extra ones.
+- **Sharing a boss's threat.** Some bosses keep taking their tank away (Hakkar's mind control and
+  threat wipes). On those, a tank the boss isn't on taunts to lift its threat back to the top: at
+  once when it has lost its threat (under half of the highest), at most every 30 seconds when it
+  has only drifted behind (under 90%). Any tank taunts the moment the boss is on a player who
+  isn't a tank, and only one tank taunts at a time. Playerbots' damage dealers don't watch their
+  threat, so on these bosses they hold their damage while they are within 10% of the threat of the
+  tank who would catch the boss next. Curses, Hunter's Mark and Tranquilizing Shot still go out.
 - **Endless adds are ignored.** Off-tanks don't chase adds that respawn faster than anyone can
   tank them (Blackwing Lair's Suppression Room whelps).
 
@@ -117,6 +124,7 @@ Playerbots has no Zul'Gurub strategy, so everything here is new.
 | Fight | What the bots do |
 |---|---|
 | High Priest Venoxis | Kill his four **Razzashi Cobras** first. While he's a troll (above 50%), **Holy Wrath** hits his target and chains to the nearest player within 10 yards, over and over, about 30% harder each jump: nine jumps in, it hits for more than 40,000. So the chain gets nowhere to go. Everyone but the tanks stays about 16 yards away from his target, from whoever is top of his threat (Holy Wrath starts there, even if he's still hitting the tank), and from any tank or pet standing within a jump of those. Melee don't walk in at all; ranged and healers work from range. At 50% he turns into a snake, Holy Wrath stops and melee go in. |
+| Hakkar | He keeps taking his tank away: **Cause Insanity** mind-controls whoever is top of his threat for 10 seconds, and for every High Priest still alive he has that priest's Aspect. The **Aspects of Arlokk and Mar'li** stun his tank and wipe its threat (Arlokk's every 10-15 seconds). Arlokk only appears when someone rings the Gong of Bethekk, so a bot raid usually reaches Hakkar with her Aspect on him. Each time he turns to whoever is next on threat, and once he has **Frenzy** he kills a mage in two swings. So the tanks share his threat and the damage dealers stay under it (see *Sharing a boss's threat* above): the next in line is always a tank. It needs two tanks or more; three is safer with a priest alive. Killing all five priests first is still the easy way: each one alive also gives him 20% more damage and 10% more health. |
 
 ## Requirements
 
@@ -207,6 +215,8 @@ Category: Raids
 - Zul'Gurub, High Priest Venoxis: bots no longer let **Holy Wrath** chain through the whole raid.
   Everyone but the tanks keeps about 16 yards from his target while he's a troll, melee wait for
   his snake form, and his cobras die first.
+- Zul'Gurub, Hakkar: the tanks now share his threat and damage dealers stay below them, so when he
+  mind-controls his tank or wipes its threat he goes to another tank and not to a mage.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.

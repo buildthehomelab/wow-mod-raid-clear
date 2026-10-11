@@ -52,6 +52,9 @@ RaidClear.Tanks.AssignMainTank = 1
 #                     Lashlayer, Firemaw, Ebonroc, Flamegor, Vaelastrasz) an off-tank with no add to hold attacks the boss too, so it catches
 #                     the boss after a Knock Away / Wing Buffet. Blackwing Lair's Suppression Room
 #                     whelps are never picked up.
+#                     On bosses that keep taking their tank away (Hakkar) the tanks share the
+#                     boss's threat with taunts and damage dealers hold their damage while they
+#                     are within 10% of the next tank's threat, so the boss always turns to a tank.
 #        Default:     1
 #
 
@@ -127,7 +130,10 @@ RaidClear.BlackwingLair.Enable = 1
 #                     and while he is a troll (above 50%) everyone but the tanks stays about 16 yd
 #                     from his target, from whoever tops his threat and from any tank or pet
 #                     within a jump of those, so Holy Wrath has nobody to chain to. Melee go in
-#                     once he turns into a snake.
+#                     once he turns into a snake. On Hakkar the tanks share his threat with
+#                     taunts and damage dealers stay below them, so he goes to another tank when
+#                     he mind-controls his tank or wipes its threat (Aspects of Arlokk and
+#                     Mar'li). That part also needs RaidClear.Tanks.Split.
 #        Default:     1
 #
 

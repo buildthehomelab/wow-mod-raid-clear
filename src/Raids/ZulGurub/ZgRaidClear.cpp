@@ -28,6 +28,20 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::ZulGurub::KillOrder()
     return table;
 }
 
+std::vector<uint32> const& RaidClear::ZulGurub::TankSplitCoTankBosses()
+{
+    // Hakkar: Cause Insanity takes his tank away, the Aspects of Arlokk and Mar'li wipe its threat.
+    static std::vector<uint32> const bosses = { NPC_HAKKAR };
+    return bosses;
+}
+
+std::vector<uint32> const& RaidClear::ZulGurub::TankSplitThreatShareBosses()
+{
+    // Hakkar, for the same reasons: once Frenzy is up, whoever he turns to next has to be a tank.
+    static std::vector<uint32> const bosses = { NPC_HAKKAR };
+    return bosses;
+}
+
 void RaidClearZulGurubStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("rc kill order", { NextAction("rc mark kill order", ACTION_RAID + 2) }));
