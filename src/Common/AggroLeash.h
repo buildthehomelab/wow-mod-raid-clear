@@ -25,6 +25,12 @@
  *   - A bot standing a yard closer than a walk toward a target may pass (a patrol walking up, or
  *     a bot that crept there) steps back out, toward the main tank where it can. Not a bot in
  *     melee with its target, and not for mobs its target stands next to.
+ *   - A spell that hits more than its target isn't cast where it would reach one of those idle
+ *     mobs: an area spell (Blizzard, Volley, Death and Decay, Hurricane, Starfall) hits everything
+ *     hostile in its radius, in the fight or not, and a chain (Chain Lightning, Multi-Shot,
+ *     Avenger's Shield) jumps to whatever stands near enough. How far each one reaches is read
+ *     from the server's spell data. Not judged on a target that isn't in combat itself: that is
+ *     the pull, and its pack comes along whatever it is hit with.
  *
  * The aggro radius is the core's own (Creature::GetAggroRange: the mob's detection range, 20 yd
  * by default, plus a yard per level the mob is above the bot).
@@ -37,6 +43,7 @@
 
 #include "Action.h"
 #include "MovementActions.h"
+#include "Multiplier.h"
 #include "Strategy.h"
 #include "Trigger.h"
 
@@ -78,6 +85,7 @@ public:
     RaidClearLeashStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
     std::string const getName() override { return "rc raid leash"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
+    void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
 };
 
 // The bot is standing at the edge of an idle mob's aggro radius.
@@ -102,6 +110,28 @@ public:
 
 private:
     uint32 _noSpotAtMs = 0;
+};
+
+// No spell that hits more than its target where it would reach a mob that isn't in the fight.
+class RcLeashSplashMultiplier : public Multiplier
+{
+public:
+    RcLeashSplashMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc leash splash") {}
+    float GetValue(Action* action) override;
+
+private:
+    struct Idle
+    {
+        ObjectGuid guid;
+        float x;
+        float y;
+        float z;
+        float reach;
+    };
+    // The idle mobs near the bot, looked up a few times a second, not for every spell it weighs.
+    std::vector<Idle> _idle;
+    uint32 _idleAtMs = 0;
+    uint32 _idleInstance = 0;
 };
 
 #endif

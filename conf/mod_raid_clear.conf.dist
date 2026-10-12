@@ -133,11 +133,29 @@ RaidClear.AggroLeash = 1
 RaidClear.AggroLeash.Buffer = 6
 
 #
+#    RaidClear.AggroLeash.Splash
+#        Description: With the leash on, a bot also doesn't cast a spell that hits more than
+#                     its target where it would reach a mob that isn't in the fight: an area
+#                     spell (Blizzard, Volley, Death and Decay, Hurricane, Starfall) hits
+#                     everything hostile in its radius, and a chain (Chain Lightning,
+#                     Multi-Shot, Avenger's Shield) jumps to whatever stands near enough. The
+#                     bot uses its single-target spells instead until the fight has moved or
+#                     that pack is dead. Not judged on a target that isn't in combat itself
+#                     (the pull).
+#        Default:     1
+#
+
+RaidClear.AggroLeash.Splash = 1
+
+#
 #    RaidClear.MoltenCore.Enable
-#        Description: Molten Core strategy (map 409): kill order, Tremor Totem on Magmadar,
-#                     no attacks into Majordomo's reflection shields, ranged out of Ragnaros'
-#                     knockback, the raid stays within 30 yd of Garr and leaves a Firesworn
-#                     with Separation Anxiety alone (bots already on one stop attacking).
+#        Description: Molten Core strategy (map 409): kill order, Tremor Totem on Magmadar
+#                     (and no other earth totem near him), no attacks into Majordomo's
+#                     reflection shields, ranged out of Ragnaros' knockback, the raid stays
+#                     within 30 yd of Garr and leaves a Firesworn with Separation Anxiety alone
+#                     (bots already on one stop attacking), every bot within 23 yd of Baron
+#                     Geddon walks out of his Inferno, and bots in combat don't stand at the
+#                     Hot Coal in Majordomo's room (12 yd; a tank with a mob on it 22 yd).
 #        Default:     1
 #
 
@@ -198,6 +216,10 @@ RaidClear.ZulGurub.Enable = 1
 #                     Also: tanks other than the main tank and the one she is on stand at her
 #                     side (one she turns to joins the main tank), bots leave a mob that evades
 #                     every attack and don't pick one, and Hunter's Mark stays off the whelps.
+#                     While she is in the air, ranged bots and healers standing in a crowd
+#                     spread out for her Fireball (8 yd splash). On the level 60 Onyxia, who
+#                     can't be taunted, damage dealers stay under 90% of the tanks' threat
+#                     while she is on the ground or coming down to land.
 #        Default:     1
 #
 

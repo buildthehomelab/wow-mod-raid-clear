@@ -8,10 +8,12 @@
 
 #include "RaidClearConfig.h"
 #include "RaidClearRegistry.h"
+#include "Common/SplashSpells.h"
 #include "Common/TankRoles.h"
 
 #include "AllMapScript.h"
 #include "Creature.h"
+#include "GenericSpellActions.h"
 #include "LastMovementValue.h"
 #include "Map.h"
 #include "MoveSpline.h"
@@ -35,6 +37,11 @@ void RaidClearLeashStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("rc aggro leash", { NextAction("rc aggro leash", ACTION_EMERGENCY + 8) }));
 }
 
+void RaidClearLeashStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new RcLeashSplashMultiplier(botAI));
+}
+
 namespace
 {
     // Mobs further away than this can't matter to where the bot is or is going.
@@ -54,6 +61,13 @@ namespace
     constexpr uint32 STEP_BACK_CHECK_MS = 300;
     // After the step-back search finds nowhere to go, wait this long before searching again.
     constexpr uint32 STEP_BACK_RETRY_MS = 2000;
+    // A spell's reach is judged against the idle mobs within this of the bot (the longest spell
+    // range plus the widest area), listed afresh this often...
+    constexpr float SPLASH_SCAN_RANGE = 80.0f;
+    constexpr uint32 SPLASH_SCAN_MS = 500;
+    // ...and with this much room for where they have walked to since, and for the spell landing
+    // a little off its mark.
+    constexpr float SPLASH_SLACK = 3.0f;
 
     // Per instance. Only ever touched from that instance's map update (the hook below and the
     // bots' own AI, which runs inside Player::Update), so it needs no lock of its own.
@@ -321,6 +335,121 @@ bool RaidClear::Leash::WalkCheck::Pulls(std::vector<G3D::Vector3> const& path) c
         from = to;
     }
     return false;
+}
+
+namespace
+{
+    // Still idle, and not behind a wall from where the spell lands.
+    bool StillIdleInSight(Player* bot, ObjectGuid guid, Unit* centre)
+    {
+        Creature* creature = bot->GetMap()->GetCreature(guid);
+        return creature && creature != centre && WouldAggro(creature) && creature->IsWithinLOSInMap(centre);
+    }
+}
+
+float RcLeashSplashMultiplier::GetValue(Action* action)
+{
+    Config const& config = GetConfig();
+    if (!action || !config.aggroLeash || !config.aggroLeashSplash || !bot->IsInCombat())
+        return 1.0f;
+    CastSpellAction* cast = dynamic_cast<CastSpellAction*>(action);
+    if (!cast)
+        return 1.0f;
+    Splash::Reach const reach = Splash::ReachOf(botAI, bot, cast->getSpell());
+    if (!reach.Any())
+        return 1.0f;
+
+    // A pull: the target's own pack comes along whatever it is hit with.
+    Unit* target = action->GetTarget();
+    if (target == bot)
+        target = nullptr;
+    if (target && (!target->IsAlive() || !target->IsInCombat()))
+        return 1.0f;
+
+    uint32 const now = getMSTime();
+    uint32 const instance = bot->GetInstanceId();
+    if (!_idleAtMs || _idleInstance != instance || getMSTimeDiff(_idleAtMs, now) >= SPLASH_SCAN_MS)
+    {
+        _idleAtMs = now ? now : 1;
+        _idleInstance = instance;
+        _idle.clear();
+        Map* map = bot->GetMap();
+        std::shared_ptr<InstanceState> state = StateOf(map);
+        RefreshIdle(map, *state);
+        for (ObjectGuid const& guid : state->idle)
+        {
+            Creature* creature = map->GetCreature(guid);
+            if (!creature || !WouldAggro(creature) || bot->GetExactDist(creature) > SPLASH_SCAN_RANGE ||
+                !creature->IsHostileTo(bot))
+                continue;
+            // A player's area spell reaches a mob's edge, not its middle.
+            _idle.push_back({ guid, creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
+                              creature->GetCombatReach() });
+        }
+    }
+    if (_idle.empty())
+        return 1.0f;
+
+    // Around the bot, and around what it is aimed at.
+    struct Blast
+    {
+        Unit* centre;
+        float radius;
+    };
+    Blast const blasts[] = { { bot, reach.aroundCaster }, { target, reach.aroundTarget } };
+    for (Blast const& blast : blasts)
+    {
+        if (!blast.centre || blast.radius <= 0.0f)
+            continue;
+        for (Idle const& idle : _idle)
+        {
+            if (blast.centre->GetExactDist(idle.x, idle.y, idle.z) > blast.radius + idle.reach + SPLASH_SLACK)
+                continue;
+            if (StillIdleInSight(bot, idle.guid, blast.centre))
+                return 0.0f;
+        }
+    }
+
+    // A chain goes on from each enemy it hits, a jump at a time: from the target over the mobs in
+    // the fight, to whatever stands within a jump of one of them.
+    if (!reach.chainHops || !target)
+        return 1.0f;
+    std::vector<Unit*> fighting;
+    for (ObjectGuid const& guid : AI_VALUE(GuidVector, "attackers"))
+    {
+        Unit* unit = botAI->GetUnit(guid);
+        if (unit && unit != target && unit->IsAlive())
+            fighting.push_back(unit);
+    }
+    std::vector<Unit*> from = { target };
+    for (uint32 hop = 0; hop < reach.chainHops && !from.empty(); ++hop)
+    {
+        // The core measures a jump edge to edge.
+        for (Unit* source : from)
+            for (Idle const& idle : _idle)
+                if (source->GetExactDist(idle.x, idle.y, idle.z) <=
+                        reach.chainJump + source->GetCombatReach() + idle.reach + SPLASH_SLACK &&
+                    StillIdleInSight(bot, idle.guid, source))
+                    return 0.0f;
+
+        std::vector<Unit*> next;
+        for (auto it = fighting.begin(); it != fighting.end();)
+        {
+            bool reached = false;
+            for (Unit* source : from)
+                if (source->GetDistance(*it) <= reach.chainJump + SPLASH_SLACK)
+                    reached = true;
+            if (reached)
+            {
+                next.push_back(*it);
+                it = fighting.erase(it);
+            }
+            else
+                ++it;
+        }
+        from = std::move(next);
+    }
+    return 1.0f;
 }
 
 bool RcAggroLeashTrigger::IsActive()

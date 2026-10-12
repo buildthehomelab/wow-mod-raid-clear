@@ -70,6 +70,7 @@ namespace RaidClear
         sConfig.deathLog = sConfigMgr->GetOption<bool>("RaidClear.DeathLog", true);
         sConfig.aggroLeash = sConfigMgr->GetOption<bool>("RaidClear.AggroLeash", true);
         sConfig.aggroLeashBuffer = std::max(0.0f, sConfigMgr->GetOption<float>("RaidClear.AggroLeash.Buffer", 6.0f));
+        sConfig.aggroLeashSplash = sConfigMgr->GetOption<bool>("RaidClear.AggroLeash.Splash", true);
         sConfig.raidEnabled.clear();
         for (RaidEntry const& raid : Raids)
             sConfig.raidEnabled[raid.mapId] =
@@ -209,6 +210,7 @@ void AddRaidClearScripts()
     DeathLog::AddScripts();
     Leash::AddScripts();
     BlackwingLair::AddScripts();
+    MoltenCore::AddScripts();
     OnyxiasLair::AddScripts();
     ZulGurub::AddScripts();
 }

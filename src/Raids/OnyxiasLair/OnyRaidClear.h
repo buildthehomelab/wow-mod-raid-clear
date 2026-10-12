@@ -38,6 +38,21 @@
  *     leaves a whelp) is replaced by one that picks the nearest whelp that isn't evading; the
  *     level 60 fight's whelps are another creature, which that action never knew.
  *   - Hunter's Mark stays off the whelps: they die within seconds.
+ *   - Apart in the air phase. Her Fireball (18392) hits everyone within 8 yd of whoever it is
+ *     thrown at. Playerbots only has the Fireball's own target step away, and only while she is
+ *     casting it (3 s), so a raid standing in one pile stays in one pile and takes it 30 at a
+ *     time. Here, while she is in the air and no Deep Breath is on, a ranged bot or healer with
+ *     two or more raid members within 9.5 yd walks to the nearest spot with nobody that close
+ *     (level floor it can see, not at the whelp caves or in the egg trench). Tanks and melee stay
+ *     on the whelps.
+ *   - Under the tanks' threat on the level 60 Onyxia. She can't be taunted, and she zeroes
+ *     everyone's threat as she comes down to land: whoever has the most when she touches down
+ *     has her, and a tank only gets her back by out-threatening it. Playerbots' damage dealers
+ *     don't watch their threat. Here a bot that isn't a tank holds its damage on her at 90% of
+ *     the threat of the tank with the most (among the tanks within 30 yd of her): on the ground,
+ *     and in the air from 40% health down, which is her way to the landing. At the pull and at a
+ *     landing that means until a tank has hit her. Swings, pets and debuffs carry on. Not for the
+ *     core's own Onyxia, where a taunt takes her back.
  *
  * Released under the MIT License.
  */
@@ -97,6 +112,22 @@ namespace RaidClear::OnyxiasLair
     constexpr float JOIN_NEAR = 8.0f;
     constexpr float JOIN_RANGE = 40.0f;
 
+    // Fireball (18392) hits everyone within 8 yd of its target, centre to centre. In the air phase
+    // a ranged bot or healer with SPREAD_CROWD or more raid members within FIREBALL_SPREAD looks
+    // for a spot with none that close, up to SPREAD_SEARCH yards away.
+    constexpr float FIREBALL_SPREAD = 9.5f;
+    constexpr int SPREAD_CROWD = 2;
+    constexpr float SPREAD_SEARCH = 24.0f;
+
+    // On the level 60 Onyxia a damage dealer stays under this share of the threat of the tank with
+    // the most, among the tanks within this range of her.
+    constexpr float TANK_THREAT_SHARE = 0.9f;
+    constexpr float TANK_THREAT_RANGE = 30.0f;
+    // She comes down to land at 40% health (mod-individual-progression's script). On her way
+    // down every tank in the room counts.
+    constexpr float LANDING_HEALTH_PCT = 40.0f;
+    constexpr float LANDING_TANK_RANGE = 200.0f;
+
     void AddScripts();
 }
 
@@ -140,6 +171,43 @@ class RcOnyDeepBreathMultiplier : public Multiplier
 {
 public:
     RcOnyDeepBreathMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc ony deep breath") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Fireball -------------------------------------------------------------
+
+// Onyxia is in the air, no Deep Breath is on, and this ranged bot or healer stands in a crowd.
+class RcOnySpreadTrigger : public Trigger
+{
+public:
+    RcOnySpreadTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc ony spread") {}
+    bool IsActive() override;
+
+private:
+    // Looked at twice a second, not on every update.
+    uint32 _lastCheckMs = 0;
+    bool _lastResult = false;
+};
+
+class RcOnySpreadOutAction : public MovementAction
+{
+public:
+    RcOnySpreadOutAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc ony spread out") {}
+    bool Execute(Event event) override;
+
+private:
+    Position _spot;
+    uint32 _sentAtMs = 0;
+    uint32 _noSpotAtMs = 0;
+};
+
+// --- Threat ---------------------------------------------------------------
+
+// On the ground, damage dealers stay under the tanks' threat on an Onyxia no taunt moves.
+class RcOnyTankThreatMultiplier : public Multiplier
+{
+public:
+    RcOnyTankThreatMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc ony tank threat") {}
     float GetValue(Action* action) override;
 };
 

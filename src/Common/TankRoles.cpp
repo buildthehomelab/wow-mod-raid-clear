@@ -791,6 +791,22 @@ namespace RaidClear::Tanks
         return backup >= holder * BACKUP_COUNTS ? backup : holder;
     }
 
+    float BestTankThreat(Player* bot, Unit* boss, float range)
+    {
+        float best = -1.0f;
+        Group* group = bot->GetGroup();
+        if (!group)
+            return best;
+        ThreatManager const& threat = boss->GetThreatMgr();
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (member && member->IsInMap(boss) && CanHoldBoss(member) && member->GetDistance(boss) <= range)
+                best = std::max(best, threat.GetThreat(member));
+        }
+        return best;
+    }
+
     Player* BossVictimToProtect(Unit* boss)
     {
         // Where a taunt lands, a taunt is the answer: it costs the victim nothing.
@@ -1151,7 +1167,7 @@ bool RcSalvationOnPlayerAction::Execute(Event /*event*/)
     return CanHand(botAI, bot, "hand of salvation", player) && botAI->CastSpell("hand of salvation", player);
 }
 
-namespace
+namespace RaidClear::Tanks
 {
     // What the threat cap holds back: anything that does damage or is cast for its threat. A
     // debuff that does neither (a curse, Hunter's Mark) costs next to no threat and still goes
