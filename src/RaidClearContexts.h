@@ -59,6 +59,7 @@ public:
         creators["rc mc leave firesworn"] = &RaidClearActionContext::mc_leave_firesworn;
         creators["rc mc leave inferno"] = &RaidClearActionContext::mc_leave_inferno;
         creators["rc mc leave hot coal"] = &RaidClearActionContext::mc_leave_hot_coal;
+        creators["rc mc carry living bomb"] = &RaidClearActionContext::mc_carry_living_bomb;
 
         creators["rc bwl disarm suppression"] = &RaidClearActionContext::bwl_disarm_suppression;
         creators["rc bwl broodlord move out"] = &RaidClearActionContext::bwl_broodlord_move_out;
@@ -86,6 +87,7 @@ public:
         creators["rc ony leave evading target"] = &RaidClearActionContext::ony_leave_evading_target;
         creators["rc ony kill whelps"] = &RaidClearActionContext::ony_kill_whelps;
         creators["rc ony spread out"] = &RaidClearActionContext::ony_spread_out;
+        creators["rc ony leave cleave"] = &RaidClearActionContext::ony_leave_cleave;
     }
 
 private:
@@ -104,6 +106,7 @@ private:
     static Action* mc_leave_firesworn(PlayerbotAI* botAI) { return new RcMcLeaveFireswornAction(botAI); }
     static Action* mc_leave_inferno(PlayerbotAI* botAI) { return new RcMcLeaveInfernoAction(botAI); }
     static Action* mc_leave_hot_coal(PlayerbotAI* botAI) { return new RcMcLeaveHotCoalAction(botAI); }
+    static Action* mc_carry_living_bomb(PlayerbotAI* botAI) { return new RcMcCarryLivingBombAction(botAI); }
 
     static Action* bwl_disarm_suppression(PlayerbotAI* botAI) { return new RcBwlDisarmSuppressionAction(botAI); }
     static Action* bwl_broodlord_move_out(PlayerbotAI* botAI)
@@ -139,6 +142,7 @@ private:
     static Action* ony_leave_evading_target(PlayerbotAI* botAI) { return new RcOnyLeaveEvadingTargetAction(botAI); }
     static Action* ony_kill_whelps(PlayerbotAI* botAI) { return new RcOnyKillWhelpsAction(botAI); }
     static Action* ony_spread_out(PlayerbotAI* botAI) { return new RcOnySpreadOutAction(botAI); }
+    static Action* ony_leave_cleave(PlayerbotAI* botAI) { return new RcOnyLeaveCleaveAction(botAI); }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -161,6 +165,7 @@ public:
         creators["rc mc anxious firesworn"] = &RaidClearTriggerContext::mc_anxious_firesworn;
         creators["rc mc inferno"] = &RaidClearTriggerContext::mc_inferno;
         creators["rc mc hot coal"] = &RaidClearTriggerContext::mc_hot_coal;
+        creators["rc mc living bomb"] = &RaidClearTriggerContext::mc_living_bomb;
 
         creators["rc bwl suppression device"] = &RaidClearTriggerContext::bwl_suppression_device;
         creators["rc bwl broodlord ranged"] = &RaidClearTriggerContext::bwl_broodlord_ranged;
@@ -187,6 +192,7 @@ public:
         creators["rc ony offtank position"] = &RaidClearTriggerContext::ony_offtank_position;
         creators["rc ony evading target"] = &RaidClearTriggerContext::ony_evading_target;
         creators["rc ony spread"] = &RaidClearTriggerContext::ony_spread;
+        creators["rc ony cleave"] = &RaidClearTriggerContext::ony_cleave;
     }
 
 private:
@@ -205,6 +211,7 @@ private:
     static Trigger* mc_anxious_firesworn(PlayerbotAI* botAI) { return new RcMcAnxiousFireswornTrigger(botAI); }
     static Trigger* mc_inferno(PlayerbotAI* botAI) { return new RcMcInfernoTrigger(botAI); }
     static Trigger* mc_hot_coal(PlayerbotAI* botAI) { return new RcMcHotCoalTrigger(botAI); }
+    static Trigger* mc_living_bomb(PlayerbotAI* botAI) { return new RcMcLivingBombTrigger(botAI); }
 
     static Trigger* bwl_suppression_device(PlayerbotAI* botAI) { return new RcBwlSuppressionDeviceTrigger(botAI); }
     static Trigger* bwl_broodlord_ranged(PlayerbotAI* botAI)
@@ -241,6 +248,7 @@ private:
     static Trigger* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionTrigger(botAI); }
     static Trigger* ony_evading_target(PlayerbotAI* botAI) { return new RcOnyEvadingTargetTrigger(botAI); }
     static Trigger* ony_spread(PlayerbotAI* botAI) { return new RcOnySpreadTrigger(botAI); }
+    static Trigger* ony_cleave(PlayerbotAI* botAI) { return new RcOnyCleaveTrigger(botAI); }
 };
 
 #endif

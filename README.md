@@ -122,7 +122,7 @@ Damage is what was actually dealt. A hit whose spell can't be matched shows as `
 
 ### Molten Core
 
-Playerbots already handles Living Bomb, Shazzrah's Arcane Explosion, the Golemagg /
+Playerbots already handles Shazzrah's Arcane Explosion, the Golemagg /
 Core Rager tank split (the off-tank split stays out of that fight), Core Hound packs, lava pools and the resistance auras. On top of that:
 
 | Fight | What the bots do |
@@ -132,9 +132,10 @@ Core Rager tank split (the off-tank split stays out of that fight), Core Hound p
 | Garr | A **Firesworn** more than 40 yards from Garr gets **Separation Anxiety** (four times the damage), and every Firesworn erupts when it dies: about 2,000 fire damage to everyone within 15 yards, or 8,000 with Separation Anxiety. So the fight stays with Garr. A bot more than 30 yards from him walks back to 22, and the Firesworn on it follows (a tank only comes when a Firesworn is on it, so trash pulled with the boss stays where its tank holds it). Nobody but the tanks hits a Firesworn that has Separation Anxiety or is far enough out to get it: bots already attacking one stop, pets and Auto Shot included, and the skull never goes on one. |
 | Magmadar | Every shaman keeps **Tremor Totem** down against **Panic**, and places no other earth totem while he is near: playerbots keeps Stoneskin or Strength of Earth down the same way, and left alone the two replace each other every second and a half. |
 | Baron Geddon | **Inferno** burns everyone within 20 yards of him for 8 seconds, harder with every pulse, and he stands still for it. Playerbots walks its bots out, but only the ones that have threat on him: a tank holding an add, a bot on the trash that came with him or one revived mid-fight stands in all of it. Here every bot within 23 yards of him drops its spell and walks to the nearest spot 25 yards out, his tank included; nobody walks back toward anything that close to him until it is over, and a bot still inside casts nothing it has to stand still for. |
+| Baron Geddon | **Living Bomb** goes off after 8 seconds and hits every raid member within 18 yards of its carrier. Playerbots moves the carrier away from the middle of the raid by as many yards as its nearest neighbour is short of 20, which gets a bot at the edge of the group clear and leaves one in the middle (where the healers stand) surrounded. Here the carrier walks to the nearest spot 24.5 yards from everyone else and out of Inferno's reach, looked for up to 40 yards away, or to the emptiest spot there is. |
 | Sulfuron Harbinger | Kill the Flamewaker Priests first. |
 | Majordomo Executus | Healers first, then Elites. No spells into **Magic Reflection**; melee stop swinging into **Damage Reflection** (tanks keep going). The **Hot Coal** in the middle of his room (where his Teleport throws players) burns everyone within 10 yards for about 750 a second while anyone stands within 7 yards of it. In combat a bot that has stopped within 12 yards of it walks out, on the side its target is on (one only crossing the pit is left alone). A tank with a mob on it goes 22 yards out, so the mob follows it out of reach. Melee whose target stands in it stay on that target. |
-| Ragnaros | Ranged and healers stay out of **Wrath of Ragnaros** range. Kill the **Sons of Flame** when he submerges. |
+| Ragnaros | Ranged and healers stay out of **Wrath of Ragnaros**, which reaches 25 yards from his middle. He is 20 yards wide himself, so the distance is measured centre to centre: a bot closer than 27.5 yards to his middle walks to the nearest dry spot 29.5 yards out and doesn't walk back toward anything that close to him. Not while he is under the lava. Kill the **Sons of Flame** when he submerges. |
 
 ### Blackwing Lair
 
@@ -304,6 +305,11 @@ Category: Raids
 - Magmadar: shamans keep **Tremor Totem** down and go back to healing and fighting. They used to
   swap it with their Stoneskin Totem every second and a half for the whole fight.
 - Majordomo Executus: bots no longer stand on the **Hot Coal** in the middle of his room.
+- Baron Geddon: a bot with **Living Bomb** now gets clear of the raid even when it starts in the
+  middle of it. Healers used to blow up half the group.
+- Ragnaros: fixed an issue where ranged bots and healers were sent much further from him than the
+  ledge reaches, never got there, and stayed in **Wrath of Ragnaros**.
+- Onyxia: healers and casters no longer stand next to her tank in reach of **Cleave**.
 - Raids: bots don't drop a Blizzard, Volley or Chain Lightning where it would hit a pack that
   isn't in the fight yet.
 - Onyxia: ranged bots and healers spread out while she is in the air, so one **Fireball** no
@@ -318,7 +324,7 @@ Category: Raids
 ### Onyxia's Lair
 
 Playerbots' own strategy keeps bots off her head and tail, away from the whelp eggs and on the
-whelps while she flies. This module takes over the Deep Breath and fills five gaps. It works for Onyxia as the core spawns her and for
+whelps while she flies. This module takes over the Deep Breath and fills seven gaps. It works for Onyxia as the core spawns her and for
 [mod-individual-progression](https://github.com/ZhengPeiRu21/mod-individual-progression)'s level 60
 Onyxia.
 
@@ -329,6 +335,8 @@ Onyxia.
 | Whelps and trash | A mob that can't find a way to the player it is after evades every attack, but goes on hitting. Playerbots doesn't look at that: bots keep attacking it and tanks keep taunting it. Here playerbots' target picking skips an evading mob, a bot already on one switches to what playerbots picks next (else the nearest enemy it can hurt, else Onyxia), and off-tanks don't try to pick one up (in every raid, with `RaidClear.Tanks.Split`). Playerbots' whelp rule for the core's Onyxia, which takes the first whelp it finds and never lets go of it, is replaced by one that takes the nearest whelp that isn't evading. The level 60 Onyxia's whelps are a different creature, which that rule never covered: bots pick those as they pick any other enemy. |
 | Whelps | Hunters don't put **Hunter's Mark** on whelps, which die within seconds. |
 | Onyxia, in the air | Her **Fireball** hits everyone within 8 yards of whoever it is thrown at. Playerbots only has the Fireball's own target step away, and only during the 3-second cast, so a raid standing in one pile stays in one pile and takes it thirty at a time. Here, while she is in the air and no Deep Breath is on, a ranged bot or healer with two or more raid members within 9.5 yards walks to the nearest spot with nobody that close. Tanks and melee stay on the whelps. |
+| Onyxia, on the ground | **Cleave** hits whoever she is on and up to nine more within 10 yards of that one, anywhere in the half of the room she faces. Playerbots only clears a 45 degree cone at her head. A ranged bot or healer within 13 yards of her target and in that half walks to the nearest spot 14.5 yards from the target or round past her side, out of line with her head and tail; an off-tank there goes to her side. |
+| Anywhere in the lair | A wand isn't started on a target more than 30 yards away. Playerbots' "shoot" never checks the distance, and with Onyxia out of reach casters restarted it a few times a second. |
 | Level 60 Onyxia, on the ground | She can't be taunted and zeroes everyone's threat as she comes down to land, so whoever has the most when she touches down has her until a tank out-threatens it. A bot that isn't a tank holds its damage on her at 90% of the threat of the tank with the most (of the tanks within 30 yards of her), on the ground and on her way down to land (in the air from 40% health): at the pull and at a landing that means until a tank has hit her. Swings, pets and debuffs carry on. The core's own Onyxia can be taunted and is left to that. |
 
 ## Troubleshooting

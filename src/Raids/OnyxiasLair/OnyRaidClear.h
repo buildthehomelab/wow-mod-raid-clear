@@ -38,6 +38,14 @@
  *     leaves a whelp) is replaced by one that picks the nearest whelp that isn't evading; the
  *     level 60 fight's whelps are another creature, which that action never knew.
  *   - Hunter's Mark stays off the whelps: they die within seconds.
+ *   - Out of her Cleave. It hits whoever she is on and up to nine more within 10 yd of that one,
+ *     anywhere in the half of the room she faces. Playerbots only clears a 45 degree cone at her
+ *     head, so a healer or caster standing next to the tank a little to one side took every one.
+ *     A ranged bot or healer within 13 yd of her victim and in that half walks to the nearest
+ *     spot 14.5 yd from the victim or round past her side, out of line with her head and tail;
+ *     an off-tank there goes to her side.
+ *   - A wand isn't started on a target more than 30 yd away. Playerbots' "shoot" never checks,
+ *     and with Onyxia out of reach casters restarted it a few times a second.
  *   - Apart in the air phase. Her Fireball (18392) hits everyone within 8 yd of whoever it is
  *     thrown at. Playerbots only has the Fireball's own target step away, and only while she is
  *     casting it (3 s), so a raid standing in one pile stays in one pile and takes it 30 at a
@@ -59,6 +67,8 @@
 
 #ifndef MOD_RAID_CLEAR_ONYXIAS_LAIR_H
 #define MOD_RAID_CLEAR_ONYXIAS_LAIR_H
+
+#include "Common/WayOut.h"
 
 #include "Action.h"
 #include "AttackAction.h"
@@ -111,6 +121,17 @@ namespace RaidClear::OnyxiasLair
     // JOIN_NEAR it is there, and it never walks further than JOIN_RANGE for it.
     constexpr float JOIN_NEAR = 8.0f;
     constexpr float JOIN_RANGE = 40.0f;
+
+    // Cleave (68868): her victim and up to nine more within 10 yd of it, in the half of the room
+    // she faces. A ranged bot, healer or off-tank within KEEP_AWAY of her victim and less than
+    // CLEAVE_ARC round from her nose is in it; ranged bots and healers walk to the nearest spot
+    // SPOT from the victim or past the arc.
+    constexpr float CLEAVE_KEEP_AWAY = 13.0f;
+    constexpr float CLEAVE_SPOT = 14.5f;
+    constexpr float CLEAVE_WORTH_IT = 2.0f;
+    constexpr float CLEAVE_ARC = float(M_PI_2) + 0.2f;
+    // How far a wand shoots (Shoot, 5019).
+    constexpr float WAND_RANGE = 30.0f;
 
     // Fireball (18392) hits everyone within 8 yd of its target, centre to centre. In the air phase
     // a ranged bot or healer with SPREAD_CROWD or more raid members within FIREBALL_SPREAD looks
@@ -230,6 +251,26 @@ public:
     bool Execute(Event event) override;
 };
 
+// --- Cleave ---------------------------------------------------------------
+
+// Onyxia is on the ground and this ranged bot or healer stands where her Cleave reaches.
+class RcOnyCleaveTrigger : public Trigger
+{
+public:
+    RcOnyCleaveTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc ony cleave") {}
+    bool IsActive() override;
+};
+
+class RcOnyLeaveCleaveAction : public Action
+{
+public:
+    RcOnyLeaveCleaveAction(PlayerbotAI* botAI) : Action(botAI, "rc ony leave cleave"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
 // --- Evading mobs ---------------------------------------------------------
 
 // The bot's target evades every attack. (Playerbots' target picking already skips such a mob:
@@ -256,7 +297,8 @@ public:
     bool Execute(Event event) override;
 };
 
-// Switches off playerbots' whelp action (replaced above), keeps Hunter's Mark off the whelps,
+// Switches off playerbots' whelp action (replaced above), keeps Hunter's Mark off the whelps and
+// the wand off a target out of its range,
 // stops the target picking that doesn't go through the exclusions from taking an evading mob, and
 // keeps an off-tank who joined the main tank from turning her by itself.
 class RcOnyTargetMultiplier : public Multiplier
