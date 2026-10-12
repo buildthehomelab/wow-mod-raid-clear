@@ -581,6 +581,11 @@ namespace RaidClear::Tanks
                 IsIgnoredAdd(unit) || IsSpreadAdd(unit))
                 continue;
 
+            // A mob that evades (it is running home, or can't find a way to its victim) can't be
+            // taunted or hit: nothing to pick up until it stops.
+            if (unit->IsCreature() && unit->ToCreature()->IsEvadingAttacks())
+                continue;
+
             float const dist = bot->GetDistance(unit);
             if (dist > PICKUP_RANGE)
                 continue;

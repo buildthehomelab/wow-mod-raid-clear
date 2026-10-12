@@ -51,7 +51,8 @@ RaidClear.Tanks.AssignMainTank = 1
 #                     On bosses that cut their tank's threat or can't be taunted (Broodlord
 #                     Lashlayer, Firemaw, Ebonroc, Flamegor, Vaelastrasz) an off-tank with no add to hold attacks the boss too, so it catches
 #                     the boss after a Knock Away / Wing Buffet. Blackwing Lair's Suppression Room
-#                     whelps are never picked up.
+#                     whelps are never picked up, and neither is a loose mob that evades every
+#                     attack (one that can't find a way to its victim): a taunt does nothing to it.
 #                     On bosses that keep taking their tank away (Hakkar) the tanks share the
 #                     boss's threat with taunts and damage dealers hold their damage while they
 #                     are within 10% of the next tank's threat, so the boss always turns to a tank.
@@ -177,6 +178,9 @@ RaidClear.ZulGurub.Enable = 1
 #                     nobody walks into or across it until it has passed. The strip is read from
 #                     the server's spell data (spell_target_position), so it follows the core.
 #                     Replaces playerbots' fixed safe zones for the breath.
+#                     Also: tanks other than the main tank and the one she is on stand at her
+#                     side (one she turns to joins the main tank), bots leave a mob that evades
+#                     every attack and don't pick one, and Hunter's Mark stays off the whelps.
 #        Default:     1
 #
 

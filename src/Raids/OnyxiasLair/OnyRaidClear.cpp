@@ -8,6 +8,7 @@
 
 #include "RaidClearConfig.h"
 #include "Common/BossLookup.h"
+#include "Common/TankRoles.h"
 
 #include "AllSpellScript.h"
 #include "AttackAction.h"
@@ -33,11 +34,24 @@ void RaidClearOnyxiasLairStrategy::InitTriggers(std::vector<TriggerNode*>& trigg
     // Above playerbots' own "ony move to safe zone" (ACTION_EMERGENCY + 5).
     triggers.push_back(new TriggerNode("rc ony deep breath",
                                        { NextAction("rc ony leave deep breath", ACTION_EMERGENCY + 6) }));
+
+    // The same priority playerbots gives the melee's walk to her side.
+    triggers.push_back(new TriggerNode("rc ony offtank position",
+                                       { NextAction("rc ony offtank position", ACTION_RAID + 2) }));
+
+    // Above both, so a bot is off an evading mob before it does anything else to it.
+    triggers.push_back(new TriggerNode("rc ony evading target",
+                                       { NextAction("rc ony leave evading target", ACTION_RAID + 3) }));
+
+    // Playerbots' own trigger and priority; its action is switched off by the multiplier.
+    triggers.push_back(new TriggerNode("ony whelps spawn",
+                                       { NextAction("rc ony kill whelps", ACTION_RAID + 1) }));
 }
 
 void RaidClearOnyxiasLairStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcOnyDeepBreathMultiplier(botAI));
+    multipliers.push_back(new RcOnyTargetMultiplier(botAI));
 }
 
 // --- Deep Breath ----------------------------------------------------------
@@ -308,6 +322,248 @@ float RcOnyDeepBreathMultiplier::GetValue(Action* action)
         return 0.0f;
     return CrossesFire(*trail, botX, botY, target->GetPositionX(), target->GetPositionY(), BREATH_KEEP_OUT) ? 0.0f
                                                                                                              : 1.0f;
+}
+
+// --- Off-tanks ------------------------------------------------------------
+
+namespace
+{
+    // How far round from her nose the bot stands: 0 dead ahead, pi at the tip of her tail.
+    float AngleOffNose(Unit const* boss, Player const* bot)
+    {
+        float const diff = std::fabs(boss->GetAngle(bot) - boss->GetOrientation());
+        return diff > float(M_PI) ? 2.0f * float(M_PI) - diff : diff;
+    }
+
+    bool AtHeadOrTail(Unit const* boss, Player const* bot)
+    {
+        if (bot->GetDistance(boss) > SIDE_RANGE)
+            return false;
+        float const angle = AngleOffNose(boss, bot);
+        return angle < SIDE_CONE || angle > float(M_PI) - SIDE_CONE;
+    }
+
+    // The main tank an off-tank Onyxia has turned to stands with, or nullptr. Only a main tank
+    // who is at her: one busy with whelps, far off or running in fear would have the off-tank drag
+    // her through the raid.
+    Player* MainTankAtBoss(Player* bot, Unit const* boss)
+    {
+        Player* mainTank = RaidClear::Tanks::ActingMainTank(bot->GetGroup());
+        if (!RaidClear::Tanks::IsOffTank(bot, mainTank) || !mainTank->IsWithinMeleeRange(boss) ||
+            mainTank->HasUnitState(UNIT_STATE_FLEEING | UNIT_STATE_CONFUSED))
+            return nullptr;
+        return mainTank;
+    }
+
+    // Whether that off-tank still has to walk over: not there yet, and the main tank's spot is one
+    // it can see, within reach and away from the whelp caves.
+    bool ShouldJoin(Player* bot, Player* mainTank)
+    {
+        float const dist = bot->GetDistance(mainTank);
+        return dist > JOIN_NEAR && dist <= JOIN_RANGE && bot->IsWithinLOSInMap(mainTank) &&
+               !NearEggs(mainTank->GetPositionX(), mainTank->GetPositionY());
+    }
+}
+
+bool RcOnyOffTankPositionTrigger::IsActive()
+{
+    if (!bot->IsAlive() || !PlayerbotAI::IsTank(bot))
+        return false;
+
+    Creature* boss = FightingOnyxia(bot);
+    if (!boss || boss->IsFlying())
+        return false;
+    Unit* victim = boss->GetVictim();
+    if (!victim)
+        return false;
+
+    // The main tank stays in front: it is the one who takes her back when she turns away.
+    Player* mainTank = RaidClear::Tanks::ActingMainTank(bot->GetGroup());
+    if (!RaidClear::Tanks::IsOffTank(bot, mainTank))
+        return false;
+
+    // She is on me: at her side that turns her head to the bots standing there.
+    if (victim == bot)
+    {
+        Player* join = MainTankAtBoss(bot, boss);
+        return join && ShouldJoin(bot, join);
+    }
+
+    // Holding a whelp is done where the whelp is, in front of her or not.
+    Unit* current = AI_VALUE(Unit*, "current target");
+    if (current && current != boss)
+        return false;
+
+    return AtHeadOrTail(boss, bot);
+}
+
+bool RcOnyOffTankPositionAction::Execute(Event /*event*/)
+{
+    Creature* boss = FightingOnyxia(bot);
+    if (!boss)
+        return false;
+
+    if (boss->GetVictim() == bot)
+    {
+        Player* join = MainTankAtBoss(bot, boss);
+        return join && ShouldJoin(bot, join) &&
+               MoveTo(bot->GetMapId(), join->GetPositionX(), join->GetPositionY(), join->GetPositionZ(), false, false,
+                      false, false, MovementPriority::MOVEMENT_COMBAT);
+    }
+
+    // Her two sides, the nearer one first. Level floor the bot can see, not at the whelp caves.
+    Map* map = bot->GetMap();
+    float const botZ = bot->GetPositionZ();
+    float const facing = boss->GetOrientation();
+    Position sides[2];
+    for (int i = 0; i < 2; ++i)
+    {
+        float const angle = facing + (i == 0 ? float(M_PI_2) : -float(M_PI_2));
+        sides[i].Relocate(boss->GetPositionX() + SIDE_DISTANCE * std::cos(angle),
+                          boss->GetPositionY() + SIDE_DISTANCE * std::sin(angle), botZ);
+    }
+    if (bot->GetExactDist2d(&sides[1]) < bot->GetExactDist2d(&sides[0]))
+        std::swap(sides[0], sides[1]);
+
+    for (Position const& side : sides)
+    {
+        float const x = side.GetPositionX();
+        float const y = side.GetPositionY();
+        if (NearEggs(x, y))
+            continue;
+
+        float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + BREATH_SPOT_HEIGHT);
+        if (z <= INVALID_HEIGHT || std::fabs(z - botZ) > BREATH_SPOT_HEIGHT)
+            continue;
+        if (!bot->IsWithinLOS(x, y, z + 2.0f))
+            continue;
+
+        return MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT);
+    }
+    return false;
+}
+
+// --- Evading mobs ---------------------------------------------------------
+
+namespace
+{
+    bool IsWhelp(Unit const* unit)
+    {
+        return unit->GetEntry() == NPC_ONYXIAN_WHELP || unit->GetEntry() == NPC_ONYXIAN_WHELP_40;
+    }
+
+    // A living mob no attack can land on: it is running home, or it can't find a way to its
+    // victim (the core then lets it evade everything, though it goes on hitting whoever it can
+    // reach). Onyxia herself is left out: she is what the bots fall back to.
+    bool IsEvadingMob(Unit const* unit)
+    {
+        Creature const* creature = unit ? unit->ToCreature() : nullptr;
+        return creature && creature->IsAlive() && creature->GetEntry() != NPC_ONYXIA &&
+               creature->GetEntry() != NPC_ONYXIA_40 && creature->IsEvadingAttacks();
+    }
+
+    // The nearest enemy in the list the bot can hurt and see (playerbots' Attack refuses a target
+    // out of sight); with `whelpsOnly`, the nearest of the whelps playerbots' action knows (the
+    // core's). Never Onyxia.
+    Unit* NearestHittable(PlayerbotAI* botAI, Player* bot, GuidVector const& units, bool whelpsOnly)
+    {
+        Unit* best = nullptr;
+        float bestDist = 0.0f;
+        for (ObjectGuid const& guid : units)
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsAlive() || !unit->IsInWorld())
+                continue;
+            if (whelpsOnly ? unit->GetEntry() != NPC_ONYXIAN_WHELP
+                           : (unit->GetEntry() == NPC_ONYXIA || unit->GetEntry() == NPC_ONYXIA_40))
+                continue;
+            if (IsEvadingMob(unit) || !bot->IsValidAttackTarget(unit))
+                continue;
+
+            float const dist = bot->GetDistance(unit);
+            if ((best && dist >= bestDist) || !bot->IsWithinLOSInMap(unit))
+                continue;
+            best = unit;
+            bestDist = dist;
+        }
+        return best;
+    }
+}
+
+// Playerbots asks every combat strategy what its target picking should skip ("dps target", "tank
+// target", the debuff targets), in whichever engine the bot is running: a bot whose target has
+// just died picks its next one outside combat, where this strategy's multipliers don't reach.
+// A raid icon comes before the exclusions: a skull a player puts on an evading mob is still
+// picked, and then left again by the trigger below.
+void RaidClearOnyxiasLairStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType /*type*/)
+{
+    GuidVector const& attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+    for (ObjectGuid const& guid : attackers)
+        if (IsEvadingMob(botAI->GetUnit(guid)))
+            exclusions.insert(guid);
+}
+
+bool RcOnyEvadingTargetTrigger::IsActive()
+{
+    // A bot without a living target is handed one by playerbots, which skips the evading ones.
+    return bot->IsAlive() && bot->IsInCombat() && IsEvadingMob(AI_VALUE(Unit*, "current target"));
+}
+
+bool RcOnyLeaveEvadingTargetAction::Execute(Event /*event*/)
+{
+    // What playerbots would pick now, if the bot can attack it from here.
+    Unit* next = AI_VALUE(Unit*, PlayerbotAI::IsTank(bot) ? "tank target" : "dps target");
+    if (next && next->IsAlive() && !IsEvadingMob(next) && Attack(next))
+        return true;
+
+    next = NearestHittable(botAI, bot, AI_VALUE(GuidVector, "attackers"), false);
+    if (next && Attack(next))
+        return true;
+
+    Creature* boss = FightingOnyxia(bot);
+    return boss && bot->IsValidAttackTarget(boss) && Attack(boss);
+}
+
+bool RcOnyKillWhelpsAction::Execute(Event /*event*/)
+{
+    // On a whelp that can be hurt: stay on it, as playerbots does.
+    Unit* current = AI_VALUE(Unit*, "current target");
+    if (current && current->IsAlive() && current->GetEntry() == NPC_ONYXIAN_WHELP && !IsEvadingMob(current))
+        return false;
+
+    Unit* whelp = NearestHittable(botAI, bot, AI_VALUE(GuidVector, "possible targets"), true);
+    return whelp && Attack(whelp);
+}
+
+float RcOnyTargetMultiplier::GetValue(Action* action)
+{
+    if (!action)
+        return 1.0f;
+
+    std::string const name = action->getName();
+    // Replaced by "rc ony kill whelps".
+    if (name == "ony kill whelps")
+        return 0.0f;
+
+    if (name == "hunter's mark")
+    {
+        Unit* target = action->GetTarget();
+        return target && IsWhelp(target) ? 0.0f : 1.0f;
+    }
+
+    // An off-tank she has turned to stands with the main tank (see the off-tank trigger).
+    // Playerbots would have it turn her away from the raid by itself and walk off that spot again.
+    if (name == "tank face")
+    {
+        Creature* boss = FightingOnyxia(bot);
+        return boss && boss->GetVictim() == bot && MainTankAtBoss(bot, boss) ? 0.0f : 1.0f;
+    }
+
+    // Target picking that doesn't go through the exclusions (the area damage target, for one).
+    if (!dynamic_cast<AttackAction*>(action) || dynamic_cast<RcOnyLeaveEvadingTargetAction*>(action) ||
+        dynamic_cast<RcOnyKillWhelpsAction*>(action))
+        return 1.0f;
+    return IsEvadingMob(action->GetTarget()) ? 0.0f : 1.0f;
 }
 
 // A bot's AI waits for the spell it is casting, so a mage two seconds into a Frostbolt would
