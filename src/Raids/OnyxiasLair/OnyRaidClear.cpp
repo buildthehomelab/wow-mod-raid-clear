@@ -42,6 +42,7 @@ void RaidClearOnyxiasLairStrategy::InitTriggers(std::vector<TriggerNode*>& trigg
     // The same priority playerbots gives the melee's walk to her side.
     triggers.push_back(new TriggerNode("rc ony offtank position",
                                        { NextAction("rc ony offtank position", ACTION_RAID + 2) }));
+    triggers.push_back(new TriggerNode("rc ony cleave", { NextAction("rc ony leave cleave", ACTION_RAID + 2) }));
 
     // Above both, so a bot is off an evading mob before it does anything else to it.
     triggers.push_back(new TriggerNode("rc ony evading target",
@@ -531,6 +532,28 @@ namespace
         return angle < SIDE_CONE || angle > float(M_PI) - SIDE_CONE;
     }
 
+    // Cleave: whoever she is on, and up to nine more within 10 yd of that one anywhere in the half
+    // of the room she is facing. Whether a spot is one of those.
+    bool InCleaveAt(Unit const* boss, Unit const* victim, float x, float y)
+    {
+        float diff = std::fabs(boss->GetAngle(x, y) - boss->GetOrientation());
+        if (diff > float(M_PI))
+            diff = 2.0f * float(M_PI) - diff;
+        return diff < CLEAVE_ARC && victim->GetExactDist2d(x, y) < CLEAVE_KEEP_AWAY;
+    }
+
+    // She is on the ground with someone to cleave, and this bot isn't that one but stands in it.
+    Unit* CleavedWith(Player* bot)
+    {
+        Creature* boss = FightingOnyxia(bot);
+        if (!boss || boss->IsFlying())
+            return nullptr;
+        Unit* victim = boss->GetVictim();
+        if (!victim || victim == bot || !InCleaveAt(boss, victim, bot->GetPositionX(), bot->GetPositionY()))
+            return nullptr;
+        return victim;
+    }
+
     // The main tank an off-tank Onyxia has turned to stands with, or nullptr. Only a main tank
     // who is at her: one busy with whelps, far off or running in fear would have the off-tank drag
     // her through the raid.
@@ -582,7 +605,8 @@ bool RcOnyOffTankPositionTrigger::IsActive()
     if (current && current != boss)
         return false;
 
-    return AtHeadOrTail(boss, bot);
+    // Her head and tail, and the rest of her Cleave: next to whoever she is on.
+    return AtHeadOrTail(boss, bot) || InCleaveAt(boss, victim, bot->GetPositionX(), bot->GetPositionY());
 }
 
 bool RcOnyOffTankPositionAction::Execute(Event /*event*/)
@@ -629,6 +653,48 @@ bool RcOnyOffTankPositionAction::Execute(Event /*event*/)
         return MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT);
     }
     return false;
+}
+
+// --- Cleave ---------------------------------------------------------------
+
+bool RcOnyCleaveTrigger::IsActive()
+{
+    // Tanks have their own rule above, and playerbots walks the melee to her side.
+    if (!bot->IsAlive() || !bot->IsInCombat() || PlayerbotAI::IsTank(bot) ||
+        !(PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot)) || !botAI->CanMove())
+        return false;
+    return CleavedWith(bot) != nullptr;
+}
+
+bool RcOnyLeaveCleaveAction::Execute(Event /*event*/)
+{
+    Unit* victim = CleavedWith(bot);
+    if (!victim)
+        return false;
+    Creature* boss = FightingOnyxia(bot);
+    if (!boss)
+        return false;
+
+    // Away from whoever she is on, or round to her side. Not in line with her head or her tail
+    // (Flame Breath and Tail Sweep, and playerbots walks a bot out of both), and not at the whelp
+    // caves.
+    Position const bossAt = boss->GetPosition();
+    Position const victimAt = victim->GetPosition();
+    float const facing = boss->GetOrientation();
+    // SIDE_RANGE is from her edge to the bot's, as playerbots measures it.
+    float const coneRange = SIDE_RANGE + boss->GetCombatReach() + bot->GetCombatReach();
+    auto const gapAt = [&bossAt, &victimAt, facing, coneRange](float x, float y, float /*z*/)
+    {
+        if (NearEggs(x, y))
+            return 0.0f;
+        float diff = std::fabs(bossAt.GetAngle(x, y) - facing);
+        if (diff > float(M_PI))
+            diff = 2.0f * float(M_PI) - diff;
+        if ((diff < SIDE_CONE || diff > float(M_PI) - SIDE_CONE) && bossAt.GetExactDist2d(x, y) <= coneRange)
+            return 0.0f;
+        return diff >= CLEAVE_ARC ? CLEAVE_SPOT : victimAt.GetExactDist2d(x, y);
+    };
+    return _walk.Go(gapAt, CLEAVE_KEEP_AWAY, CLEAVE_SPOT, CLEAVE_WORTH_IT);
 }
 
 // --- Evading mobs ---------------------------------------------------------
@@ -732,6 +798,14 @@ float RcOnyTargetMultiplier::GetValue(Action* action)
     // Replaced by "rc ony kill whelps".
     if (name == "ony kill whelps")
         return 0.0f;
+
+    // The wand never asks how far its target is: with Onyxia out of reach (off to her Deep
+    // Breath, which nobody walks after) casters kept starting it over, a few times a second.
+    if (name == "shoot")
+    {
+        Unit* target = action->GetTarget();
+        return target && !bot->IsWithinCombatRange(target, WAND_RANGE) ? 0.0f : 1.0f;
+    }
 
     if (name == "hunter's mark")
     {

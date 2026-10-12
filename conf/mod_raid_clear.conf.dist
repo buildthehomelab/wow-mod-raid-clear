@@ -154,8 +154,10 @@ RaidClear.AggroLeash.Splash = 1
 #                     reflection shields, ranged out of Ragnaros' knockback, the raid stays
 #                     within 30 yd of Garr and leaves a Firesworn with Separation Anxiety alone
 #                     (bots already on one stop attacking), every bot within 23 yd of Baron
-#                     Geddon walks out of his Inferno, and bots in combat don't stand at the
-#                     Hot Coal in Majordomo's room (12 yd; a tank with a mob on it 22 yd).
+#                     Geddon walks out of his Inferno, a bot with his Living Bomb gets 24.5 yd
+#                     clear of everyone else, and bots in combat don't stand at the Hot Coal in
+#                     Majordomo's room (12 yd; a tank with a mob on it 22 yd). Ragnaros' range
+#                     is measured from his middle (27.5 yd).
 #        Default:     1
 #
 
@@ -219,7 +221,9 @@ RaidClear.ZulGurub.Enable = 1
 #                     While she is in the air, ranged bots and healers standing in a crowd
 #                     spread out for her Fireball (8 yd splash). On the level 60 Onyxia, who
 #                     can't be taunted, damage dealers stay under 90% of the tanks' threat
-#                     while she is on the ground or coming down to land.
+#                     while she is on the ground or coming down to land. Ranged bots, healers
+#                     and off-tanks stay out of her Cleave (within 13 yd of her target, in
+#                     front of her).
 #        Default:     1
 #
 

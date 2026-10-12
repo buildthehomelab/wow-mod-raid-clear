@@ -12,6 +12,7 @@
 #include "AllSpellScript.h"
 #include "AttackAction.h"
 #include "Creature.h"
+#include "Group.h"
 #include "Map.h"
 #include "MoveSpline.h"
 #include "Pet.h"
@@ -84,6 +85,9 @@ void RaidClearMoltenCoreStrategy::InitTriggers(std::vector<TriggerNode*>& trigge
     // Above the heals: eight pulses of Inferno are more than anyone is healed through.
     triggers.push_back(new TriggerNode("rc mc inferno", { NextAction("rc mc leave inferno", ACTION_EMERGENCY + 7) }));
     triggers.push_back(new TriggerNode("rc mc hot coal", { NextAction("rc mc leave hot coal", ACTION_EMERGENCY + 4) }));
+    // Under the way out of Inferno: a bot with the bomb that stands in it leaves that first.
+    triggers.push_back(
+        new TriggerNode("rc mc living bomb", { NextAction("rc mc carry living bomb", ACTION_EMERGENCY + 6) }));
 
     triggers.push_back(new TriggerNode("rc mc garr gather", { NextAction("rc mc garr gather", ACTION_RAID + 1) }));
     triggers.push_back(
@@ -95,6 +99,7 @@ void RaidClearMoltenCoreStrategy::InitMultipliers(std::vector<Multiplier*>& mult
     multipliers.push_back(new RcMcTremorMultiplier(botAI));
     multipliers.push_back(new RcMcInfernoHoldMultiplier(botAI));
     multipliers.push_back(new RcMcHotCoalHoldMultiplier(botAI));
+    multipliers.push_back(new RcMcRagnarosHoldMultiplier(botAI));
     multipliers.push_back(new RcMcReflectionMultiplier(botAI));
     multipliers.push_back(new RcMcAnxiousFireswornMultiplier(botAI));
 }
@@ -547,28 +552,125 @@ float RcMcAnxiousFireswornMultiplier::GetValue(Action* action)
 
 // --- Ragnaros -------------------------------------------------------------
 
+namespace
+{
+    // Ragnaros, fighting and out of the lava: under it (his Sons are up) he casts nothing. Not
+    // through playerbots' "find target", which only knows what the bot itself has threat on.
+    Creature* EmergedRagnaros(Player* bot)
+    {
+        if (bot->GetMapId() != MAP_ID)
+            return nullptr;
+        Creature* boss = RaidClear::FightingCreature(bot, { NPC_RAGNAROS });
+        return boss && !boss->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) ? boss : nullptr;
+    }
+
+    bool KeepsOutOfWrath(Player* bot)
+    {
+        return !PlayerbotAI::IsTank(bot) && (PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot));
+    }
+}
+
 bool RcMcRagnarosRangedTrigger::IsActive()
 {
-    if (PlayerbotAI::IsTank(bot) || !(PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot)))
+    if (!bot->IsAlive() || !KeepsOutOfWrath(bot) || !botAI->CanMove())
         return false;
 
-    Unit* boss = AI_VALUE2(Unit*, "find target", "ragnaros");
-    if (!boss || !boss->IsAlive() || !boss->IsInCombat())
-        return false;
-
-    return bot->GetDistance2d(boss) < RAGNAROS_RANGED_MIN;
+    // From his middle: the spell measures from there, and he is 20 yd wide.
+    Creature* boss = EmergedRagnaros(bot);
+    return boss && bot->GetExactDist(boss) < RAGNAROS_KEEP_AWAY;
 }
 
 bool RcMcRagnarosMoveOutAction::Execute(Event /*event*/)
 {
-    Unit* boss = AI_VALUE2(Unit*, "find target", "ragnaros");
-    if (!boss)
+    Creature* boss = EmergedRagnaros(bot);
+    if (!boss || bot->GetExactDist(boss) >= RAGNAROS_KEEP_AWAY)
         return false;
 
-    float const distance = RAGNAROS_RANGED_TARGET - bot->GetDistance2d(boss);
-    if (distance <= 0.0f)
+    // He sits in the lava in the middle of the room and the raid stands on the rock round it:
+    // a spot further from him only counts when it is dry.
+    Position const centre = boss->GetPosition();
+    Map* map = bot->GetMap();
+    uint32 const phaseMask = bot->GetPhaseMask();
+    float const height = bot->GetCollisionHeight();
+    auto const gapAt = [&centre, map, phaseMask, height](float x, float y, float z)
+    {
+        LiquidData const liquid = map->GetLiquidData(phaseMask, x, y, z, height, {});
+        return liquid.Status & MAP_LIQUID_STATUS_IN_CONTACT ? 0.0f : centre.GetExactDist(x, y, z);
+    };
+    // A bot knocked into the lava scores 0 where it stands: every ring is worth a look then.
+    bool const dry = gapAt(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) > 0.0f;
+    return _walk.Go(gapAt, RAGNAROS_KEEP_AWAY, RAGNAROS_SPOT, RAGNAROS_WORTH_IT, RAGNAROS_SEARCH, dry);
+}
+
+float RcMcRagnarosHoldMultiplier::GetValue(Action* action)
+{
+    // A healer whose patient stands on the far side of him would walk round the inner edge of the
+    // rock to reach it, be sent out again, and so on. From this close everything on him and at
+    // his feet is in spell range already; what isn't is somebody else's to heal.
+    bool const walks = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action);
+    if (!walks && !dynamic_cast<CastReachTargetSpellAction*>(action))
+        return 1.0f;
+    if (!KeepsOutOfWrath(bot))
+        return 1.0f;
+
+    Unit* target = action->GetTarget();
+    if (!target || target == bot)
+        return 1.0f;
+
+    Creature* boss = EmergedRagnaros(bot);
+    if (!boss || bot->GetExactDist(boss) > RAGNAROS_HOLD)
+        return 1.0f;
+    return target->GetExactDist(boss) < RAGNAROS_KEEP_AWAY ? 0.0f : 1.0f;
+}
+
+// --- Baron Geddon: Living Bomb --------------------------------------------
+
+namespace
+{
+    // Yards from a spot to the nearest living raid member other than the bot (centre to centre,
+    // as the explosion measures).
+    float GapToRaid(Player* bot, float x, float y, float z)
+    {
+        float gap = 1000.0f;
+        Group* group = bot->GetGroup();
+        if (!group)
+            return gap;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (member && member != bot && member->IsAlive() && member->IsInMap(bot))
+                gap = std::min(gap, member->GetExactDist(x, y, z));
+        }
+        return gap;
+    }
+}
+
+bool RcMcLivingBombTrigger::IsActive()
+{
+    if (!bot->IsAlive() || !bot->HasAura(SPELL_LIVING_BOMB) || !botAI->CanMove())
+        return false;
+    return GapToRaid(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) < LIVING_BOMB_KEEP_AWAY;
+}
+
+bool RcMcCarryLivingBombAction::Execute(Event /*event*/)
+{
+    if (!bot->HasAura(SPELL_LIVING_BOMB))
         return false;
 
-    // He sits in the lava in the middle of the room; away from him is the raid's ledge.
-    return MoveAway(boss, distance);
+    if (GapToRaid(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) >= LIVING_BOMB_KEEP_AWAY)
+        return false;
+
+    // Not to his feet: with the raid backed off for an Inferno that is the emptiest spot in the
+    // room, and the way out of Inferno would send the bot straight back.
+    Player* carrier = bot;
+    Creature* geddon = bot->GetMapId() == MAP_ID ? RaidClear::FightingCreature(bot, { NPC_BARON_GEDDON }) : nullptr;
+    bool const hasGeddon = geddon != nullptr;
+    Position const geddonAt = geddon ? geddon->GetPosition() : Position();
+    auto const gapAt = [carrier, hasGeddon, &geddonAt](float x, float y, float z)
+    {
+        if (hasGeddon && geddonAt.GetExactDist(x, y, z) < INFERNO_KEEP_AWAY)
+            return 0.0f;
+        return GapToRaid(carrier, x, y, z);
+    };
+    return _walk.Go(gapAt, LIVING_BOMB_KEEP_AWAY, LIVING_BOMB_SPOT, LIVING_BOMB_WORTH_IT, LIVING_BOMB_SEARCH);
 }
