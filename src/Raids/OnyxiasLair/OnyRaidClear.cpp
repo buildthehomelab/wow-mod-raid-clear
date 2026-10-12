@@ -343,14 +343,25 @@ namespace
         return angle < SIDE_CONE || angle > float(M_PI) - SIDE_CONE;
     }
 
-    // The main tank an off-tank Onyxia has turned to walks over to, or nullptr: it is there
-    // already, or the main tank is far off or running in fear and would only drag her around.
-    Player* MainTankToJoin(Player* bot, Player* mainTank)
+    // The main tank an off-tank Onyxia has turned to stands with, or nullptr. Only a main tank
+    // who is at her: one busy with whelps, far off or running in fear would have the off-tank drag
+    // her through the raid.
+    Player* MainTankAtBoss(Player* bot, Unit const* boss)
     {
-        float const dist = bot->GetDistance(mainTank);
-        if (dist <= JOIN_NEAR || dist > JOIN_RANGE || mainTank->HasUnitState(UNIT_STATE_FLEEING | UNIT_STATE_CONFUSED))
+        Player* mainTank = RaidClear::Tanks::ActingMainTank(bot->GetGroup());
+        if (!RaidClear::Tanks::IsOffTank(bot, mainTank) || !mainTank->IsWithinMeleeRange(boss) ||
+            mainTank->HasUnitState(UNIT_STATE_FLEEING | UNIT_STATE_CONFUSED))
             return nullptr;
         return mainTank;
+    }
+
+    // Whether that off-tank still has to walk over: not there yet, and the main tank's spot is one
+    // it can see, within reach and away from the whelp caves.
+    bool ShouldJoin(Player* bot, Player* mainTank)
+    {
+        float const dist = bot->GetDistance(mainTank);
+        return dist > JOIN_NEAR && dist <= JOIN_RANGE && bot->IsWithinLOSInMap(mainTank) &&
+               !NearEggs(mainTank->GetPositionX(), mainTank->GetPositionY());
     }
 }
 
@@ -373,7 +384,10 @@ bool RcOnyOffTankPositionTrigger::IsActive()
 
     // She is on me: at her side that turns her head to the bots standing there.
     if (victim == bot)
-        return MainTankToJoin(bot, mainTank) != nullptr;
+    {
+        Player* join = MainTankAtBoss(bot, boss);
+        return join && ShouldJoin(bot, join);
+    }
 
     // Holding a whelp is done where the whelp is, in front of her or not.
     Unit* current = AI_VALUE(Unit*, "current target");
@@ -391,12 +405,10 @@ bool RcOnyOffTankPositionAction::Execute(Event /*event*/)
 
     if (boss->GetVictim() == bot)
     {
-        Player* mainTank = RaidClear::Tanks::ActingMainTank(bot->GetGroup());
-        if (!RaidClear::Tanks::IsOffTank(bot, mainTank))
-            return false;
-        Player* join = MainTankToJoin(bot, mainTank);
-        return join && MoveTo(bot->GetMapId(), join->GetPositionX(), join->GetPositionY(), join->GetPositionZ(), false,
-                              false, false, false, MovementPriority::MOVEMENT_COMBAT);
+        Player* join = MainTankAtBoss(bot, boss);
+        return join && ShouldJoin(bot, join) &&
+               MoveTo(bot->GetMapId(), join->GetPositionX(), join->GetPositionY(), join->GetPositionZ(), false, false,
+                      false, false, MovementPriority::MOVEMENT_COMBAT);
     }
 
     // Her two sides, the nearer one first. Level floor the bot can see, not at the whelp caves.
@@ -481,6 +493,8 @@ namespace
 // Playerbots asks every combat strategy what its target picking should skip ("dps target", "tank
 // target", the debuff targets), in whichever engine the bot is running: a bot whose target has
 // just died picks its next one outside combat, where this strategy's multipliers don't reach.
+// A raid icon comes before the exclusions: a skull a player puts on an evading mob is still
+// picked, and then left again by the trigger below.
 void RaidClearOnyxiasLairStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType /*type*/)
 {
     GuidVector const& attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
@@ -535,6 +549,14 @@ float RcOnyTargetMultiplier::GetValue(Action* action)
     {
         Unit* target = action->GetTarget();
         return target && IsWhelp(target) ? 0.0f : 1.0f;
+    }
+
+    // An off-tank she has turned to stands with the main tank (see the off-tank trigger).
+    // Playerbots would have it turn her away from the raid by itself and walk off that spot again.
+    if (name == "tank face")
+    {
+        Creature* boss = FightingOnyxia(bot);
+        return boss && boss->GetVictim() == bot && MainTankAtBoss(bot, boss) ? 0.0f : 1.0f;
     }
 
     // Target picking that doesn't go through the exclusions (the area damage target, for one).

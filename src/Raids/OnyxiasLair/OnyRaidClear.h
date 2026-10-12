@@ -27,8 +27,8 @@
  *     raid's second, third and fourth tank stand in front of her next to the main tank and take
  *     each Flame Breath, Cleave and Wing Buffet with it. Here only the tank she is on and the
  *     main tank (who has to catch her when she lands) stay in front; every other tank that is
- *     fighting her stands at her side. An off-tank she turns to walks over to the main tank, so
- *     she faces the way she did and not the bots at her side.
+ *     fighting her stands at her side. An off-tank she turns to walks over to the main tank, if
+ *     that one is at her, so she faces the way she did and not the bots at her side.
  *   - Evading mobs. A whelp that can't find a way to its victim evades every attack (the core's
  *     guard against mobs being hit from a spot they can't reach) but goes on biting. Bots kept
  *     attacking it: nothing in playerbots looks at whether a target evades. Here playerbots'
@@ -92,8 +92,8 @@ namespace RaidClear::OnyxiasLair
     constexpr float SIDE_RANGE = 30.0f;
     constexpr float SIDE_CONE = float(M_PI_4);
     constexpr float SIDE_DISTANCE = 15.0f;
-    // An off-tank she has turned to joins the main tank: closer than JOIN_NEAR it is there, and
-    // past JOIN_RANGE the main tank is somewhere else for a reason.
+    // An off-tank she has turned to joins the main tank, if that one is at her: closer than
+    // JOIN_NEAR it is there, and it never walks further than JOIN_RANGE for it.
     constexpr float JOIN_NEAR = 8.0f;
     constexpr float JOIN_RANGE = 40.0f;
 
@@ -189,7 +189,8 @@ public:
 };
 
 // Switches off playerbots' whelp action (replaced above), keeps Hunter's Mark off the whelps,
-// and stops the target picking that doesn't go through the exclusions from taking an evading mob.
+// stops the target picking that doesn't go through the exclusions from taking an evading mob, and
+// keeps an off-tank who joined the main tank from turning her by itself.
 class RcOnyTargetMultiplier : public Multiplier
 {
 public:
