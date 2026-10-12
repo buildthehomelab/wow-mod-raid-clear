@@ -20,10 +20,13 @@ namespace RaidClear
     {
         constexpr uint32 CACHE_MS = 1000;
         // A boss that isn't on the map at all (killed in an earlier visit) is looked for less often.
+        // One that was there a moment ago may be being respawned (a new object, up to 5 s later), so
+        // it keeps the short interval for a while.
+        constexpr uint32 RESPAWN_WATCH_MS = 15000;
         constexpr uint32 MISSING_CACHE_MS = 10000;
         constexpr float SEARCH_RANGE = 250.0f;
 
-        // One slot per boss asked for on this map thread; a raid asks for one or two.
+        // One slot per creature asked for on this map thread; a raid asks for up to three.
         struct Slot
         {
             bool valid = false;
@@ -31,8 +34,9 @@ namespace RaidClear
             uint32 entry = 0;  // the first entry asked for
             uint32 ms = 0;
             ObjectGuid guid;
+            uint32 seenMs = 0;  // when it was last found here; 0 = never
         };
-        thread_local std::array<Slot, 4> tSlots;
+        thread_local std::array<Slot, 8> tSlots;
         thread_local uint8 tNextSlot = 0;
 
         bool Matches(Creature const* creature, std::initializer_list<uint32> entries)
@@ -42,6 +46,12 @@ namespace RaidClear
     }
 
     Creature* FightingCreature(Player* bot, std::initializer_list<uint32> entries)
+    {
+        Creature* creature = InstanceCreature(bot, entries);
+        return creature && creature->IsAlive() && creature->IsInCombat() ? creature : nullptr;
+    }
+
+    Creature* InstanceCreature(Player* bot, std::initializer_list<uint32> entries)
     {
         Map* map = bot->GetMap();
         if (!map || entries.size() == 0)
@@ -55,7 +65,9 @@ namespace RaidClear
                 slot = &candidate;
 
         Creature* creature = nullptr;
-        if (slot && getMSTimeDiff(slot->ms, now) <= (slot->guid.IsEmpty() ? MISSING_CACHE_MS : CACHE_MS))
+        bool const longWait = slot && slot->guid.IsEmpty() &&
+                              (!slot->seenMs || getMSTimeDiff(slot->seenMs, now) > RESPAWN_WATCH_MS);
+        if (slot && getMSTimeDiff(slot->ms, now) <= (longWait ? MISSING_CACHE_MS : CACHE_MS))
         {
             creature = slot->guid.IsEmpty() ? nullptr : map->GetCreature(slot->guid);
         }
@@ -77,13 +89,16 @@ namespace RaidClear
             {
                 slot = &tSlots[tNextSlot];
                 tNextSlot = (tNextSlot + 1) % tSlots.size();
+                slot->seenMs = 0;
             }
             slot->valid = true;
             slot->instanceId = map->GetInstanceId();
             slot->entry = key;
             slot->ms = now;
             slot->guid = creature ? creature->GetGUID() : ObjectGuid::Empty;
+            if (creature)
+                slot->seenMs = now ? now : 1;
         }
-        return creature && creature->IsAlive() && creature->IsInCombat() ? creature : nullptr;
+        return creature;
     }
 }

@@ -210,4 +210,5 @@ void AddRaidClearScripts()
     Leash::AddScripts();
     BlackwingLair::AddScripts();
     OnyxiasLair::AddScripts();
+    ZulGurub::AddScripts();
 }

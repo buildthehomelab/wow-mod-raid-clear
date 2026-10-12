@@ -41,6 +41,10 @@ namespace RaidClear
     // table (Garr's Firesworn while it would erupt for four times the damage).
     bool KillOrderSkips(Player* bot, Unit const* unit);
 
+    // Whether the bot's raid is moving skull by a rule of its own right now (Thekal and his
+    // zealots in Zul'Gurub): the kill order then leaves skull alone.
+    bool KillOrderSuspended(Player* bot);
+
     // The bot that marks for this group: the first living bot that is the main tank, else the
     // first living bot tank, else the first living bot. Real players never mark.
     Player* KillOrderMarker(Group* group);

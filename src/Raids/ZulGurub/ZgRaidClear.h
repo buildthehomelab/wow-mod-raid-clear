@@ -20,6 +20,29 @@
  *     he turns to whoever is next on threat, and once Frenzy (24318) is up he kills a mage in two
  *     swings. So he is listed as a boss whose threat the tanks share and the damage dealers stay
  *     under (see Common/TankRoles.h): the next in line is always a tank.
+ *   - High Priest Thekal comes with Zealot Lor'Khan and Zealot Zath, and until he turns into a
+ *     tiger none of the three stays dead: one that drops gets up at full health 10 s later unless
+ *     the other two are down by then, and each zealot that gets up heals Thekal to full as well.
+ *     So they are brought down together. Skull sits on whichever of the three has the most health
+ *     left (plain health, not percent: Thekal has almost twice Lor'Khan's) and moves as they
+ *     level out; damage dealers follow it, the three reach zero within a few seconds of each
+ *     other and the fight moves on to his tiger form. Area damage would undo that (it ignores
+ *     skull, and Lor'Khan has the least health, so he would drop first every time), so nobody but
+ *     the tanks uses a spell that hits more than one enemy until one of the three is down; then
+ *     everything goes. The two Zulian Tigers that stand with him die first. Lor'Khan's Great Heal
+ *     (24208, a 4 s cast worth 40,000 health, every 15-20 s) is interrupted by whoever can reach
+ *     him, his target or not (a tank only when he is on that tank).
+ *   - Trash. The packs' healers die first: a Hakkari Blood Priest (Blood Funnel), then a Hakkari
+ *     Priest (Cleanse Nova, Heal), then the Gurubashi Blood Drinkers that heal themselves off the
+ *     whole raid. While a Hakkari Priest has Anti-Magic Shield (24021, 8 s, every spell school)
+ *     skull comes off it, for everyone, and casters don't pick it as a target at all.
+ *   - A Gurubashi Bat Rider below 30% casts Unstable Concoction (24024): 3 s, then it blows
+ *     itself up for 4,400-5,600 fire damage to everyone within 10 yd. It dies either way, so
+ *     everyone within reach, tanks too, just walks out and stays out until it has gone off.
+ *   - Nobody goes on hitting a mob that evades everything, or a raid member an enemy has taken
+ *     over (Will of Hakkar, Brain Wash, Cause Insanity): target picking skips the evading ones,
+ *     a bot already on either lets go, and so does its pet. Area spells aren't cast within 12 yd
+ *     of a mind-controlled member either.
  *
  * Released under the MIT License.
  */
@@ -30,6 +53,7 @@
 #include "Common/KillOrder.h"
 
 #include "Action.h"
+#include "AttackAction.h"
 #include "MovementActions.h"
 #include "Multiplier.h"
 #include "Strategy.h"
@@ -46,11 +70,23 @@ namespace RaidClear::ZulGurub
         NPC_VENOXIS        = 14507,
         NPC_RAZZASHI_COBRA = 11373,  // four of them guard Venoxis
         NPC_HAKKAR         = 14834,
+        NPC_THEKAL         = 14509,
+        NPC_ZEALOT_LORKHAN = 11347,  // heals the three
+        NPC_ZEALOT_ZATH    = 11348,
+        NPC_ZULIAN_TIGER   = 11361,  // two stand with Thekal
+        NPC_HAKKARI_BLOOD_PRIEST = 11340,
+        NPC_HAKKARI_PRIEST = 11830,
+        NPC_BLOOD_DRINKER  = 11353,
+        NPC_BAT_RIDER      = 14750,
     };
 
     enum Spells : uint32
     {
         SPELL_VENOXIS_TRANSFORM = 23849,  // snake form, from 50%: no more Holy Wrath
+        SPELL_THEKAL_TIGER_FORM = 24169,  // once all three were down together: he dies for good now
+        SPELL_LORKHAN_GREAT_HEAL = 24208,
+        SPELL_ANTI_MAGIC_SHIELD = 24021,
+        SPELL_UNSTABLE_CONCOCTION = 24024,
     };
 
     // A harmful magic chain jumps up to 10 yd (Spell::SearchChainTargets; Holy Wrath has no
@@ -68,7 +104,30 @@ namespace RaidClear::ZulGurub
     // A spot more than this above or below the bot is down the temple's stairs or off its edge.
     constexpr float HOLY_WRATH_SPOT_HEIGHT = 3.0f;
 
+    // Thekal and his zealots: skull stays where it is until the one it is on has fallen this
+    // share below the healthiest of the three, so melee aren't sent back and forth every second.
+    // The share shrinks as they do; it never goes under MIN health, or skull would move on every
+    // hit near the end. When the first one drops, the other two are left with about that much
+    // each: a few seconds of damage, well inside the 10 s.
+    constexpr float EVEN_KILL_MARGIN = 0.15f;
+    constexpr float EVEN_KILL_MARGIN_MIN = 3000.0f;
+
+    // Unstable Concoction reaches 10 yd. A bot whose centre is closer than KEEP_AWAY to the Bat
+    // Rider walks out to TARGET, and nobody within HOLD walks toward anything inside.
+    constexpr float CONCOCTION_KEEP_AWAY = 14.0f;
+    constexpr float CONCOCTION_TARGET = 17.0f;
+    constexpr float CONCOCTION_HOLD = 24.0f;
+
+    // No spell that hits more than one enemy is cast this close to a mind-controlled raid member.
+    constexpr float CHARMED_SPLASH_RANGE = 12.0f;
+
     std::vector<KillOrderEntry> const& KillOrder();
+    // Enemies skull stays off for now, though they are in the table or the player marked them.
+    bool KillOrderSkips(Player* bot, Unit const* unit);
+    // Thekal's fight moves skull by its own rule (see above); the kill order keeps out of it.
+    bool KillOrderSuspended(Player* bot);
+
+    void AddScripts();
 
     // Bosses the off-tanks build threat on as well (see Common/TankRoles.h).
     std::vector<uint32> const& TankSplitCoTankBosses();
@@ -83,6 +142,66 @@ public:
     std::string const getName() override { return "rc zg"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
     void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
+    bool HasTargetExclusions() const override { return true; }
+    void AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type) override;
+};
+
+// --- Trash ----------------------------------------------------------------
+
+// The bot's target, or its pet's, is one nobody should be hitting (see ZulGurub::KillOrderSkips
+// and the strategy's target exclusions).
+class RcZgBadTargetTrigger : public Trigger
+{
+public:
+    RcZgBadTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc zg bad target") {}
+    bool IsActive() override;
+};
+
+class RcZgLeaveBadTargetAction : public AttackAction
+{
+public:
+    RcZgLeaveBadTargetAction(PlayerbotAI* botAI) : AttackAction(botAI, "rc zg leave bad target") {}
+    bool Execute(Event event) override;
+};
+
+// Keeps a bot from switching to such a target in the first place.
+class RcZgBadTargetMultiplier : public Multiplier
+{
+public:
+    RcZgBadTargetMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc zg bad target") {}
+    float GetValue(Action* action) override;
+};
+
+// A Gurubashi Bat Rider is casting Unstable Concoction with the bot in reach.
+class RcZgConcoctionTrigger : public Trigger
+{
+public:
+    RcZgConcoctionTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc zg concoction") {}
+    bool IsActive() override;
+};
+
+class RcZgConcoctionMoveAwayAction : public MovementAction
+{
+public:
+    RcZgConcoctionMoveAwayAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc zg concoction move away") {}
+    bool Execute(Event event) override;
+};
+
+// Keeps bots from walking back to a Bat Rider that is about to go off.
+class RcZgConcoctionHoldMultiplier : public Multiplier
+{
+public:
+    RcZgConcoctionHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc zg concoction hold") {}
+    float GetValue(Action* action) override;
+};
+
+// Zeroes spells that hit more than one enemy while a mind-controlled raid member stands where
+// they would land.
+class RcZgCharmedSplashMultiplier : public Multiplier
+{
+public:
+    RcZgCharmedSplashMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc zg charmed splash") {}
+    float GetValue(Action* action) override;
 };
 
 // --- High Priest Venoxis --------------------------------------------------
@@ -107,6 +226,47 @@ class RcZgHolyWrathHoldMultiplier : public Multiplier
 public:
     RcZgHolyWrathHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc zg holy wrath hold") {}
     float GetValue(Action* action) override;
+};
+
+// --- High Priest Thekal ---------------------------------------------------
+
+// Fires on the marking bot (see Common/KillOrder.h) when skull isn't on the one of Thekal, Zealot
+// Lor'Khan and Zealot Zath that has the most health left.
+class RcZgThekalEvenKillTrigger : public Trigger
+{
+public:
+    RcZgThekalEvenKillTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc zg thekal even kill") {}
+    bool IsActive() override;
+};
+
+class RcZgThekalEvenKillAction : public Action
+{
+public:
+    RcZgThekalEvenKillAction(PlayerbotAI* botAI) : Action(botAI, "rc zg thekal even kill") {}
+    bool Execute(Event event) override;
+};
+
+// While all three are up, zeroes every spell of a non-tank that hits more than one enemy.
+class RcZgThekalSingleTargetMultiplier : public Multiplier
+{
+public:
+    RcZgThekalSingleTargetMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc zg thekal single target") {}
+    float GetValue(Action* action) override;
+};
+
+// Zealot Lor'Khan is casting Great Heal and this bot has an interrupt ready and in reach.
+class RcZgLorkhanHealTrigger : public Trigger
+{
+public:
+    RcZgLorkhanHealTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc zg lorkhan heal") {}
+    bool IsActive() override;
+};
+
+class RcZgLorkhanInterruptAction : public Action
+{
+public:
+    RcZgLorkhanInterruptAction(PlayerbotAI* botAI) : Action(botAI, "rc zg lorkhan interrupt") {}
+    bool Execute(Event event) override;
 };
 
 #endif

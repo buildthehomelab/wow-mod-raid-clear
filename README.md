@@ -23,7 +23,9 @@ bosses only get a resistance aura. This module fills in the missing mechanics.
 DPS bots always attack the skull-marked enemy first. The group's main-tank bot keeps the skull on
 whichever add should die first: adds that split or multiply, then healers, then the boss's other
 adds. A skull already on an add of the same or higher priority is left where it is, so the mark
-doesn't flicker between equal adds. A skull you put on an add stays there too.
+doesn't flicker between equal adds. A skull you put on a listed add stays there too. One you put on
+anything else moves as soon as a listed add is in the fight, and on Zul'Gurub's High Priest Thekal
+skull keeps moving whatever you do.
 
 ### Main tank and off-tanks (all raids)
 
@@ -155,7 +157,9 @@ Playerbots has no Zul'Gurub strategy, so everything here is new.
 | Fight | What the bots do |
 |---|---|
 | High Priest Venoxis | Kill his four **Razzashi Cobras** first. While he's a troll (above 50%), **Holy Wrath** hits his target and chains to the nearest player within 10 yards, over and over, about 30% harder each jump: nine jumps in, it hits for more than 40,000. So the chain gets nowhere to go. Everyone but the tanks stays about 16 yards away from his target, from whoever is top of his threat (Holy Wrath starts there, even if he's still hitting the tank), and from any tank or pet standing within a jump of those. Melee don't walk in at all; ranged and healers work from range. At 50% he turns into a snake, Holy Wrath stops and melee go in. |
+| High Priest Thekal | He comes with **Zealot Lor'Khan** and **Zealot Zath**, and until he turns into a tiger none of the three stays dead: one that drops gets up at full health 10 seconds later unless the other two are down by then, and a zealot that gets up heals Thekal to full as well. So the bots bring them down together. The marking tank keeps skull on whichever of the three has the most health left and moves it as they level out, damage dealers follow it, and the three drop within a few seconds of each other. While all three are up nobody but the tanks uses a spell that hits more than one enemy (Blizzard, Rain of Fire, Multi-Shot, Cleave, Blade Flurry): area damage ignores skull and would kill Lor'Khan, who has the least health, first every time. Once one is down, everything goes. The two **Zulian Tigers** that stand with him die first, and Lor'Khan's **Great Heal** (a 4 second cast worth 40,000 health) is interrupted by any bot that can reach him, its target or not (a tank only when he is on that tank). If you play in the raid, follow skull and hold your own area spells until the first one drops. Needs `RaidClear.KillOrder`. |
 | Hakkar | He keeps taking his tank away: **Cause Insanity** mind-controls whoever is top of his threat for 10 seconds, and for every High Priest still alive he has that priest's Aspect. The **Aspects of Arlokk and Mar'li** stun his tank and wipe its threat (Arlokk's every 10-15 seconds). Arlokk only appears when someone rings the Gong of Bethekk, so a bot raid usually reaches Hakkar with her Aspect on him. Each time he turns to whoever is next on threat, and once he has **Frenzy** he kills a mage in two swings. So the tanks share his threat and the damage dealers stay under it (see *Sharing a boss's threat* above): the next in line is always a tank. It needs two tanks or more; three is safer with a priest alive. Killing all five priests first is still the easy way: each one alive also gives him 20% more damage and 10% more health. |
+| Trash | The packs' healers die first: a **Hakkari Blood Priest**, then a **Hakkari Priest**, then the **Gurubashi Blood Drinkers** that heal themselves off the whole raid. While a Hakkari Priest has **Anti-Magic Shield** (8 seconds, immune to every spell), skull comes off it and casters don't target it. The kill order needs `RaidClear.KillOrder`. A **Gurubashi Bat Rider** below 30% casts **Unstable Concoction**: 3 seconds, then it blows itself up for about 5,000 fire damage to everyone within 10 yards. It dies either way, so every bot in reach, tanks too, walks out and stays out until it has gone off. Nobody goes on hitting a mob that evades everything, or a raid member an enemy has taken over (Will of Hakkar, Brain Wash, Cause Insanity): a bot or pet on one lets go, and area spells aren't cast where a mind-controlled member stands. |
 
 ## Requirements
 
@@ -251,6 +255,13 @@ Category: Raids
   his snake form, and his cobras die first.
 - Zul'Gurub, Hakkar: the tanks now share his threat and damage dealers stay below them, so when he
   mind-controls his tank or wipes its threat he goes to another tank and not to a mage.
+- Zul'Gurub, High Priest Thekal: bots now bring Thekal and his two zealots down together, so they
+  stop getting back up. Skull moves to whichever of the three has the most health left, damage
+  dealers hold their area spells until the first one drops, and Lor'Khan's **Great Heal** gets
+  interrupted.
+- Zul'Gurub trash: bots walk out of a Gurubashi Bat Rider's **Unstable Concoction**, kill the
+  packs' healers first, stop casting at a Hakkari Priest while its **Anti-Magic Shield** is up,
+  and no longer attack evading mobs or mind-controlled raid members.
 - Onyxia: bots get out of **Deep Breath** again. They used to run to fixed spots that are now in
   the fire for two of her eight breaths; now each bot walks out of the strip she is about to burn
   and stays out until it has passed.

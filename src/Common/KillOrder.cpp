@@ -51,7 +51,17 @@ namespace RaidClear
         switch (bot->GetMapId())
         {
             case MoltenCore::MAP_ID: return MoltenCore::KillOrderSkips(bot, unit);
+            case ZulGurub::MAP_ID:   return ZulGurub::KillOrderSkips(bot, unit);
             default:                 return false;
+        }
+    }
+
+    bool KillOrderSuspended(Player* bot)
+    {
+        switch (bot->GetMapId())
+        {
+            case ZulGurub::MAP_ID: return ZulGurub::KillOrderSuspended(bot);
+            default:               return false;
         }
     }
 
@@ -131,7 +141,7 @@ bool RcKillOrderTrigger::IsActive()
         return false;
 
     std::vector<KillOrderEntry> const& table = KillOrderFor(bot->GetMapId());
-    if (table.empty() || KillOrderMarker(bot->GetGroup()) != bot)
+    if (table.empty() || KillOrderMarker(bot->GetGroup()) != bot || KillOrderSuspended(bot))
         return false;
 
     bool clearSkull = false;
@@ -141,7 +151,7 @@ bool RcKillOrderTrigger::IsActive()
 bool RcMarkKillOrderAction::Execute(Event /*event*/)
 {
     Group* group = bot->GetGroup();
-    if (!group)
+    if (!group || KillOrderSuspended(bot))
         return false;
 
     bool clearSkull = false;
