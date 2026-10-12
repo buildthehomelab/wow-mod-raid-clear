@@ -22,6 +22,7 @@
 #include "Common/DeathLog.h"
 #include "Common/TankRoles.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
+#include "Raids/OnyxiasLair/OnyRaidClear.h"
 
 #include "Config.h"
 #include "Log.h"
@@ -194,4 +195,5 @@ void AddRaidClearScripts()
     new RaidClearPlayerScript();
     DeathLog::AddScripts();
     BlackwingLair::AddScripts();
+    OnyxiasLair::AddScripts();
 }

@@ -11,6 +11,7 @@
 #include "Common/TankRoles.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/MoltenCore/McRaidClear.h"
+#include "Raids/OnyxiasLair/OnyRaidClear.h"
 #include "Raids/ZulGurub/ZgRaidClear.h"
 
 #include "NamedObjectContext.h"
@@ -24,6 +25,7 @@ public:
         creators["rc moltencore"] = &RaidClearStrategyContext::moltencore;
         creators["rc bwl"] = &RaidClearStrategyContext::bwl;
         creators["rc zg"] = &RaidClearStrategyContext::zg;
+        creators["rc ony"] = &RaidClearStrategyContext::ony;
     }
 
 private:
@@ -31,6 +33,7 @@ private:
     static Strategy* moltencore(PlayerbotAI* botAI) { return new RaidClearMoltenCoreStrategy(botAI); }
     static Strategy* bwl(PlayerbotAI* botAI) { return new RaidClearBlackwingLairStrategy(botAI); }
     static Strategy* zg(PlayerbotAI* botAI) { return new RaidClearZulGurubStrategy(botAI); }
+    static Strategy* ony(PlayerbotAI* botAI) { return new RaidClearOnyxiasLairStrategy(botAI); }
 };
 
 class RaidClearActionContext : public NamedObjectContext<Action>
@@ -61,6 +64,8 @@ public:
         creators["rc bwl captain hand off"] = &RaidClearActionContext::bwl_captain_hand_off;
 
         creators["rc zg holy wrath keep away"] = &RaidClearActionContext::zg_holy_wrath_keep_away;
+
+        creators["rc ony leave deep breath"] = &RaidClearActionContext::ony_leave_deep_breath;
     }
 
 private:
@@ -95,6 +100,8 @@ private:
     static Action* bwl_captain_hand_off(PlayerbotAI* botAI) { return new RcBwlCaptainHandOffAction(botAI); }
 
     static Action* zg_holy_wrath_keep_away(PlayerbotAI* botAI) { return new RcZgHolyWrathKeepAwayAction(botAI); }
+
+    static Action* ony_leave_deep_breath(PlayerbotAI* botAI) { return new RcOnyLeaveDeepBreathAction(botAI); }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -125,6 +132,8 @@ public:
         creators["rc bwl captain hand off"] = &RaidClearTriggerContext::bwl_captain_hand_off;
 
         creators["rc zg holy wrath keep away"] = &RaidClearTriggerContext::zg_holy_wrath_keep_away;
+
+        creators["rc ony deep breath"] = &RaidClearTriggerContext::ony_deep_breath;
     }
 
 private:
@@ -161,6 +170,8 @@ private:
     static Trigger* bwl_captain_hand_off(PlayerbotAI* botAI) { return new RcBwlCaptainHandOffTrigger(botAI); }
 
     static Trigger* zg_holy_wrath_keep_away(PlayerbotAI* botAI) { return new RcZgHolyWrathKeepAwayTrigger(botAI); }
+
+    static Trigger* ony_deep_breath(PlayerbotAI* botAI) { return new RcOnyDeepBreathTrigger(botAI); }
 };
 
 #endif
