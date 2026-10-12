@@ -28,6 +28,17 @@
  *       - Playerbots' damage dealers don't watch their threat at all (its "threat" strategy is
  *         off by default). On these bosses they hold their damage while they are within 10% of
  *         the threat of the tank who would catch the boss next.
+ *       - Where no taunt lands (Hakkar is immune on this core, so none of the taunting above
+ *         happens there) the paladins stand in for it. Hand of Protection on a player the boss
+ *         is on who isn't a tank: the core doesn't let a creature stay on someone its swings
+ *         can't hurt while anyone else is on its threat list, so it turns to the next one.
+ *         Only when that next one is a tank, which the damage limit sees to (it stays on while
+ *         such a boss is loose); with a damage dealer next it would only pass the boss along.
+ *         The player can't attack for those 10 s. A player in bear form, Defensive Stance or
+ *         Frost Presence, or with Righteous Fury, counts as tanking whatever its talents say.
+ *       - A player in the raid has nothing holding its damage back. One who is within 10% of
+ *         that same tank's threat gets a paladin's Hand of Salvation (20% of its threat gone
+ *         over 10 s), and the next paladin's when that one has run out.
  *   - Endless respawning adds a raid lists (BWL's Suppression Room whelps) are never picked up.
  *   - Among the loose mobs an off-tank picks from, one that evades every attack (it is running
  *     home, or can't find a way to its victim) is skipped: a taunt on it does nothing.
@@ -140,7 +151,20 @@ namespace RaidClear::Tanks
     ShareNeed NeedsThreatShare(Player* bot, Unit* boss);
 
     // The threat a damage dealer stays under on a threat-share boss; 0 = no limit right now.
+    // While the boss is loose on someone who can't hold it there is none, unless it can't be
+    // taunted: then it is the best tank's threat, so that tank stays next in line.
     float ThreatShareLimit(Player* bot, Unit* boss);
+
+    // No taunt moves this boss (Hakkar: the core's NO_TAUNT immunity set).
+    bool CantBeTaunted(Unit* boss);
+
+    // Such a boss is hitting a player who isn't a tank, and the next on its threat is a tank: that
+    // player, unless something already keeps the boss's swings off it.
+    Player* BossVictimToProtect(Unit* boss);
+
+    // A player (not a bot) who isn't a tank and is over the threat the bots stay under, without
+    // Hand of Salvation on it and without this paladin's Hand of Protection: the one with the most.
+    Player* PlayerOverThreatShare(Player* bot, Unit* boss);
 }
 
 class RaidClearTanksStrategy : public Strategy
@@ -200,6 +224,38 @@ public:
 
 private:
     uint32 lastTauntMs = 0;
+};
+
+// A threat-share boss that can't be taunted is on a player who isn't a tank.
+class RcBossOnNonTankTrigger : public Trigger
+{
+public:
+    RcBossOnNonTankTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc boss on non tank") {}
+    bool IsActive() override;
+};
+
+// A paladin's Hand of Protection on that player: the boss can't hurt it for 10 s and turns to
+// whoever is next on its threat, which the threat cap makes a tank.
+class RcProtectBossVictimAction : public Action
+{
+public:
+    RcProtectBossVictimAction(PlayerbotAI* botAI) : Action(botAI, "rc protect boss victim") {}
+    bool Execute(Event event) override;
+};
+
+// A player is over the threat the bots stay under on a threat-share boss.
+class RcPlayerOverThreatTrigger : public Trigger
+{
+public:
+    RcPlayerOverThreatTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc player over threat") {}
+    bool IsActive() override;
+};
+
+class RcSalvationOnPlayerAction : public Action
+{
+public:
+    RcSalvationOnPlayerAction(PlayerbotAI* botAI) : Action(botAI, "rc salvation on player") {}
+    bool Execute(Event event) override;
 };
 
 // Keeps damage dealers under the tank who catches a threat-share boss next.

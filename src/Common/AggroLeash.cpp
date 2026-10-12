@@ -186,7 +186,7 @@ namespace
         return false;
     }
 
-    // Whether the walk the bot is on passes too close to one of the mobs.
+    // Whether a stretch of a walk passes too close to one of the mobs.
     //   - A walk toward a target (going to the fight, or pulling): mobs tied to the target don't
     //     count, and the others only have to be passed by half the buffer. Round the corner of a
     //     pack is fine, through it is not.
@@ -194,43 +194,52 @@ namespace
     //     next to an idle pack doesn't make that pack safe to back into. The full buffer for
     //     most; half of it for a mob tied to the target, so a melee bot shifting a few yards
     //     around its target isn't stopped for nothing.
+    bool StretchPulls(Player* bot, std::vector<IdleMob> const& mobs, bool approach, float buffer,
+                      G3D::Vector3 const& from, G3D::Vector3 const& to)
+    {
+        float const botX = bot->GetPositionX();
+        float const botY = bot->GetPositionY();
+        float const length = std::hypot(to.x - from.x, to.y - from.y);
+        int const steps = std::max(1, int(std::ceil(length / PATH_STEP)));
+        for (int step = 1; step <= steps; ++step)
+        {
+            float const t = float(step) / float(steps);
+            float const x = from.x + (to.x - from.x) * t;
+            float const y = from.y + (to.y - from.y) * t;
+            float const z = from.z + (to.z - from.z) * t;
+            for (IdleMob const& mob : mobs)
+            {
+                if ((approach && mob.tied) || std::fabs(mob.z - z) > AGGRO_HEIGHT)
+                    continue;
+                float const margin = approach || mob.tied ? buffer * 0.5f : buffer;
+                float const there = std::hypot(x - mob.x, y - mob.y);
+                // Only a walk that takes the bot closer to the mob than it already is.
+                if (there < mob.aggro + margin && there < std::hypot(botX - mob.x, botY - mob.y) - 0.5f &&
+                    mob.creature->IsWithinLOS(x, y, z + 2.0f))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    // Whether the walk the bot is on passes too close to one of the mobs.
     bool WalkPulls(Player* bot, std::vector<IdleMob> const& mobs, BotTargets const& targets, float buffer)
     {
         Movement::MoveSpline const* walk = bot->movespline;
         if (mobs.empty() || walk->Finalized())
             return false;
 
-        float const botX = bot->GetPositionX();
-        float const botY = bot->GetPositionY();
         G3D::Vector3 const dest = walk->FinalDestination();
         bool const approach = Approaches(bot, targets, dest.x, dest.y);
 
         // From where the bot is, along what is left of the path.
-        G3D::Vector3 from(botX, botY, bot->GetPositionZ());
+        G3D::Vector3 from(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
         Movement::MoveSpline::MySpline const& spline = walk->_Spline();
         for (int32 i = walk->_currentSplineIdx() + 1; i <= spline.last(); ++i)
         {
             G3D::Vector3 const& to = spline.getPoint(i);
-            float const length = std::hypot(to.x - from.x, to.y - from.y);
-            int const steps = std::max(1, int(std::ceil(length / PATH_STEP)));
-            for (int step = 1; step <= steps; ++step)
-            {
-                float const t = float(step) / float(steps);
-                float const x = from.x + (to.x - from.x) * t;
-                float const y = from.y + (to.y - from.y) * t;
-                float const z = from.z + (to.z - from.z) * t;
-                for (IdleMob const& mob : mobs)
-                {
-                    if ((approach && mob.tied) || std::fabs(mob.z - z) > AGGRO_HEIGHT)
-                        continue;
-                    float const margin = approach || mob.tied ? buffer * 0.5f : buffer;
-                    float const there = std::hypot(x - mob.x, y - mob.y);
-                    // Only a walk that takes the bot closer to the mob than it already is.
-                    if (there < mob.aggro + margin && there < std::hypot(botX - mob.x, botY - mob.y) - 0.5f &&
-                        mob.creature->IsWithinLOS(x, y, z + 2.0f))
-                        return true;
-                }
-            }
+            if (StretchPulls(bot, mobs, approach, buffer, from, to))
+                return true;
             from = to;
         }
         return false;
@@ -266,6 +275,52 @@ namespace
         }
         return false;
     }
+}
+
+struct RaidClear::Leash::WalkCheck::Mobs
+{
+    std::vector<IdleMob> list;
+    BotTargets targets;
+    float buffer = 0.0f;
+};
+
+RaidClear::Leash::WalkCheck::WalkCheck(PlayerbotAI* botAI, Player* bot) : _bot(bot)
+{
+    Config const& config = GetConfig();
+    if (!config.enable || !config.aggroLeash || !bot->GetMap()->IsRaid() ||
+        !botAI->HasStrategy(LEASH_STRATEGY, BOT_STATE_COMBAT))
+        return;
+
+    _mobs = std::make_unique<Mobs>();
+    _mobs->buffer = config.aggroLeashBuffer;
+    _mobs->targets = TargetsOf(botAI, bot);
+    _mobs->list = IdleMobsNear(bot, *StateOf(bot->GetMap()), _mobs->targets, _mobs->buffer);
+}
+
+RaidClear::Leash::WalkCheck::~WalkCheck() = default;
+
+bool RaidClear::Leash::WalkCheck::Pulls(float x, float y, float z) const
+{
+    if (!_mobs || _mobs->list.empty())
+        return false;
+    G3D::Vector3 const from(_bot->GetPositionX(), _bot->GetPositionY(), _bot->GetPositionZ());
+    return StretchPulls(_bot, _mobs->list, Approaches(_bot, _mobs->targets, x, y), _mobs->buffer, from,
+                        G3D::Vector3(x, y, z));
+}
+
+bool RaidClear::Leash::WalkCheck::Pulls(std::vector<G3D::Vector3> const& path) const
+{
+    if (!_mobs || _mobs->list.empty() || path.empty())
+        return false;
+    bool const approach = Approaches(_bot, _mobs->targets, path.back().x, path.back().y);
+    G3D::Vector3 from(_bot->GetPositionX(), _bot->GetPositionY(), _bot->GetPositionZ());
+    for (G3D::Vector3 const& to : path)
+    {
+        if (StretchPulls(_bot, _mobs->list, approach, _mobs->buffer, from, to))
+            return true;
+        from = to;
+    }
+    return false;
 }
 
 bool RcAggroLeashTrigger::IsActive()

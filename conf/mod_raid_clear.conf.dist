@@ -58,6 +58,9 @@ RaidClear.Tanks.AssignMainTank = 1
 #                     On bosses that keep taking their tank away (Hakkar) the tanks share the
 #                     boss's threat with taunts and damage dealers hold their damage while they
 #                     are within 10% of the next tank's threat, so the boss always turns to a tank.
+#                     Where no taunt lands (Hakkar), a paladin's Hand of Protection on a player
+#                     the boss is on who isn't a tank sends it to the next tank, and a player in
+#                     the raid who comes within 10% of that tank's threat gets Hand of Salvation.
 #        Default:     1
 #
 
@@ -176,7 +179,9 @@ RaidClear.BlackwingLair.Enable = 1
 #                     (Hakkari Blood Priest, Hakkari Priest, Gurubashi Blood Drinker; needs
 #                     RaidClear.KillOrder), keep skull and casters off a Hakkari Priest while
 #                     it has Anti-Magic Shield, and don't attack evading mobs or mind-controlled
-#                     raid members.
+#                     raid members. A mind-controlled member is stopped with Polymorph or Hammer
+#                     of Justice until it wears off. On High Priestess Jeklik bots walk
+#                     out of the Liquid Fire her Bat Riders drop.
 #        Default:     1
 #
 

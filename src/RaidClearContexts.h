@@ -48,6 +48,8 @@ public:
         creators["rc offtank target"] = &RaidClearActionContext::offtank_target;
         creators["rc offtank separate"] = &RaidClearActionContext::offtank_separate;
         creators["rc tank share threat"] = &RaidClearActionContext::tank_share_threat;
+        creators["rc protect boss victim"] = &RaidClearActionContext::protect_boss_victim;
+        creators["rc salvation on player"] = &RaidClearActionContext::salvation_on_player;
         creators["rc aggro leash"] = &RaidClearActionContext::aggro_leash;
 
         creators["rc mc tremor totem"] = &RaidClearActionContext::mc_tremor_totem;
@@ -74,6 +76,8 @@ public:
         creators["rc zg lorkhan interrupt"] = &RaidClearActionContext::zg_lorkhan_interrupt;
         creators["rc zg leave bad target"] = &RaidClearActionContext::zg_leave_bad_target;
         creators["rc zg concoction move away"] = &RaidClearActionContext::zg_concoction_move_away;
+        creators["rc zg leave liquid fire"] = &RaidClearActionContext::zg_leave_liquid_fire;
+        creators["rc zg control charmed"] = &RaidClearActionContext::zg_control_charmed;
 
         creators["rc ony leave deep breath"] = &RaidClearActionContext::ony_leave_deep_breath;
         creators["rc ony offtank position"] = &RaidClearActionContext::ony_offtank_position;
@@ -86,6 +90,8 @@ private:
     static Action* offtank_target(PlayerbotAI* botAI) { return new RcOffTankTargetAction(botAI); }
     static Action* offtank_separate(PlayerbotAI* botAI) { return new RcOffTankSeparateAction(botAI); }
     static Action* tank_share_threat(PlayerbotAI* botAI) { return new RcTankShareThreatAction(botAI); }
+    static Action* protect_boss_victim(PlayerbotAI* botAI) { return new RcProtectBossVictimAction(botAI); }
+    static Action* salvation_on_player(PlayerbotAI* botAI) { return new RcSalvationOnPlayerAction(botAI); }
     static Action* aggro_leash(PlayerbotAI* botAI) { return new RcAggroLeashAction(botAI); }
 
     static Action* mc_tremor_totem(PlayerbotAI* botAI) { return new RcMcTremorTotemAction(botAI); }
@@ -120,6 +126,8 @@ private:
     static Action* zg_lorkhan_interrupt(PlayerbotAI* botAI) { return new RcZgLorkhanInterruptAction(botAI); }
     static Action* zg_leave_bad_target(PlayerbotAI* botAI) { return new RcZgLeaveBadTargetAction(botAI); }
     static Action* zg_concoction_move_away(PlayerbotAI* botAI) { return new RcZgConcoctionMoveAwayAction(botAI); }
+    static Action* zg_leave_liquid_fire(PlayerbotAI* botAI) { return new RcZgLeaveLiquidFireAction(botAI); }
+    static Action* zg_control_charmed(PlayerbotAI* botAI) { return new RcZgControlCharmedAction(botAI); }
 
     static Action* ony_leave_deep_breath(PlayerbotAI* botAI) { return new RcOnyLeaveDeepBreathAction(botAI); }
     static Action* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionAction(botAI); }
@@ -136,6 +144,8 @@ public:
         creators["rc offtank target"] = &RaidClearTriggerContext::offtank_target;
         creators["rc offtank separate"] = &RaidClearTriggerContext::offtank_separate;
         creators["rc tank share threat"] = &RaidClearTriggerContext::tank_share_threat;
+        creators["rc boss on non tank"] = &RaidClearTriggerContext::boss_on_non_tank;
+        creators["rc player over threat"] = &RaidClearTriggerContext::player_over_threat;
         creators["rc aggro leash"] = &RaidClearTriggerContext::aggro_leash;
 
         creators["rc mc magmadar tremor"] = &RaidClearTriggerContext::mc_magmadar_tremor;
@@ -162,6 +172,8 @@ public:
         creators["rc zg lorkhan heal"] = &RaidClearTriggerContext::zg_lorkhan_heal;
         creators["rc zg bad target"] = &RaidClearTriggerContext::zg_bad_target;
         creators["rc zg concoction"] = &RaidClearTriggerContext::zg_concoction;
+        creators["rc zg liquid fire"] = &RaidClearTriggerContext::zg_liquid_fire;
+        creators["rc zg charmed member"] = &RaidClearTriggerContext::zg_charmed_member;
 
         creators["rc ony deep breath"] = &RaidClearTriggerContext::ony_deep_breath;
         creators["rc ony offtank position"] = &RaidClearTriggerContext::ony_offtank_position;
@@ -173,6 +185,8 @@ private:
     static Trigger* offtank_target(PlayerbotAI* botAI) { return new RcOffTankTargetTrigger(botAI); }
     static Trigger* offtank_separate(PlayerbotAI* botAI) { return new RcOffTankSeparateTrigger(botAI); }
     static Trigger* tank_share_threat(PlayerbotAI* botAI) { return new RcTankShareThreatTrigger(botAI); }
+    static Trigger* boss_on_non_tank(PlayerbotAI* botAI) { return new RcBossOnNonTankTrigger(botAI); }
+    static Trigger* player_over_threat(PlayerbotAI* botAI) { return new RcPlayerOverThreatTrigger(botAI); }
     static Trigger* aggro_leash(PlayerbotAI* botAI) { return new RcAggroLeashTrigger(botAI); }
 
     static Trigger* mc_magmadar_tremor(PlayerbotAI* botAI) { return new RcMcMagmadarTremorTrigger(botAI); }
@@ -209,6 +223,8 @@ private:
     static Trigger* zg_lorkhan_heal(PlayerbotAI* botAI) { return new RcZgLorkhanHealTrigger(botAI); }
     static Trigger* zg_bad_target(PlayerbotAI* botAI) { return new RcZgBadTargetTrigger(botAI); }
     static Trigger* zg_concoction(PlayerbotAI* botAI) { return new RcZgConcoctionTrigger(botAI); }
+    static Trigger* zg_liquid_fire(PlayerbotAI* botAI) { return new RcZgLiquidFireTrigger(botAI); }
+    static Trigger* zg_charmed_member(PlayerbotAI* botAI) { return new RcZgCharmedMemberTrigger(botAI); }
 
     static Trigger* ony_deep_breath(PlayerbotAI* botAI) { return new RcOnyDeepBreathTrigger(botAI); }
     static Trigger* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionTrigger(botAI); }

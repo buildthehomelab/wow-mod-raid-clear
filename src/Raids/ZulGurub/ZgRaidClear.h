@@ -38,11 +38,25 @@
  *     skull comes off it, for everyone, and casters don't pick it as a target at all.
  *   - A Gurubashi Bat Rider below 30% casts Unstable Concoction (24024): 3 s, then it blows
  *     itself up for 4,400-5,600 fire damage to everyone within 10 yd. It dies either way, so
- *     everyone within reach, tanks too, just walks out and stays out until it has gone off.
+ *     everyone within reach, tanks too, walks out and stays out until it has gone off: to the
+ *     nearest spot, all the way round, that is clear of every Bat Rider about to blow, that a
+ *     whole path leads to without a detour, and that the aggro leash won't stop the walk to. It
+ *     comes before everything but the leash, and nothing else happens while the bot is running.
  *   - Nobody goes on hitting a mob that evades everything, or a raid member an enemy has taken
  *     over (Will of Hakkar, Brain Wash, Cause Insanity): target picking skips the evading ones,
  *     a bot already on either lets go, and so does its pet. Area spells aren't cast within 12 yd
  *     of a mind-controlled member either.
+ *   - A mind-controlled member is stopped as well: a mage's Polymorph or a paladin's Hammer of
+ *     Justice, one bot at a time (Will of Hakkar runs 20 s, Cause Insanity 10 s; Polymorph lasts
+ *     10 s on a player, Hammer of Justice 6 s). When the mind control ends first, the bot that
+ *     cast it takes its sheep or stun off again, so nobody comes back as a sheep. Not Blind:
+ *     nothing takes that off.
+ *   - High Priestess Jeklik, from 50%: her Bat Riders drop Liquid Fire (GO 180125) on a random
+ *     raid member every 8 s. It burns for 20 s and casts Blaze (23972, 874 fire to everyone
+ *     within 5 yd) whenever someone stands within 3 yd of it. Playerbots only walks out of traps
+ *     whose spell is a periodic aura, so it never sees this one. Every bot within 6.5 yd of a
+ *     fire walks out. The tank she is on takes her along when either of them stands in one, far
+ *     enough that she ends up outside, and until then melee don't walk to her.
  *
  * Released under the MIT License.
  */
@@ -78,6 +92,15 @@ namespace RaidClear::ZulGurub
         NPC_HAKKARI_PRIEST = 11830,
         NPC_BLOOD_DRINKER  = 11353,
         NPC_BAT_RIDER      = 14750,
+        NPC_JEKLIK         = 14517,
+    };
+
+    enum GameObjects : uint32
+    {
+        // What her Bat Riders drop on a random raid member every 8 s, from 50%: it burns for 20 s
+        // and casts Blaze (23972: 874 fire to everyone within 5 yd) whenever someone is within
+        // 3 yd of it.
+        GO_LIQUID_FIRE = 180125,
     };
 
     enum Spells : uint32
@@ -112,11 +135,36 @@ namespace RaidClear::ZulGurub
     constexpr float EVEN_KILL_MARGIN = 0.15f;
     constexpr float EVEN_KILL_MARGIN_MIN = 3000.0f;
 
-    // Unstable Concoction reaches 10 yd. A bot whose centre is closer than KEEP_AWAY to the Bat
-    // Rider walks out to TARGET, and nobody within HOLD walks toward anything inside.
+    // Unstable Concoction reaches 10 yd, centre to centre. A bot closer than KEEP_AWAY to a Bat
+    // Rider casting it walks to the nearest spot at least SPOT from every one of them (looked
+    // for up to SEARCH yards round the bot, no more than SPOT_HEIGHT above or below it), and
+    // nobody within HOLD walks toward anything inside. A bot that can't get that far still goes
+    // where it ends up at least WORTH_IT yards further from them than it is.
     constexpr float CONCOCTION_KEEP_AWAY = 14.0f;
-    constexpr float CONCOCTION_TARGET = 17.0f;
+    constexpr float CONCOCTION_SPOT = 15.0f;
     constexpr float CONCOCTION_HOLD = 24.0f;
+    constexpr float CONCOCTION_WORTH_IT = 2.0f;
+    // How far round a bot a way out is looked for, how far above or below it a spot may be (more
+    // is a ledge or a pit), how far from the spot the walk there may end, and how long a bot that
+    // found nowhere to go waits before it looks again.
+    constexpr float WAY_OUT_SEARCH = 21.0f;
+    constexpr float WAY_OUT_UP = 2.5f;
+    constexpr float WAY_OUT_DOWN = 5.0f;
+    constexpr float WAY_OUT_END_SLACK = 1.5f;
+    constexpr uint32 WAY_OUT_RETRY_MS = 400;
+    // A bot that was sent off and isn't running (the aggro leash stopped the walk, or it ended
+    // short) isn't sent again sooner than this: the leash holds a bot it stopped for as long.
+    constexpr uint32 WAY_OUT_RESEND_MS = 700;
+
+    // Blaze reaches 5 yd from the middle of a Liquid Fire. A bot closer than KEEP_AWAY walks to
+    // the nearest spot at least SPOT from every fire. Whoever Jeklik is on goes TANK_SPOT, when
+    // either of them is inside, so that she ends up outside too. Melee don't walk to a target
+    // that stands inside.
+    constexpr float LIQUID_FIRE_KEEP_AWAY = 6.5f;
+    constexpr float LIQUID_FIRE_SPOT = 7.5f;
+    constexpr float LIQUID_FIRE_TANK_SPOT = 14.0f;
+    constexpr float LIQUID_FIRE_WORTH_IT = 2.0f;
+    constexpr float LIQUID_FIRE_SCAN = 40.0f;
 
     // No spell that hits more than one enemy is cast this close to a mind-controlled raid member.
     constexpr float CHARMED_SPLASH_RANGE = 12.0f;
@@ -185,6 +233,10 @@ class RcZgConcoctionMoveAwayAction : public MovementAction
 public:
     RcZgConcoctionMoveAwayAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc zg concoction move away") {}
     bool Execute(Event event) override;
+
+private:
+    uint32 _sentAtMs = 0;
+    uint32 _noSpotAtMs = 0;
 };
 
 // Keeps bots from walking back to a Bat Rider that is about to go off.
@@ -193,6 +245,49 @@ class RcZgConcoctionHoldMultiplier : public Multiplier
 public:
     RcZgConcoctionHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc zg concoction hold") {}
     float GetValue(Action* action) override;
+};
+
+// The bot stands in (or next to) the Liquid Fire of Jeklik's Bat Riders.
+class RcZgLiquidFireTrigger : public Trigger
+{
+public:
+    RcZgLiquidFireTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc zg liquid fire") {}
+    bool IsActive() override;
+};
+
+class RcZgLeaveLiquidFireAction : public MovementAction
+{
+public:
+    RcZgLeaveLiquidFireAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc zg leave liquid fire") {}
+    bool Execute(Event event) override;
+
+private:
+    uint32 _sentAtMs = 0;
+    uint32 _noSpotAtMs = 0;
+};
+
+// Keeps melee from walking to a target that stands in Liquid Fire.
+class RcZgLiquidFireHoldMultiplier : public Multiplier
+{
+public:
+    RcZgLiquidFireHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc zg liquid fire hold") {}
+    float GetValue(Action* action) override;
+};
+
+// An enemy has taken over a raid member this bot can stop (Polymorph, Hammer of Justice), or a
+// member it stopped is itself again.
+class RcZgCharmedMemberTrigger : public Trigger
+{
+public:
+    RcZgCharmedMemberTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc zg charmed member") {}
+    bool IsActive() override;
+};
+
+class RcZgControlCharmedAction : public Action
+{
+public:
+    RcZgControlCharmedAction(PlayerbotAI* botAI) : Action(botAI, "rc zg control charmed") {}
+    bool Execute(Event event) override;
 };
 
 // Zeroes spells that hit more than one enemy while a mind-controlled raid member stands where
