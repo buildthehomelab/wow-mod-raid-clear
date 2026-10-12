@@ -165,6 +165,14 @@ namespace RaidClear::Tanks
     // A player (not a bot) who isn't a tank and is over the threat the bots stay under, without
     // Hand of Salvation on it and without this paladin's Hand of Protection: the one with the most.
     Player* PlayerOverThreatShare(Player* bot, Unit* boss);
+
+    // The most threat a tank in the bot's group has on this boss, among the tanks that can hold
+    // it (alive, not mind-controlled) and are within `range` of it; -1 when there is no such tank.
+    float BestTankThreat(Player* bot, Unit* boss, float range);
+
+    // Whether a threat limit holds this action back: anything that does damage or is cast for its
+    // threat. Debuffs that do neither and Tranquilizing Shot still go out.
+    bool HeldByThreatCap(PlayerbotAI* botAI, Action* action);
 }
 
 class RaidClearTanksStrategy : public Strategy

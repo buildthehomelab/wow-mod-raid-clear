@@ -15,11 +15,15 @@
 #include "Creature.h"
 #include "GameTime.h"
 #include "LastMovementValue.h"
+#include "Group.h"
 #include "Map.h"
+#include "MoveSpline.h"
 #include "Playerbots.h"
 #include "Spell.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "ThreatManager.h"
+#include "Timer.h"
 #include "PlayerbotAI.h"
 
 #include <algorithm>
@@ -46,12 +50,16 @@ void RaidClearOnyxiasLairStrategy::InitTriggers(std::vector<TriggerNode*>& trigg
     // Playerbots' own trigger and priority; its action is switched off by the multiplier.
     triggers.push_back(new TriggerNode("ony whelps spawn",
                                        { NextAction("rc ony kill whelps", ACTION_RAID + 1) }));
+
+    // Under the urgent heals, over everything a bot does when nobody is about to die.
+    triggers.push_back(new TriggerNode("rc ony spread", { NextAction("rc ony spread out", ACTION_MOVE - 3.0f) }));
 }
 
 void RaidClearOnyxiasLairStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcOnyDeepBreathMultiplier(botAI));
     multipliers.push_back(new RcOnyTargetMultiplier(botAI));
+    multipliers.push_back(new RcOnyTankThreatMultiplier(botAI));
 }
 
 // --- Deep Breath ----------------------------------------------------------
@@ -322,6 +330,186 @@ float RcOnyDeepBreathMultiplier::GetValue(Action* action)
         return 0.0f;
     return CrossesFire(*trail, botX, botY, target->GetPositionX(), target->GetPositionY(), BREATH_KEEP_OUT) ? 0.0f
                                                                                                              : 1.0f;
+}
+
+// --- Fireball -------------------------------------------------------------
+
+namespace
+{
+    constexpr uint32 SPREAD_CHECK_MS = 500;
+    // A bot that was sent to a spot isn't sent again sooner than this, one that found no spot
+    // doesn't look again sooner than that, and a walk to a spot is given this long.
+    constexpr uint32 SPREAD_RESEND_MS = 1500;
+    constexpr uint32 SPREAD_RETRY_MS = 3000;
+    constexpr uint32 SPREAD_WALK_MS = 5000;
+
+    // How many living raid members other than the bot are, or are about to be, within `range` of
+    // a spot. Someone on the move counts where it is going: two bots leaving the same crowd would
+    // otherwise pick the same empty spot.
+    int OthersWithin(Player* bot, float x, float y, float range)
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return 0;
+
+        int count = 0;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || member == bot || !member->IsAlive() || !member->IsInMap(bot))
+                continue;
+            float memberX = member->GetPositionX();
+            float memberY = member->GetPositionY();
+            if (member->isMoving() && !member->movespline->Finalized())
+            {
+                G3D::Vector3 const dest = member->movespline->FinalDestination();
+                memberX = dest.x;
+                memberY = dest.y;
+            }
+            if (std::hypot(memberX - x, memberY - y) < range)
+                ++count;
+        }
+        return count;
+    }
+
+    // Onyxia in the air with no Deep Breath on: the time to stand apart.
+    bool FireballTime(Player* bot)
+    {
+        Creature* boss = FightingOnyxia(bot);
+        return boss && boss->IsFlying() && !ActiveBreath(boss);
+    }
+}
+
+bool RcOnySpreadTrigger::IsActive()
+{
+    // Tanks and melee are on the whelps, which come to them in one pile.
+    if (!bot->IsAlive() || !bot->IsInCombat() || PlayerbotAI::IsTank(bot) ||
+        !(PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot)) || !botAI->CanMove())
+    {
+        _lastResult = false;
+        return false;
+    }
+
+    uint32 const now = getMSTime();
+    if (_lastCheckMs && getMSTimeDiff(_lastCheckMs, now) < SPREAD_CHECK_MS)
+        return _lastResult;
+    _lastCheckMs = now ? now : 1;
+
+    _lastResult = FireballTime(bot) &&
+                  OthersWithin(bot, bot->GetPositionX(), bot->GetPositionY(), FIREBALL_SPREAD) >= SPREAD_CROWD;
+    return _lastResult;
+}
+
+bool RcOnySpreadOutAction::Execute(Event /*event*/)
+{
+    if (!FireballTime(bot))
+        return false;
+
+    uint32 const now = getMSTime();
+    if (_sentAtMs)
+    {
+        // Still on its way there: nothing else this tick, so no cast stops the walk.
+        uint32 const since = getMSTimeDiff(_sentAtMs, now);
+        if (since < SPREAD_WALK_MS && bot->isMoving() && !bot->movespline->Finalized())
+        {
+            G3D::Vector3 const dest = bot->movespline->FinalDestination();
+            if (_spot.GetExactDist2d(dest.x, dest.y) < 1.0f)
+                return true;
+        }
+        if (since < SPREAD_RESEND_MS)
+            return false;
+    }
+    if (_noSpotAtMs && getMSTimeDiff(_noSpotAtMs, now) < SPREAD_RETRY_MS)
+        return false;
+
+    float const botX = bot->GetPositionX();
+    float const botY = bot->GetPositionY();
+    float const botZ = bot->GetPositionZ();
+    if (OthersWithin(bot, botX, botY, FIREBALL_SPREAD) < SPREAD_CROWD)
+        return false;
+    // Told to wait for an earlier walk: no spot would do. Look again in a moment.
+    if (IsWaitingForLastMove(MovementPriority::MOVEMENT_COMBAT))
+    {
+        _sentAtMs = now ? now : 1;
+        return false;
+    }
+
+    // The nearest spot with nobody in reach of a Fireball thrown at it: rings around the bot,
+    // closest first. Each bot starts its way round a ring somewhere else, so neighbours leaving
+    // the same pile don't all look the same way first.
+    Map* map = bot->GetMap();
+    constexpr float RING_STEP = 4.0f;
+    constexpr int STEPS = 12;
+    int const first = int(bot->GetGUID().GetCounter() % STEPS);
+    int refused = 0;
+    for (float ring = RING_STEP; ring <= SPREAD_SEARCH; ring += RING_STEP)
+    {
+        for (int i = 0; i < STEPS; ++i)
+        {
+            float const angle = float((first + i) % STEPS) * 2.0f * float(M_PI) / float(STEPS);
+            float const x = botX + std::cos(angle) * ring;
+            float const y = botY + std::sin(angle) * ring;
+            if (NearEggs(x, y) || OthersWithin(bot, x, y, FIREBALL_SPREAD) > 0)
+                continue;
+
+            float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + BREATH_SPOT_HEIGHT);
+            if (z <= INVALID_HEIGHT || std::fabs(z - botZ) > BREATH_SPOT_HEIGHT)
+                continue;
+            if (!bot->IsWithinLOS(x, y, z + 2.0f))
+                continue;
+
+            // No way to this one (off the floor the bot can walk on): the next may do. Not all 72
+            // of them, each with its own look round the raid.
+            if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT))
+            {
+                if (++refused >= 3)
+                {
+                    _noSpotAtMs = now ? now : 1;
+                    return false;
+                }
+                continue;
+            }
+            _spot.Relocate(x, y, z);
+            _sentAtMs = now ? now : 1;
+            _noSpotAtMs = 0;
+            return true;
+        }
+    }
+    _noSpotAtMs = now ? now : 1;
+    return false;
+}
+
+// --- Threat ---------------------------------------------------------------
+
+float RcOnyTankThreatMultiplier::GetValue(Action* action)
+{
+    // Melee swings and pets carry on; spells and special attacks are what's held.
+    if (!action || action->getThreatType() == Action::ActionThreatType::None)
+        return 1.0f;
+    if (!bot->IsInCombat() || PlayerbotAI::IsTank(bot))
+        return 1.0f;
+
+    Unit* target = action->GetTarget();
+    if (!target || (target->GetEntry() != NPC_ONYXIA && target->GetEntry() != NPC_ONYXIA_40))
+        return 1.0f;
+    // Where a taunt lands, playerbots' tanks take her back with one.
+    Creature* boss = FightingOnyxia(bot);
+    if (boss != target || !RaidClear::Tanks::CantBeTaunted(boss) || !RaidClear::Tanks::HeldByThreatCap(botAI, action))
+        return 1.0f;
+    // In the air nobody tanks her and what she is hit with is forgotten when she comes down: she
+    // wipes her threat as the descent starts, two seconds before she lands and turns on whoever
+    // has the most. So from 40% down (she only goes below that on her way to land, or landed) the
+    // limit is on in the air as well. Above it, in the air or walking off to take wing, it isn't.
+    if (boss->GetHealthPct() > LANDING_HEALTH_PCT && (boss->IsFlying() || boss->HasReactState(REACT_PASSIVE)))
+        return 1.0f;
+
+    // No tank at her to wait for: the fight goes on without one. While she is coming down any
+    // living tank counts, wherever it stands: they are on the whelps, and she lands in two seconds.
+    float const tank =
+        RaidClear::Tanks::BestTankThreat(bot, boss, boss->IsFlying() ? LANDING_TANK_RANGE : TANK_THREAT_RANGE);
+    if (tank < 0.0f)
+        return 1.0f;
+    return boss->GetThreatMgr().GetThreat(bot) >= tank * TANK_THREAT_SHARE ? 0.0f : 1.0f;
 }
 
 // --- Off-tanks ------------------------------------------------------------

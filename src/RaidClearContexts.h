@@ -57,6 +57,8 @@ public:
         creators["rc mc ragnaros move out"] = &RaidClearActionContext::mc_ragnaros_move_out;
         creators["rc mc garr gather"] = &RaidClearActionContext::mc_garr_gather;
         creators["rc mc leave firesworn"] = &RaidClearActionContext::mc_leave_firesworn;
+        creators["rc mc leave inferno"] = &RaidClearActionContext::mc_leave_inferno;
+        creators["rc mc leave hot coal"] = &RaidClearActionContext::mc_leave_hot_coal;
 
         creators["rc bwl disarm suppression"] = &RaidClearActionContext::bwl_disarm_suppression;
         creators["rc bwl broodlord move out"] = &RaidClearActionContext::bwl_broodlord_move_out;
@@ -83,6 +85,7 @@ public:
         creators["rc ony offtank position"] = &RaidClearActionContext::ony_offtank_position;
         creators["rc ony leave evading target"] = &RaidClearActionContext::ony_leave_evading_target;
         creators["rc ony kill whelps"] = &RaidClearActionContext::ony_kill_whelps;
+        creators["rc ony spread out"] = &RaidClearActionContext::ony_spread_out;
     }
 
 private:
@@ -99,6 +102,8 @@ private:
     static Action* mc_ragnaros_move_out(PlayerbotAI* botAI) { return new RcMcRagnarosMoveOutAction(botAI); }
     static Action* mc_garr_gather(PlayerbotAI* botAI) { return new RcMcGarrGatherAction(botAI); }
     static Action* mc_leave_firesworn(PlayerbotAI* botAI) { return new RcMcLeaveFireswornAction(botAI); }
+    static Action* mc_leave_inferno(PlayerbotAI* botAI) { return new RcMcLeaveInfernoAction(botAI); }
+    static Action* mc_leave_hot_coal(PlayerbotAI* botAI) { return new RcMcLeaveHotCoalAction(botAI); }
 
     static Action* bwl_disarm_suppression(PlayerbotAI* botAI) { return new RcBwlDisarmSuppressionAction(botAI); }
     static Action* bwl_broodlord_move_out(PlayerbotAI* botAI)
@@ -133,6 +138,7 @@ private:
     static Action* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionAction(botAI); }
     static Action* ony_leave_evading_target(PlayerbotAI* botAI) { return new RcOnyLeaveEvadingTargetAction(botAI); }
     static Action* ony_kill_whelps(PlayerbotAI* botAI) { return new RcOnyKillWhelpsAction(botAI); }
+    static Action* ony_spread_out(PlayerbotAI* botAI) { return new RcOnySpreadOutAction(botAI); }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -153,6 +159,8 @@ public:
         creators["rc mc ragnaros ranged"] = &RaidClearTriggerContext::mc_ragnaros_ranged;
         creators["rc mc garr gather"] = &RaidClearTriggerContext::mc_garr_gather;
         creators["rc mc anxious firesworn"] = &RaidClearTriggerContext::mc_anxious_firesworn;
+        creators["rc mc inferno"] = &RaidClearTriggerContext::mc_inferno;
+        creators["rc mc hot coal"] = &RaidClearTriggerContext::mc_hot_coal;
 
         creators["rc bwl suppression device"] = &RaidClearTriggerContext::bwl_suppression_device;
         creators["rc bwl broodlord ranged"] = &RaidClearTriggerContext::bwl_broodlord_ranged;
@@ -178,6 +186,7 @@ public:
         creators["rc ony deep breath"] = &RaidClearTriggerContext::ony_deep_breath;
         creators["rc ony offtank position"] = &RaidClearTriggerContext::ony_offtank_position;
         creators["rc ony evading target"] = &RaidClearTriggerContext::ony_evading_target;
+        creators["rc ony spread"] = &RaidClearTriggerContext::ony_spread;
     }
 
 private:
@@ -194,6 +203,8 @@ private:
     static Trigger* mc_ragnaros_ranged(PlayerbotAI* botAI) { return new RcMcRagnarosRangedTrigger(botAI); }
     static Trigger* mc_garr_gather(PlayerbotAI* botAI) { return new RcMcGarrGatherTrigger(botAI); }
     static Trigger* mc_anxious_firesworn(PlayerbotAI* botAI) { return new RcMcAnxiousFireswornTrigger(botAI); }
+    static Trigger* mc_inferno(PlayerbotAI* botAI) { return new RcMcInfernoTrigger(botAI); }
+    static Trigger* mc_hot_coal(PlayerbotAI* botAI) { return new RcMcHotCoalTrigger(botAI); }
 
     static Trigger* bwl_suppression_device(PlayerbotAI* botAI) { return new RcBwlSuppressionDeviceTrigger(botAI); }
     static Trigger* bwl_broodlord_ranged(PlayerbotAI* botAI)
@@ -229,6 +240,7 @@ private:
     static Trigger* ony_deep_breath(PlayerbotAI* botAI) { return new RcOnyDeepBreathTrigger(botAI); }
     static Trigger* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionTrigger(botAI); }
     static Trigger* ony_evading_target(PlayerbotAI* botAI) { return new RcOnyEvadingTargetTrigger(botAI); }
+    static Trigger* ony_spread(PlayerbotAI* botAI) { return new RcOnySpreadTrigger(botAI); }
 };
 
 #endif

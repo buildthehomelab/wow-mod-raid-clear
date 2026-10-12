@@ -136,25 +136,14 @@ namespace RaidClear::ZulGurub
     constexpr float EVEN_KILL_MARGIN_MIN = 3000.0f;
 
     // Unstable Concoction reaches 10 yd, centre to centre. A bot closer than KEEP_AWAY to a Bat
-    // Rider casting it walks to the nearest spot at least SPOT from every one of them (looked
-    // for up to SEARCH yards round the bot, no more than SPOT_HEIGHT above or below it), and
-    // nobody within HOLD walks toward anything inside. A bot that can't get that far still goes
-    // where it ends up at least WORTH_IT yards further from them than it is.
+    // Rider casting it walks to the nearest spot at least SPOT from every one of them (the search
+    // is Common/WayOut.h), and nobody within HOLD walks toward anything inside. A bot that can't
+    // get that far still goes where it ends up at least WORTH_IT yards further from them than it
+    // is.
     constexpr float CONCOCTION_KEEP_AWAY = 14.0f;
     constexpr float CONCOCTION_SPOT = 15.0f;
     constexpr float CONCOCTION_HOLD = 24.0f;
     constexpr float CONCOCTION_WORTH_IT = 2.0f;
-    // How far round a bot a way out is looked for, how far above or below it a spot may be (more
-    // is a ledge or a pit), how far from the spot the walk there may end, and how long a bot that
-    // found nowhere to go waits before it looks again.
-    constexpr float WAY_OUT_SEARCH = 21.0f;
-    constexpr float WAY_OUT_UP = 2.5f;
-    constexpr float WAY_OUT_DOWN = 5.0f;
-    constexpr float WAY_OUT_END_SLACK = 1.5f;
-    constexpr uint32 WAY_OUT_RETRY_MS = 400;
-    // A bot that was sent off and isn't running (the aggro leash stopped the walk, or it ended
-    // short) isn't sent again sooner than this: the leash holds a bot it stopped for as long.
-    constexpr uint32 WAY_OUT_RESEND_MS = 700;
 
     // Blaze reaches 5 yd from the middle of a Liquid Fire. A bot closer than KEEP_AWAY walks to
     // the nearest spot at least SPOT from every fire. Whoever Jeklik is on goes TANK_SPOT, when

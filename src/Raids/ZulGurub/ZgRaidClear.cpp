@@ -8,6 +8,8 @@
 
 #include "Common/AggroLeash.h"
 #include "Common/BossLookup.h"
+#include "Common/SplashSpells.h"
+#include "Common/WayOut.h"
 #include "RaidClearConfig.h"
 
 #include "AttackAction.h"
@@ -43,6 +45,11 @@
 #include <unordered_map>
 
 using namespace RaidClear::ZulGurub;
+using RaidClear::FindWayOut;
+using RaidClear::Splash::IsSplashSpell;
+using RaidClear::OnItsWayOut;
+using RaidClear::WAY_OUT_RESEND_MS;
+using RaidClear::WAY_OUT_RETRY_MS;
 
 std::vector<RaidClear::KillOrderEntry> const& RaidClear::ZulGurub::KillOrder()
 {
@@ -251,75 +258,6 @@ namespace
             (gap < LIQUID_FIRE_KEEP_AWAY || LiquidFireGap(fires, jeklik) < LIQUID_FIRE_KEEP_AWAY))
             return LIQUID_FIRE_TANK_SPOT;
         return gap < LIQUID_FIRE_KEEP_AWAY ? LIQUID_FIRE_SPOT : 0.0f;
-    }
-
-    // Whether the bot is already running to somewhere `gapAt` (yards from a spot to whatever the
-    // bot is getting away from) is at least `want`.
-    template <typename GapAt>
-    bool OnItsWayOut(Player* bot, GapAt const& gapAt, float want)
-    {
-        if (!bot->isMoving() || bot->movespline->Finalized())
-            return false;
-        G3D::Vector3 const dest = bot->movespline->FinalDestination();
-        return gapAt(dest.x, dest.y, dest.z) >= want;
-    }
-
-    // The nearest spot, all the way round the bot, where `gapAt` is at least `want`. The bat cave
-    // is all walls and ledges, and a point straight behind the bot is as often as not inside one,
-    // so it is the walk there that is looked at: a whole path that ends at the spot and isn't a
-    // detour, and that the aggro leash wouldn't stop for heading into the next pack. With nowhere
-    // that good, the spot with the widest gap, if that is at least `worthIt` yards more than the
-    // bot has where it stands.
-    template <typename GapAt>
-    bool FindWayOut(PlayerbotAI* botAI, Player* bot, GapAt const& gapAt, float want, float worthIt, Position& spot)
-    {
-        Map* map = bot->GetMap();
-        float const botX = bot->GetPositionX();
-        float const botY = bot->GetPositionY();
-        float const botZ = bot->GetPositionZ();
-        RaidClear::Leash::WalkCheck const leash(botAI, bot);
-
-        constexpr int STEPS = 16;
-        bool found = false;
-        // What a spot has to beat: good enough, or that much better than here.
-        float bestGap = std::min(gapAt(botX, botY, botZ) + worthIt, want) - 0.01f;
-        for (float ring = 3.0f; ring <= WAY_OUT_SEARCH && (!found || bestGap < want); ring += 3.0f)
-        {
-            for (int i = 0; i < STEPS; ++i)
-            {
-                float const angle = float(i) * 2.0f * float(M_PI) / float(STEPS);
-                float const x = botX + std::cos(angle) * ring;
-                float const y = botY + std::sin(angle) * ring;
-                // The cheap test first: most of the circle is no better than where the bot is.
-                if (gapAt(x, y, botZ) <= bestGap)
-                    continue;
-
-                // The floor at the bot's own level: asked from higher up, a ledge over it answers.
-                float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + WAY_OUT_UP);
-                if (z <= INVALID_HEIGHT || z < botZ - WAY_OUT_DOWN)
-                    continue;
-
-                PathGenerator path(bot);
-                // A whole path over the floor: not one that stops short, and not the straight line
-                // the core hands back when it finds no floor under either end.
-                constexpr uint32 NOT_A_WALK = PATHFIND_INCOMPLETE | PATHFIND_NOPATH | PATHFIND_SHORTCUT |
-                                              PATHFIND_NOT_USING_PATH | PATHFIND_FARFROMPOLY;
-                if (!path.CalculatePath(x, y, z) || !(path.GetPathType() & PATHFIND_NORMAL) ||
-                    (path.GetPathType() & NOT_A_WALK))
-                    continue;
-                G3D::Vector3 const& end = path.GetActualEndPosition();
-                if (std::hypot(end.x - x, end.y - y) > WAY_OUT_END_SLACK || path.getPathLength() > ring * 1.5f + 2.0f)
-                    continue;
-                float const gap = gapAt(end.x, end.y, end.z);
-                if (gap <= bestGap || leash.Pulls(path.GetPath()))
-                    continue;
-
-                found = true;
-                bestGap = gap;
-                spot.Relocate(end.x, end.y, end.z);
-            }
-        }
-        return found;
     }
 }
 
@@ -961,47 +899,6 @@ bool RcZgThekalEvenKillAction::Execute(Event /*event*/)
 
     group->SetTargetIcon(RtiTargetValue::skullIndex, bot->GetGUID(), target ? target->GetGUID() : ObjectGuid::Empty);
     return true;
-}
-
-namespace
-{
-    // A harmful spell that reaches more than the enemy it is cast at: area and cone spells, ground
-    // effects (Blizzard, Rain of Fire, Volley, Consecration) and chains (Multi-Shot, Cleave, Chain
-    // Lightning).
-    bool HitsMoreThanOneEnemy(SpellInfo const* info)
-    {
-        if (info->IsPositive())
-            return false;
-        for (SpellEffectInfo const& effect : info->Effects)
-        {
-            if (!effect.IsEffect())
-                continue;
-            if (effect.IsTargetingArea() || effect.IsEffect(SPELL_EFFECT_PERSISTENT_AREA_AURA) || effect.ChainTarget > 1)
-                return true;
-        }
-        return false;
-    }
-
-    // Spells the check above can't see, by their playerbots names: the damage sits in a spell they
-    // trigger or in something they summon, or they are a buff that copies the bot's swings.
-    constexpr std::array<char const*, 10> HIDDEN_SPLASH = {
-        "blade flurry", "sweeping strikes", "fire nova", "magma totem", "explosive trap",
-        "bladestorm", "starfall", "typhoon", "living bomb", "immolation aura",
-    };
-
-    bool IsSplashSpell(PlayerbotAI* botAI, std::string const& name)
-    {
-        // Picks a spot on the ground, but only to summon the treants there.
-        if (name == "force of nature")
-            return false;
-        for (char const* hidden : HIDDEN_SPLASH)
-            if (name == hidden)
-                return true;
-
-        uint32 const spellId = botAI->GetAiObjectContext()->GetValue<uint32>("spell id", name)->Get();
-        SpellInfo const* info = spellId ? sSpellMgr->GetSpellInfo(spellId) : nullptr;
-        return info && HitsMoreThanOneEnemy(info);
-    }
 }
 
 float RcZgThekalSingleTargetMultiplier::GetValue(Action* action)

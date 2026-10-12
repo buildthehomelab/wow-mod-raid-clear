@@ -2,17 +2,38 @@
  * mod-raid-clear: Molten Core (map 409).
  *
  * Runs next to mod-playerbots' "moltencore" strategy, which already handles Geddon's Living
- * Bomb and Inferno, Shazzrah's Arcane Explosion range, the Golemagg / Core Rager tank split,
- * Core Hound skull rotation, lava escape and the resistance auras/totems. Fire patches (Lava
- * Bomb traps) and Rain of Fire are left to playerbots' generic "avoid aoe".
+ * Bomb, Shazzrah's Arcane Explosion range, the Golemagg / Core Rager tank split, Core Hound
+ * skull rotation, lava escape and the resistance auras/totems. Fire patches (Lava Bomb traps)
+ * and Rain of Fire are left to playerbots' generic "avoid aoe".
  *
  * Added here (mechanics from the core scripts in scripts/EasternKingdoms/BlackrockMountain/
  * MoltenCore):
  *   - Kill order: Lava Spawn (splits every 15s), the healing adds (Sulfuron's priests,
  *     Majordomo's healers), then the other boss adds and Ragnaros' Sons of Flame.
  *   - Magmadar: every shaman keeps Tremor Totem down. Panic is a 45 yd raid-wide fear.
+ *     Playerbots keeps each shaman's own earth totem (Stoneskin, Strength of Earth) down the
+ *     same way, and the two share a slot: left alone they replace each other every second and
+ *     a half and the shaman does nothing else all fight. So near Magmadar a shaman who knows
+ *     Tremor Totem places no other earth totem (and no Call of the Elements, which would).
+ *   - Baron Geddon: Inferno (19695, 8 s) burns everyone within 20 yd of him once a second, for
+ *     500 at first and 5,000 at the end; he stands still for it. Playerbots walks its bots out,
+ *     but only those it finds through "find target", which is a bot's own threat list: a tank
+ *     holding an add, a bot on the trash that came with him, a bot revived mid-fight never see
+ *     him and stand in all eight pulses. Here every bot within 23 yd of him walks to the nearest
+ *     spot 25 yd out (see Common/WayOut.h), whoever he is on included, and nobody walks back
+ *     toward anything that close to him until it is over. A bot in the middle of a cast is
+ *     told to drop it the moment Inferno starts, and one still inside casts nothing it has to
+ *     stand still for.
  *   - Majordomo: nobody casts at an enemy with Magic Reflection, and melee (not tanks) stop
  *     swinging at one with Damage Reflection. Both shields cover all of his adds.
+ *     The Hot Coal in the middle of his room (the pit his Teleport throws players into) is a
+ *     trap: with a player within about 7 yd of its middle, everyone within 10 yd takes Intense
+ *     Heat (20533, about 750 fire a second, logged as environmental damage). Nothing in
+ *     playerbots knows it (its lava check looks at the liquid under a bot; this is a game
+ *     object). In combat a bot that has stopped within 12 yd of it walks out, on the side its
+ *     target is on; one only crossing the pit is left alone. A tank with a mob on it goes 22 yd
+ *     out when either of them is within 12 yd, so the mob follows it out of reach. Melee whose
+ *     target stands in it stay on that target.
  *   - Ragnaros: ranged and healers stay out of Wrath of Ragnaros (25 yd knockback around him).
  *   - Garr: a Firesworn more than 40 yd from him gets Separation Anxiety (23492, +300% damage),
  *     and a Firesworn erupts when it dies (Eruption, 19497: about 2,000 fire to everyone within
@@ -31,6 +52,7 @@
 
 #include "Common/KillOrder.h"
 #include "Common/TankRoles.h"
+#include "Common/WayOut.h"
 
 #include "Action.h"
 #include "MovementActions.h"
@@ -48,6 +70,7 @@ namespace RaidClear::MoltenCore
     {
         NPC_MAGMADAR             = 11982,
         NPC_GARR                 = 12057,
+        NPC_BARON_GEDDON         = 12056,
         NPC_GOLEMAGG             = 11988,
 
         NPC_MOLTEN_GIANT         = 11658,  // Smash: 10 yd AoE, Knock Away
@@ -70,7 +93,29 @@ namespace RaidClear::MoltenCore
         SPELL_MAGIC_REFLECTION   = 20619,
         SPELL_DAMAGE_REFLECTION  = 21075,
         SPELL_SEPARATION_ANXIETY = 23492,  // on a Firesworn more than 40 yd from Garr
+        SPELL_INFERNO            = 19695,  // on Baron Geddon; each pulse is 19698, 20 yd around him
     };
+
+    // Inferno reaches 20 yd, centre to centre. A bot closer than KEEP_AWAY to him walks to the
+    // nearest spot at least SPOT from him (looked for up to SEARCH yards round the bot), or to
+    // one WORTH_IT yards further out than it stands when there is none.
+    constexpr float INFERNO_KEEP_AWAY = 23.0f;
+    constexpr float INFERNO_SPOT = 25.0f;
+    constexpr float INFERNO_WORTH_IT = 3.0f;
+    constexpr float INFERNO_SEARCH = 30.0f;
+
+    // The Hot Coal in Majordomo's room (game object 178164, a trap 10 yd across; its one spawn
+    // is where his Teleport lands). Intense Heat reaches 10 yd from it.
+    constexpr float HOT_COAL_X = 736.653f;
+    constexpr float HOT_COAL_Y = -1176.32f;
+    constexpr float HOT_COAL_Z = -118.097f;
+    constexpr float HOT_COAL_KEEP_AWAY = 12.0f;
+    constexpr float HOT_COAL_SPOT = 13.5f;
+    // A tank with a mob on it goes further out: the mob follows and stops a few yards short.
+    constexpr float HOT_COAL_TANK_KEEP_AWAY = 20.0f;
+    constexpr float HOT_COAL_TANK_SPOT = 22.0f;
+    constexpr float HOT_COAL_WORTH_IT = 2.0f;
+    constexpr float HOT_COAL_SEARCH = 27.0f;
 
     // Panic (19408) radius.
     constexpr float PANIC_RANGE = 45.0f;
@@ -96,6 +141,8 @@ namespace RaidClear::MoltenCore
 
     // Trash whose AoE needs more room than the default tank separation.
     std::vector<Tanks::SplashRadius> const& TankSplitSplashRadii();
+
+    void AddScripts();
 }
 
 class RaidClearMoltenCoreStrategy : public Strategy
@@ -123,6 +170,44 @@ public:
     bool Execute(Event event) override;
 };
 
+// Near Magmadar the earth slot is Tremor Totem's: nothing else is placed in it.
+class RcMcTremorMultiplier : public Multiplier
+{
+public:
+    RcMcTremorMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc mc tremor") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Baron Geddon ---------------------------------------------------------
+
+// Baron Geddon has Inferno up and the bot is within its reach.
+class RcMcInfernoTrigger : public Trigger
+{
+public:
+    RcMcInfernoTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc inferno") {}
+    bool IsActive() override;
+};
+
+// Not a movement action itself: playerbots' own Geddon rule switches those off (all but its two)
+// for as long as Inferno lasts.
+class RcMcLeaveInfernoAction : public Action
+{
+public:
+    RcMcLeaveInfernoAction(PlayerbotAI* botAI) : Action(botAI, "rc mc leave inferno"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
+// While Inferno lasts nobody walks (or charges) toward something within its reach.
+class RcMcInfernoHoldMultiplier : public Multiplier
+{
+public:
+    RcMcInfernoHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc mc inferno hold") {}
+    float GetValue(Action* action) override;
+};
+
 // --- Majordomo Executus ---------------------------------------------------
 
 class RcMcDamageReflectionTrigger : public Trigger
@@ -144,6 +229,41 @@ class RcMcReflectionMultiplier : public Multiplier
 public:
     RcMcReflectionMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc mc reflection") {}
     float GetValue(Action* action) override;
+};
+
+// The bot is in combat and has stopped within reach of the Hot Coal.
+class RcMcHotCoalTrigger : public Trigger
+{
+public:
+    RcMcHotCoalTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc hot coal") {}
+    bool IsActive() override;
+
+private:
+    uint32 _lastLookMs = 0;
+    bool _lastStands = false;
+    bool _lastResult = false;
+    Position _lastSpot;
+};
+
+// A bot that has just stopped at the Hot Coal starts no spell it has to stand still for.
+class RcMcHotCoalHoldMultiplier : public Multiplier
+{
+public:
+    RcMcHotCoalHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc mc hot coal hold") {}
+    float GetValue(Action* action) override;
+
+private:
+    uint32 _sinceMs = 0;
+};
+
+class RcMcLeaveHotCoalAction : public Action
+{
+public:
+    RcMcLeaveHotCoalAction(PlayerbotAI* botAI) : Action(botAI, "rc mc leave hot coal"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
 };
 
 // --- Garr -----------------------------------------------------------------
