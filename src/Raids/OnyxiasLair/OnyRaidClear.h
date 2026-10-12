@@ -22,6 +22,20 @@
  *     A bot can't act in the middle of a cast, so the moment she starts the breath every bot in
  *     the strip is told to drop its spell.
  *
+ * Added here:
+ *   - Off-tanks at her side. Playerbots' "keep off her head and tail" rule skips every tank, so a
+ *     raid's second, third and fourth tank stand in front of her next to the main tank and take
+ *     each Flame Breath, Cleave and Wing Buffet with it. Here only the tank she is on and the
+ *     main tank (who has to catch her when she lands) stay in front; every other tank stands at
+ *     her side like the melee.
+ *   - Evading mobs. A whelp that can't find a way to its victim evades every attack (the core's
+ *     guard against mobs being hit from a spot they can't reach) but goes on biting. Bots kept
+ *     attacking it: nothing in playerbots looks at whether a target evades. Here a bot whose
+ *     target evades takes the nearest enemy that doesn't, or Onyxia when there is none, and no
+ *     bot picks an evading mob. Playerbots' own whelp action (first whelp it finds, and it never
+ *     leaves a whelp) is replaced by one that picks the nearest whelp that isn't evading.
+ *   - Hunter's Mark stays off the whelps: they die within seconds.
+ *
  * Released under the MIT License.
  */
 
@@ -29,6 +43,7 @@
 #define MOD_RAID_CLEAR_ONYXIAS_LAIR_H
 
 #include "Action.h"
+#include "AttackAction.h"
 #include "MovementActions.h"
 #include "Multiplier.h"
 #include "Position.h"
@@ -36,6 +51,7 @@
 #include "Trigger.h"
 
 #include <array>
+#include <cmath>
 
 namespace RaidClear::OnyxiasLair
 {
@@ -43,8 +59,10 @@ namespace RaidClear::OnyxiasLair
 
     enum Creatures : uint32
     {
-        NPC_ONYXIA    = 10184,
-        NPC_ONYXIA_40 = 301000,  // mod-individual-progression's level 60 Onyxia
+        NPC_ONYXIA           = 10184,
+        NPC_ONYXIAN_WHELP    = 11262,
+        NPC_ONYXIA_40        = 301000,  // mod-individual-progression's level 60 Onyxia
+        NPC_ONYXIAN_WHELP_40 = 301001,  // and her whelps
     };
 
     // The first spell of each Deep Breath chain: the one she casts. Which line of the room a
@@ -64,6 +82,13 @@ namespace RaidClear::OnyxiasLair
     // A bot leaving the breath doesn't stop within this of the edge of one.
     constexpr uint32 SPELL_HEATED_GROUND = 22191;
     constexpr float ROOKERY_KEEP_OUT = 2.0f;
+
+    // Her head and her tail: within SIDE_RANGE of her and less than SIDE_CONE round from her nose
+    // or from the tip of her tail. The spot at her side is SIDE_DISTANCE from her middle. The
+    // same numbers playerbots uses for the melee ("ony move to side").
+    constexpr float SIDE_RANGE = 30.0f;
+    constexpr float SIDE_CONE = float(M_PI_4);
+    constexpr float SIDE_DISTANCE = 15.0f;
 
     void AddScripts();
 }
@@ -106,6 +131,58 @@ class RcOnyDeepBreathMultiplier : public Multiplier
 {
 public:
     RcOnyDeepBreathMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc ony deep breath") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Off-tanks ------------------------------------------------------------
+
+// Onyxia is on the ground, on somebody else, and this tank, who isn't the main tank, stands at
+// her head or her tail.
+class RcOnyOffTankSideTrigger : public Trigger
+{
+public:
+    RcOnyOffTankSideTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc ony offtank side") {}
+    bool IsActive() override;
+};
+
+class RcOnyOffTankSideAction : public MovementAction
+{
+public:
+    RcOnyOffTankSideAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc ony offtank side") {}
+    bool Execute(Event event) override;
+};
+
+// --- Evading mobs ---------------------------------------------------------
+
+// The bot's target evades every attack.
+class RcOnyEvadingTargetTrigger : public Trigger
+{
+public:
+    RcOnyEvadingTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc ony evading target") {}
+    bool IsActive() override;
+};
+
+class RcOnyLeaveEvadingTargetAction : public AttackAction
+{
+public:
+    RcOnyLeaveEvadingTargetAction(PlayerbotAI* botAI) : AttackAction(botAI, "rc ony leave evading target") {}
+    bool Execute(Event event) override;
+};
+
+// Playerbots' "ony kill whelps", minus the whelps that evade.
+class RcOnyKillWhelpsAction : public AttackAction
+{
+public:
+    RcOnyKillWhelpsAction(PlayerbotAI* botAI) : AttackAction(botAI, "rc ony kill whelps") {}
+    bool Execute(Event event) override;
+};
+
+// Keeps bots from picking a mob that evades, switches off playerbots' whelp action (replaced
+// above) and keeps Hunter's Mark off the whelps.
+class RcOnyTargetMultiplier : public Multiplier
+{
+public:
+    RcOnyTargetMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc ony target") {}
     float GetValue(Action* action) override;
 };
 

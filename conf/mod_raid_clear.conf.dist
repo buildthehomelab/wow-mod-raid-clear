@@ -177,6 +177,9 @@ RaidClear.ZulGurub.Enable = 1
 #                     nobody walks into or across it until it has passed. The strip is read from
 #                     the server's spell data (spell_target_position), so it follows the core.
 #                     Replaces playerbots' fixed safe zones for the breath.
+#                     Also: tanks other than the main tank and the one she is on stand at her
+#                     side, bots leave a mob that evades every attack (and don't pick one),
+#                     and Hunter's Mark stays off the whelps.
 #        Default:     1
 #
 

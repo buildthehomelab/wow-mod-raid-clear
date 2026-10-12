@@ -29,6 +29,8 @@
  *         off by default). On these bosses they hold their damage while they are within 10% of
  *         the threat of the tank who would catch the boss next.
  *   - Endless respawning adds a raid lists (BWL's Suppression Room whelps) are never picked up.
+ *   - Neither is a mob that evades every attack (it is running home, or can't find a way to its
+ *     victim): a taunt on it does nothing.
  *   - Adds a raid lists as needing their own tank (BWL's Death Talon Captain) go to an off-tank
  *     first: it taunts them off whoever has them, the main tank included, keeps them until they
  *     die and drags them by their own splash radius.

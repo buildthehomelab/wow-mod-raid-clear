@@ -8,6 +8,7 @@
 
 #include "RaidClearConfig.h"
 #include "Common/BossLookup.h"
+#include "Common/TankRoles.h"
 
 #include "AllSpellScript.h"
 #include "AttackAction.h"
@@ -33,11 +34,24 @@ void RaidClearOnyxiasLairStrategy::InitTriggers(std::vector<TriggerNode*>& trigg
     // Above playerbots' own "ony move to safe zone" (ACTION_EMERGENCY + 5).
     triggers.push_back(new TriggerNode("rc ony deep breath",
                                        { NextAction("rc ony leave deep breath", ACTION_EMERGENCY + 6) }));
+
+    // The same priority playerbots gives the melee's walk to her side.
+    triggers.push_back(new TriggerNode("rc ony offtank side",
+                                       { NextAction("rc ony offtank side", ACTION_RAID + 2) }));
+
+    // Above both, so a bot is off an evading mob before it does anything else to it.
+    triggers.push_back(new TriggerNode("rc ony evading target",
+                                       { NextAction("rc ony leave evading target", ACTION_RAID + 3) }));
+
+    // Playerbots' own trigger and priority; its action is switched off by the multiplier.
+    triggers.push_back(new TriggerNode("ony whelps spawn",
+                                       { NextAction("rc ony kill whelps", ACTION_RAID + 1) }));
 }
 
 void RaidClearOnyxiasLairStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcOnyDeepBreathMultiplier(botAI));
+    multipliers.push_back(new RcOnyTargetMultiplier(botAI));
 }
 
 // --- Deep Breath ----------------------------------------------------------
@@ -308,6 +322,192 @@ float RcOnyDeepBreathMultiplier::GetValue(Action* action)
         return 0.0f;
     return CrossesFire(*trail, botX, botY, target->GetPositionX(), target->GetPositionY(), BREATH_KEEP_OUT) ? 0.0f
                                                                                                              : 1.0f;
+}
+
+// --- Off-tanks ------------------------------------------------------------
+
+namespace
+{
+    // How far round from her nose the bot stands: 0 dead ahead, pi at the tip of her tail.
+    float AngleOffNose(Unit const* boss, Player const* bot)
+    {
+        float const diff = std::fabs(boss->GetAngle(bot) - boss->GetOrientation());
+        return diff > float(M_PI) ? 2.0f * float(M_PI) - diff : diff;
+    }
+
+    bool AtHeadOrTail(Unit const* boss, Player const* bot)
+    {
+        if (bot->GetDistance(boss) > SIDE_RANGE)
+            return false;
+        float const angle = AngleOffNose(boss, bot);
+        return angle < SIDE_CONE || angle > float(M_PI) - SIDE_CONE;
+    }
+}
+
+bool RcOnyOffTankSideTrigger::IsActive()
+{
+    if (!bot->IsAlive() || !PlayerbotAI::IsTank(bot))
+        return false;
+
+    Creature* boss = FightingOnyxia(bot);
+    if (!boss || boss->IsFlying())
+        return false;
+
+    // The tank she is on stays where it is, and so does the main tank: it is the one who takes
+    // her back when she turns to somebody else.
+    Unit* victim = boss->GetVictim();
+    if (!victim || victim == bot)
+        return false;
+    if (!RaidClear::Tanks::IsOffTank(bot, RaidClear::Tanks::ActingMainTank(bot->GetGroup())))
+        return false;
+
+    return AtHeadOrTail(boss, bot);
+}
+
+bool RcOnyOffTankSideAction::Execute(Event /*event*/)
+{
+    Creature* boss = FightingOnyxia(bot);
+    if (!boss)
+        return false;
+
+    // Her two sides, the nearer one first. Level floor the bot can see, not at the whelp caves.
+    Map* map = bot->GetMap();
+    float const botZ = bot->GetPositionZ();
+    float const facing = boss->GetOrientation();
+    Position sides[2];
+    for (int i = 0; i < 2; ++i)
+    {
+        float const angle = facing + (i == 0 ? float(M_PI_2) : -float(M_PI_2));
+        sides[i].Relocate(boss->GetPositionX() + SIDE_DISTANCE * std::cos(angle),
+                          boss->GetPositionY() + SIDE_DISTANCE * std::sin(angle), botZ);
+    }
+    if (bot->GetExactDist2d(&sides[1]) < bot->GetExactDist2d(&sides[0]))
+        std::swap(sides[0], sides[1]);
+
+    for (Position const& side : sides)
+    {
+        float const x = side.GetPositionX();
+        float const y = side.GetPositionY();
+        if (NearEggs(x, y))
+            continue;
+
+        float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + BREATH_SPOT_HEIGHT);
+        if (z <= INVALID_HEIGHT || std::fabs(z - botZ) > BREATH_SPOT_HEIGHT)
+            continue;
+        if (!bot->IsWithinLOS(x, y, z + 2.0f))
+            continue;
+
+        return MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT);
+    }
+    return false;
+}
+
+// --- Evading mobs ---------------------------------------------------------
+
+namespace
+{
+    bool IsWhelp(Unit const* unit)
+    {
+        return unit->GetEntry() == NPC_ONYXIAN_WHELP || unit->GetEntry() == NPC_ONYXIAN_WHELP_40;
+    }
+
+    // A living mob no attack can land on: it is running home, or it can't find a way to its
+    // victim (the core then lets it evade everything, though it goes on hitting whoever it can
+    // reach). Onyxia herself is left out: she is what the bots fall back to.
+    bool IsEvadingMob(Unit const* unit)
+    {
+        Creature const* creature = unit ? unit->ToCreature() : nullptr;
+        return creature && creature->IsAlive() && creature->GetEntry() != NPC_ONYXIA &&
+               creature->GetEntry() != NPC_ONYXIA_40 && creature->IsEvadingAttacks();
+    }
+
+    // The nearest enemy in the list the bot can hurt and see (playerbots' Attack refuses a target
+    // out of sight); with `whelpsOnly`, the nearest of playerbots' whelps. Never Onyxia.
+    Unit* NearestHittable(PlayerbotAI* botAI, Player* bot, GuidVector const& units, bool whelpsOnly)
+    {
+        Unit* best = nullptr;
+        float bestDist = 0.0f;
+        for (ObjectGuid const& guid : units)
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsAlive() || !unit->IsInWorld() || IsEvadingMob(unit) || !bot->IsValidAttackTarget(unit))
+                continue;
+            if (whelpsOnly ? unit->GetEntry() != NPC_ONYXIAN_WHELP
+                           : (unit->GetEntry() == NPC_ONYXIA || unit->GetEntry() == NPC_ONYXIA_40))
+                continue;
+
+            float const dist = bot->GetDistance(unit);
+            if ((best && dist >= bestDist) || !bot->IsWithinLOSInMap(unit))
+                continue;
+            best = unit;
+            bestDist = dist;
+        }
+        return best;
+    }
+}
+
+bool RcOnyEvadingTargetTrigger::IsActive()
+{
+    if (!bot->IsAlive() || !bot->IsInCombat())
+        return false;
+
+    Unit* current = AI_VALUE(Unit*, "current target");
+    if (current && current->IsAlive())
+        return IsEvadingMob(current);
+
+    // No target at all: the multiplier may be holding a damage dealer off an evading mob that
+    // playerbots keeps choosing for it. Healers have no target most of the time.
+    if (PlayerbotAI::IsHeal(bot))
+        return false;
+    GuidVector const& attackers = AI_VALUE(GuidVector, "attackers");
+    return std::any_of(attackers.begin(), attackers.end(),
+                       [&](ObjectGuid const& guid) { return IsEvadingMob(botAI->GetUnit(guid)); });
+}
+
+bool RcOnyLeaveEvadingTargetAction::Execute(Event /*event*/)
+{
+    Unit* next = NearestHittable(botAI, bot, AI_VALUE(GuidVector, "attackers"), false);
+    if (!next)
+    {
+        Creature* boss = FightingOnyxia(bot);
+        if (boss && bot->IsValidAttackTarget(boss))
+            next = boss;
+    }
+    return next && Attack(next);
+}
+
+bool RcOnyKillWhelpsAction::Execute(Event /*event*/)
+{
+    // On a whelp that can be hurt: stay on it, as playerbots does.
+    Unit* current = AI_VALUE(Unit*, "current target");
+    if (current && current->IsAlive() && current->GetEntry() == NPC_ONYXIAN_WHELP && !IsEvadingMob(current))
+        return false;
+
+    Unit* whelp = NearestHittable(botAI, bot, AI_VALUE(GuidVector, "possible targets"), true);
+    return whelp && Attack(whelp);
+}
+
+float RcOnyTargetMultiplier::GetValue(Action* action)
+{
+    if (!action)
+        return 1.0f;
+
+    std::string const name = action->getName();
+    // Replaced by "rc ony kill whelps".
+    if (name == "ony kill whelps")
+        return 0.0f;
+
+    if (name == "hunter's mark")
+    {
+        Unit* target = action->GetTarget();
+        return target && IsWhelp(target) ? 0.0f : 1.0f;
+    }
+
+    // Any way of picking a target (assist, tank assist, the off-tank pick) or of hitting one.
+    if (!dynamic_cast<AttackAction*>(action) || dynamic_cast<RcOnyLeaveEvadingTargetAction*>(action) ||
+        dynamic_cast<RcOnyKillWhelpsAction*>(action))
+        return 1.0f;
+    return IsEvadingMob(action->GetTarget()) ? 0.0f : 1.0f;
 }
 
 // A bot's AI waits for the spell it is casting, so a mage two seconds into a Frostbolt would

@@ -254,6 +254,12 @@ Category: Raids
 - Onyxia: bots get out of **Deep Breath** again. They used to run to fixed spots that are now in
   the fire for two of her eight breaths; now each bot walks out of the strip she is about to burn
   and stays out until it has passed.
+- Onyxia: only the tank she is on and the main tank stand in front of her. The other tanks stand
+  at her side with the melee and no longer take every **Flame Breath**, **Cleave** and **Wing
+  Buffet**.
+- Onyxia: bots leave a whelp that is evading every attack and no longer pick one, so the raid
+  doesn't spend half the air phase on a whelp it can't hurt. Hunters keep **Hunter's Mark** for
+  Onyxia.
 - Raids: bots no longer back into the next pack or the next boss when they move away from
   something. A bot stops before it reaches an idle mob's aggro range, and steps away from a
   patrol that walks up to it.
@@ -266,14 +272,17 @@ Category: Raids
 ### Onyxia's Lair
 
 Playerbots' own strategy keeps bots off her head and tail, away from the whelp eggs, apart for
-**Fireball** and on the whelps while she flies. This module takes over one thing. It works for
-Onyxia as the core spawns her and for
+**Fireball** and on the whelps while she flies. This module takes over the Deep Breath and fills
+three gaps. It works for Onyxia as the core spawns her and for
 [mod-individual-progression](https://github.com/ZhengPeiRu21/mod-individual-progression)'s level 60
 Onyxia.
 
 | Fight | What the bots do |
 |---|---|
 | Onyxia, in the air | **Deep Breath** burns a strip 36 yards wide from one side of the room to the other, along one of eight lines. Playerbots sends its bots to two fixed safe spots per breath. Since Playerbot core `2a2211c` moved the strips, those spots are in the fire for two of the eight breaths. Here the strip is read from the server's own spell data instead: a bot standing in it drops its spell and walks to the nearest spot outside (never into the whelp caves or the egg trench), a bot outside stays where it is and keeps fighting, and nobody walks into or across the strip until the fire has passed. |
+| Onyxia, on the ground | Playerbots keeps bots away from her head and tail, but leaves out every tank, so a raid's second, third and fourth tank stand in front of her and take each **Flame Breath**, **Cleave** and **Wing Buffet** with the main tank. Here only the tank she is on and the main tank stay in front. Every other tank walks to her nearer side, where the melee stand. |
+| Whelps and trash | A mob that can't find a way to the player it is after evades every attack, but goes on hitting. Playerbots doesn't look at that: bots keep attacking it, tanks keep taunting it, and its whelp rule never lets go of a whelp. Here a bot whose target is evading switches to the nearest enemy it can hurt (Onyxia if there is none), nobody picks an evading mob as a new target, and off-tanks don't try to pick one up (in every raid). |
+| Whelps | Hunters don't put **Hunter's Mark** on whelps, which die within seconds. |
 
 ## Troubleshooting
 
