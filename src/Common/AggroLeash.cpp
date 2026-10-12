@@ -45,9 +45,9 @@ namespace
     constexpr float PATH_STEP = 2.0f;
     // How long the list of an instance's idle mobs is kept.
     constexpr uint32 IDLE_SCAN_MS = 250;
-    // After a walk is stopped the bot doesn't start another ordinary walk for this long, so the
-    // action that sent it doesn't send it again on its next update. Forced walks (the raid
-    // mechanics that can't wait) still start, and are looked at like any other.
+    // After a walk is stopped the bot doesn't start another for this long, so the action that
+    // sent it doesn't send it again on its next update (ten times a second for a bot led by a
+    // player). Short enough that a dodge in a safe direction is only late, not missed.
     constexpr float HOLD_MS = 700.0f;
     // A spot more than this above or below the bot is a ledge or a pit.
     constexpr float SPOT_HEIGHT = 5.0f;
@@ -164,13 +164,16 @@ namespace
     }
 
     // Yards between a spot and the edge of the nearest mob's aggro radius; negative inside it.
-    // Mobs on another level don't count.
-    float Clearance(std::vector<IdleMob> const& mobs, float x, float y, float z)
+    // Mobs on another level don't count. A mob tied to the bot's target gets `tiedSlack` yards
+    // for free: the fight is next to it, so a spot only has to be outside its radius, not
+    // outside the buffer as well.
+    float Clearance(std::vector<IdleMob> const& mobs, float x, float y, float z, float tiedSlack)
     {
         float clearance = 1000.0f;
         for (IdleMob const& mob : mobs)
             if (std::fabs(mob.z - z) <= AGGRO_HEIGHT)
-                clearance = std::min(clearance, std::hypot(x - mob.x, y - mob.y) - mob.aggro);
+                clearance = std::min(clearance,
+                                     std::hypot(x - mob.x, y - mob.y) - mob.aggro + (mob.tied ? tiedSlack : 0.0f));
         return clearance;
     }
 
@@ -187,8 +190,10 @@ namespace
     //   - A walk toward a target (going to the fight, or pulling): mobs tied to the target don't
     //     count, and the others only have to be passed by half the buffer. Round the corner of a
     //     pack is fine, through it is not.
-    //   - Any other walk (backing off, spreading out, dodging): every mob counts, with the full
-    //     buffer. A boss tanked next to an idle pack doesn't make that pack safe to back into.
+    //   - Any other walk (backing off, spreading out, dodging): every mob counts. A boss tanked
+    //     next to an idle pack doesn't make that pack safe to back into. The full buffer for
+    //     most; half of it for a mob tied to the target, so a melee bot shifting a few yards
+    //     around its target isn't stopped for nothing.
     bool WalkPulls(Player* bot, std::vector<IdleMob> const& mobs, BotTargets const& targets, float buffer)
     {
         Movement::MoveSpline const* walk = bot->movespline;
@@ -199,7 +204,6 @@ namespace
         float const botY = bot->GetPositionY();
         G3D::Vector3 const dest = walk->FinalDestination();
         bool const approach = Approaches(bot, targets, dest.x, dest.y);
-        float const margin = approach ? buffer * 0.5f : buffer;
 
         // From where the bot is, along what is left of the path.
         G3D::Vector3 from(botX, botY, bot->GetPositionZ());
@@ -219,6 +223,7 @@ namespace
                 {
                     if ((approach && mob.tied) || std::fabs(mob.z - z) > AGGRO_HEIGHT)
                         continue;
+                    float const margin = approach || mob.tied ? buffer * 0.5f : buffer;
                     float const there = std::hypot(x - mob.x, y - mob.y);
                     // Only a walk that takes the bot closer to the mob than it already is.
                     if (there < mob.aggro + margin && there < std::hypot(botX - mob.x, botY - mob.y) - 0.5f &&
@@ -247,7 +252,7 @@ namespace
         if (!walk->Finalized())
         {
             G3D::Vector3 const dest = walk->FinalDestination();
-            if (Clearance(mobs, dest.x, dest.y, dest.z) >= buffer)
+            if (Clearance(mobs, dest.x, dest.y, dest.z, buffer) >= buffer)
                 return false;
         }
 
@@ -267,7 +272,11 @@ bool RcAggroLeashTrigger::IsActive()
 {
     // A bot that is feared or rooted isn't choosing where it stands.
     if (!GetConfig().aggroLeash || !bot->IsAlive() || !bot->IsInCombat() || !botAI->CanMove())
+    {
+        _lastTooClose = false;
+        _lastResult = false;
         return false;
+    }
 
     uint32 const now = getMSTime();
     if (_lastCheckMs && getMSTimeDiff(_lastCheckMs, now) < STEP_BACK_CHECK_MS)
@@ -318,7 +327,7 @@ bool RcAggroLeashAction::Execute(Event /*event*/)
             float const x = botX + std::cos(angle) * ring;
             float const y = botY + std::sin(angle) * ring;
             // The cheap tests first: most spots near a pack fail on distance alone.
-            if (Clearance(mobs, x, y, botZ) < buffer + 1.0f)
+            if (Clearance(mobs, x, y, botZ, buffer) < buffer + 1.0f)
                 continue;
             float const score = mainTank && mainTank != bot ? mainTank->GetExactDist2d(x, y) : 0.0f;
             if (found && score >= bestScore)
@@ -338,8 +347,12 @@ bool RcAggroLeashAction::Execute(Event /*event*/)
         {
             // Whatever the bot was told last would make this walk wait its turn.
             AI_VALUE(LastMovement&, "last movement").clear();
-            return MoveTo(bot->GetMapId(), bestX, bestY, bestZ, false, false, false, false,
-                          MovementPriority::MOVEMENT_FORCED);
+            if (!MoveTo(bot->GetMapId(), bestX, bestY, bestZ, false, false, false, false,
+                        MovementPriority::MOVEMENT_FORCED))
+                return false;
+            // The way out was picked with the mobs in mind already: the hook doesn't judge it.
+            state->lastWalk[bot->GetGUID()] = bot->movespline->GetId();
+            return true;
         }
     }
     _noSpotAtMs = now;
@@ -398,7 +411,7 @@ public:
             // it would otherwise send it again on its next update, ten times a second.
             botAI->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get().Set(
                 player->GetMapId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(),
-                player->GetOrientation(), HOLD_MS, MovementPriority::MOVEMENT_COMBAT);
+                player->GetOrientation(), HOLD_MS, MovementPriority::MOVEMENT_FORCED);
         }
     }
 

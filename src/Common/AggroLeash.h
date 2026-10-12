@@ -10,7 +10,7 @@
  *   - Every walk a bot starts is looked at from the map's own update, not from the bot's AI,
  *     which only runs every 100 to 500 ms while the bot keeps moving. A walk that passes within
  *     a mob's aggro radius plus a buffer, and takes the bot closer to that mob than it is, is
- *     stopped before the bot has gone a yard. The bot then starts no ordinary walk for 0.7 s, so
+ *     stopped before the bot has gone a yard. The bot then starts no walk for 0.7 s, so
  *     whatever sent it doesn't send it again at once.
  *   - Only mobs that would actually come count: hostile, aggressive, alive, not in combat, not
  *     evading, on the bot's level (they don't aggro more than a few yards up or down) and with
@@ -19,9 +19,9 @@
  *     target itself and any mob whose aggro radius plus the buffer already covers the target
  *     don't count, because there is no getting at the target without them. Every other mob only
  *     has to be passed by half the buffer: round the corner of a pack is fine, through it is not.
- *   - Any other walk (backing off, spreading out, dodging) is judged against every idle mob with
- *     the full buffer. A boss tanked next to an idle pack doesn't make that pack safe to back
- *     into.
+ *   - Any other walk (backing off, spreading out, dodging) is judged against every idle mob: the
+ *     full buffer, or half of it for a mob the target stands next to. A boss tanked beside an
+ *     idle pack doesn't make that pack safe to back into.
  *   - A bot standing a yard closer than a walk toward a target may pass (a patrol walking up, or
  *     a bot that crept there) steps back out, toward the main tank where it can. Not a bot in
  *     melee with its target, and not for mobs its target stands next to.

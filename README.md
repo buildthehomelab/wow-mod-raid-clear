@@ -74,14 +74,15 @@ fight but would join it: hostile, aggressive, alive, in line of sight and on the
   bot closer to it, is stopped as it starts. The check runs on the server's own map update and
   not in the bot's AI, which only looks every 100 to 500 milliseconds while the bot keeps
   running.
-- After a stop the bot starts no ordinary walk for 0.7 seconds, so whatever sent it doesn't send
-  it straight back.
+- After a stop the bot starts no walk for 0.7 seconds, so whatever sent it doesn't send it
+  straight back.
 - A walk toward the bot's target (going to the fight, or pulling the next pack) is judged more
   gently. The target itself, and any mob whose aggro radius already covers the target, don't
   count: there is no getting at the target without them. Every other pack only has to be passed
   by half the buffer: round the corner of a pack is fine, through it is not.
-- Any other walk (backing off, spreading out, dodging) is judged against every idle mob with the
-  full buffer. A boss tanked next to an idle pack doesn't make that pack safe to back into.
+- Any other walk (backing off, spreading out, dodging) is judged against every idle mob: the
+  full buffer, or half of it for a mob the target stands next to. A boss tanked beside an idle
+  pack doesn't make that pack safe to back into.
 - A bot standing within 2 yards of an idle mob's aggro radius (a patrol walking up) steps back
   out, toward the main tank where it can. A bot in melee with its target is never moved off it.
 
