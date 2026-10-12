@@ -23,7 +23,9 @@ RaidClear.Enable = 1
 #        Description: The group's main tank bot (or first tank bot) keeps the skull raid icon on
 #                     the add that should die first: Lava Spawn, then healers, then other boss
 #                     adds. DPS bots always attack skull first. It never moves a skull that is
-#                     already on an add of the same or higher priority.
+#                     already on an add of the same or higher priority; a skull on anything
+#                     else, a player's included, moves to a listed add. On Zul'Gurub's High
+#                     Priest Thekal skull follows its own rule (see RaidClear.ZulGurub.Enable).
 #        Default:     1
 #
 
@@ -164,7 +166,17 @@ RaidClear.BlackwingLair.Enable = 1
 #                     once he turns into a snake. On Hakkar the tanks share his threat with
 #                     taunts and damage dealers stay below them, so he goes to another tank when
 #                     he mind-controls his tank or wipes its threat (Aspects of Arlokk and
-#                     Mar'li). That part also needs RaidClear.Tanks.Split.
+#                     Mar'li). That part also needs RaidClear.Tanks.Split. High Priest Thekal and
+#                     his two zealots are brought down together (one that drops alone gets up
+#                     again 10 s later): skull moves to whichever of the three has the most
+#                     health left, nobody but the tanks uses area damage until the first one
+#                     drops, and Zealot Lor'Khan's Great Heal is interrupted. The skull and
+#                     area damage parts also need RaidClear.KillOrder. On trash, bots walk out
+#                     of a Gurubashi Bat Rider's Unstable Concoction, kill the healers first
+#                     (Hakkari Blood Priest, Hakkari Priest, Gurubashi Blood Drinker; needs
+#                     RaidClear.KillOrder), keep skull and casters off a Hakkari Priest while
+#                     it has Anti-Magic Shield, and don't attack evading mobs or mind-controlled
+#                     raid members.
 #        Default:     1
 #
 

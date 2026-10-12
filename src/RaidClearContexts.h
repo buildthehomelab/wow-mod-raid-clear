@@ -70,6 +70,10 @@ public:
         creators["rc bwl captain hand off"] = &RaidClearActionContext::bwl_captain_hand_off;
 
         creators["rc zg holy wrath keep away"] = &RaidClearActionContext::zg_holy_wrath_keep_away;
+        creators["rc zg thekal even kill"] = &RaidClearActionContext::zg_thekal_even_kill;
+        creators["rc zg lorkhan interrupt"] = &RaidClearActionContext::zg_lorkhan_interrupt;
+        creators["rc zg leave bad target"] = &RaidClearActionContext::zg_leave_bad_target;
+        creators["rc zg concoction move away"] = &RaidClearActionContext::zg_concoction_move_away;
 
         creators["rc ony leave deep breath"] = &RaidClearActionContext::ony_leave_deep_breath;
         creators["rc ony offtank position"] = &RaidClearActionContext::ony_offtank_position;
@@ -112,6 +116,10 @@ private:
     static Action* bwl_captain_hand_off(PlayerbotAI* botAI) { return new RcBwlCaptainHandOffAction(botAI); }
 
     static Action* zg_holy_wrath_keep_away(PlayerbotAI* botAI) { return new RcZgHolyWrathKeepAwayAction(botAI); }
+    static Action* zg_thekal_even_kill(PlayerbotAI* botAI) { return new RcZgThekalEvenKillAction(botAI); }
+    static Action* zg_lorkhan_interrupt(PlayerbotAI* botAI) { return new RcZgLorkhanInterruptAction(botAI); }
+    static Action* zg_leave_bad_target(PlayerbotAI* botAI) { return new RcZgLeaveBadTargetAction(botAI); }
+    static Action* zg_concoction_move_away(PlayerbotAI* botAI) { return new RcZgConcoctionMoveAwayAction(botAI); }
 
     static Action* ony_leave_deep_breath(PlayerbotAI* botAI) { return new RcOnyLeaveDeepBreathAction(botAI); }
     static Action* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionAction(botAI); }
@@ -150,6 +158,10 @@ public:
         creators["rc bwl captain hand off"] = &RaidClearTriggerContext::bwl_captain_hand_off;
 
         creators["rc zg holy wrath keep away"] = &RaidClearTriggerContext::zg_holy_wrath_keep_away;
+        creators["rc zg thekal even kill"] = &RaidClearTriggerContext::zg_thekal_even_kill;
+        creators["rc zg lorkhan heal"] = &RaidClearTriggerContext::zg_lorkhan_heal;
+        creators["rc zg bad target"] = &RaidClearTriggerContext::zg_bad_target;
+        creators["rc zg concoction"] = &RaidClearTriggerContext::zg_concoction;
 
         creators["rc ony deep breath"] = &RaidClearTriggerContext::ony_deep_breath;
         creators["rc ony offtank position"] = &RaidClearTriggerContext::ony_offtank_position;
@@ -193,6 +205,10 @@ private:
     static Trigger* bwl_captain_hand_off(PlayerbotAI* botAI) { return new RcBwlCaptainHandOffTrigger(botAI); }
 
     static Trigger* zg_holy_wrath_keep_away(PlayerbotAI* botAI) { return new RcZgHolyWrathKeepAwayTrigger(botAI); }
+    static Trigger* zg_thekal_even_kill(PlayerbotAI* botAI) { return new RcZgThekalEvenKillTrigger(botAI); }
+    static Trigger* zg_lorkhan_heal(PlayerbotAI* botAI) { return new RcZgLorkhanHealTrigger(botAI); }
+    static Trigger* zg_bad_target(PlayerbotAI* botAI) { return new RcZgBadTargetTrigger(botAI); }
+    static Trigger* zg_concoction(PlayerbotAI* botAI) { return new RcZgConcoctionTrigger(botAI); }
 
     static Trigger* ony_deep_breath(PlayerbotAI* botAI) { return new RcOnyDeepBreathTrigger(botAI); }
     static Trigger* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionTrigger(botAI); }

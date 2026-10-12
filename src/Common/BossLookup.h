@@ -24,6 +24,10 @@ namespace RaidClear
     // combat; nullptr otherwise. The lookup itself is cached for a second per instance, so the
     // triggers, actions and multipliers of a whole raid can ask every tick.
     Creature* FightingCreature(Player* bot, std::initializer_list<uint32> entries);
+
+    // The same creature whatever its state (dead, out of combat); nullptr when the instance has
+    // none right now (never spawned, or destroyed and not yet respawned).
+    Creature* InstanceCreature(Player* bot, std::initializer_list<uint32> entries);
 }
 
 #endif
