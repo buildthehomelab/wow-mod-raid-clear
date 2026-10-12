@@ -11,14 +11,12 @@
 #include "Common/TankRoles.h"
 
 #include "AllMapScript.h"
-#include "AttackAction.h"
 #include "Creature.h"
 #include "LastMovementValue.h"
 #include "Map.h"
 #include "MoveSpline.h"
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
-#include "ReachTargetActions.h"
 #include "Timer.h"
 
 #include <algorithm>
@@ -37,11 +35,6 @@ void RaidClearLeashStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("rc aggro leash", { NextAction("rc aggro leash", ACTION_EMERGENCY + 8) }));
 }
 
-void RaidClearLeashStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
-{
-    multipliers.push_back(new RcAggroLeashMultiplier(botAI));
-}
-
 namespace
 {
     // Mobs further away than this can't matter to where the bot is or is going.
@@ -50,22 +43,17 @@ namespace
     constexpr float AGGRO_HEIGHT = 6.0f;
     // A walk is sampled this often along the way.
     constexpr float PATH_STEP = 2.0f;
-    // A walk toward the bot's target only has to stay this far out of other mobs' aggro radius.
-    constexpr float APPROACH_BUFFER = 1.0f;
     // How long the list of an instance's idle mobs is kept.
     constexpr uint32 IDLE_SCAN_MS = 250;
-    // After a walk is stopped, the bot only walks toward a target for this long.
-    constexpr uint32 LEASH_MS = 2000;
+    // After a walk is stopped the bot doesn't start another ordinary walk for this long, so the
+    // action that sent it doesn't send it again on its next update. Forced walks (the raid
+    // mechanics that can't wait) still start, and are looked at like any other.
+    constexpr float HOLD_MS = 700.0f;
     // A spot more than this above or below the bot is a ledge or a pit.
     constexpr float SPOT_HEIGHT = 5.0f;
     constexpr uint32 STEP_BACK_CHECK_MS = 300;
-
-    struct BotLeash
-    {
-        uint32 splineId = 0;     // the last walk that was looked at
-        bool leashed = false;
-        uint32 leashedAtMs = 0;
-    };
+    // After the step-back search finds nowhere to go, wait this long before searching again.
+    constexpr uint32 STEP_BACK_RETRY_MS = 2000;
 
     // Per instance. Only ever touched from that instance's map update (the hook below and the
     // bots' own AI, which runs inside Player::Update), so it needs no lock of its own.
@@ -74,20 +62,15 @@ namespace
         bool scanned = false;
         uint32 scanMs = 0;
         GuidVector idle;  // creatures that would aggro, whoever walks up
-        std::unordered_map<ObjectGuid, BotLeash> bots;
+        std::unordered_map<ObjectGuid, uint32> lastWalk;  // per bot: the last spline that was looked at
     };
 
     std::mutex sStatesMutex;
     std::unordered_map<uint32, std::shared_ptr<InstanceState>> sStates;
 
-    std::shared_ptr<InstanceState> StateOf(Map* map, bool create = true)
+    std::shared_ptr<InstanceState> StateOf(Map* map)
     {
         std::lock_guard<std::mutex> lock(sStatesMutex);
-        if (!create)
-        {
-            auto it = sStates.find(map->GetInstanceId());
-            return it != sStates.end() ? it->second : nullptr;
-        }
         std::shared_ptr<InstanceState>& state = sStates[map->GetInstanceId()];
         if (!state)
             state = std::make_shared<InstanceState>();
@@ -127,21 +110,37 @@ namespace
         float y;
         float z;
         float aggro;  // its aggro radius for this bot, centre to centre
+        // Its aggro radius plus the buffer already covers one of the bot's targets: there is no
+        // getting at that target without coming this close.
+        bool tied;
     };
 
-    // What the bot is attacking or about to attack.
-    Unit* TargetOf(PlayerbotAI* botAI, Player* bot)
+    // What the bot is attacking and what it is about to attack. They differ during a pull:
+    // playerbots sets "current target" first and the swing follows.
+    struct BotTargets
     {
-        Unit* target = bot->GetVictim();
-        if (!target)
-            target = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
-        return target && target->IsAlive() ? target : nullptr;
+        Unit* victim = nullptr;
+        Unit* current = nullptr;
+
+        bool Has(Unit const* unit) const { return unit && (unit == victim || unit == current); }
+        bool Any() const { return victim || current; }
+    };
+
+    BotTargets TargetsOf(PlayerbotAI* botAI, Player* bot)
+    {
+        BotTargets targets;
+        targets.victim = bot->GetVictim();
+        targets.current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        if (targets.victim && !targets.victim->IsAlive())
+            targets.victim = nullptr;
+        if (targets.current && !targets.current->IsAlive())
+            targets.current = nullptr;
+        return targets;
     }
 
-    // The idle mobs this bot has to keep away from. Left out: the bot's target (a pull) and any
-    // mob whose aggro radius plus the buffer already covers the target, because there is no
-    // getting at the target without it.
-    std::vector<IdleMob> IdleMobsNear(Player* bot, InstanceState& state, Unit* target, float buffer)
+    // The idle mobs around this bot. Its own targets are left out: attacking a mob that isn't in
+    // combat yet is a pull.
+    std::vector<IdleMob> IdleMobsNear(Player* bot, InstanceState& state, BotTargets const& targets, float buffer)
     {
         Map* map = bot->GetMap();
         RefreshIdle(map, state);
@@ -150,16 +149,16 @@ namespace
         for (ObjectGuid const& guid : state.idle)
         {
             Creature* creature = map->GetCreature(guid);
-            if (!creature || creature == target || !WouldAggro(creature))
+            if (!creature || targets.Has(creature) || !WouldAggro(creature))
                 continue;
             if (bot->GetExactDist2d(creature) > SCAN_RANGE || !creature->IsHostileTo(bot))
                 continue;
 
             float const aggro = creature->GetAggroRange(bot);
-            if (target && target->GetExactDist2d(creature) < aggro + buffer)
-                continue;
+            bool const tied = (targets.victim && targets.victim->GetExactDist2d(creature) < aggro + buffer) ||
+                              (targets.current && targets.current->GetExactDist2d(creature) < aggro + buffer);
             mobs.push_back({ creature, creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
-                             aggro });
+                             aggro, tied });
         }
         return mobs;
     }
@@ -175,8 +174,22 @@ namespace
         return clearance;
     }
 
+    // Whether a walk from the bot to a spot takes it closer to one of its targets.
+    bool Approaches(Player* bot, BotTargets const& targets, float x, float y)
+    {
+        for (Unit* target : { targets.victim, targets.current })
+            if (target && target->GetExactDist2d(x, y) < target->GetExactDist2d(bot) - 1.0f)
+                return true;
+        return false;
+    }
+
     // Whether the walk the bot is on passes too close to one of the mobs.
-    bool WalkPulls(Player* bot, std::vector<IdleMob> const& mobs, Unit* target, float buffer)
+    //   - A walk toward a target (going to the fight, or pulling): mobs tied to the target don't
+    //     count, and the others only have to be passed by half the buffer. Round the corner of a
+    //     pack is fine, through it is not.
+    //   - Any other walk (backing off, spreading out, dodging): every mob counts, with the full
+    //     buffer. A boss tanked next to an idle pack doesn't make that pack safe to back into.
+    bool WalkPulls(Player* bot, std::vector<IdleMob> const& mobs, BotTargets const& targets, float buffer)
     {
         Movement::MoveSpline const* walk = bot->movespline;
         if (mobs.empty() || walk->Finalized())
@@ -185,11 +198,8 @@ namespace
         float const botX = bot->GetPositionX();
         float const botY = bot->GetPositionY();
         G3D::Vector3 const dest = walk->FinalDestination();
-
-        // Going for its target: round the corner of another pack is fine, through it is not.
-        bool const approach =
-            target && target->GetExactDist2d(dest.x, dest.y) < target->GetExactDist2d(botX, botY) - 1.0f;
-        float const margin = approach ? std::min(buffer, APPROACH_BUFFER) : buffer;
+        bool const approach = Approaches(bot, targets, dest.x, dest.y);
+        float const margin = approach ? buffer * 0.5f : buffer;
 
         // From where the bot is, along what is left of the path.
         G3D::Vector3 from(botX, botY, bot->GetPositionZ());
@@ -207,7 +217,7 @@ namespace
                 float const z = from.z + (to.z - from.z) * t;
                 for (IdleMob const& mob : mobs)
                 {
-                    if (std::fabs(mob.z - z) > AGGRO_HEIGHT)
+                    if ((approach && mob.tied) || std::fabs(mob.z - z) > AGGRO_HEIGHT)
                         continue;
                     float const there = std::hypot(x - mob.x, y - mob.y);
                     // Only a walk that takes the bot closer to the mob than it already is.
@@ -221,12 +231,16 @@ namespace
         return false;
     }
 
-    // Whether the bot is standing at the edge of a mob's aggro radius: half the buffer, so a bot
-    // stopped at the full buffer isn't sent back and forth.
-    bool StandsTooClose(Player* bot, std::vector<IdleMob> const& mobs, Unit* target, float buffer)
+    // Whether the bot is standing at the edge of a mob's aggro radius. The line is a yard inside
+    // what a walk toward a target may pass at, so a bot that just got there isn't sent back out.
+    // Mobs tied to a target don't count: that is where the fight is.
+    bool StandsTooClose(Player* bot, std::vector<IdleMob> const& mobs, BotTargets const& targets, float buffer)
     {
-        if (mobs.empty() || (target && bot->IsWithinMeleeRange(target)))
+        if (mobs.empty())
             return false;
+        for (Unit* target : { targets.victim, targets.current })
+            if (target && bot->IsWithinMeleeRange(target))
+                return false;
 
         // Already on its way out.
         Movement::MoveSpline const* walk = bot->movespline;
@@ -237,24 +251,15 @@ namespace
                 return false;
         }
 
+        float const line = std::max(0.0f, buffer * 0.5f - 1.0f);
         for (IdleMob const& mob : mobs)
         {
-            if (std::fabs(mob.z - bot->GetPositionZ()) > AGGRO_HEIGHT)
+            if (mob.tied || std::fabs(mob.z - bot->GetPositionZ()) > AGGRO_HEIGHT)
                 continue;
-            if (bot->GetExactDist2d(mob.x, mob.y) - mob.aggro < buffer * 0.5f && mob.creature->IsWithinLOSInMap(bot))
+            if (bot->GetExactDist2d(mob.x, mob.y) - mob.aggro < line && mob.creature->IsWithinLOSInMap(bot))
                 return true;
         }
         return false;
-    }
-
-    bool IsLeashed(Player* bot)
-    {
-        std::shared_ptr<InstanceState> state = StateOf(bot->GetMap(), false);
-        if (!state)
-            return false;
-        auto it = state->bots.find(bot->GetGUID());
-        return it != state->bots.end() && it->second.leashed &&
-               getMSTimeDiff(it->second.leashedAtMs, getMSTime()) < LEASH_MS;
     }
 }
 
@@ -269,20 +274,28 @@ bool RcAggroLeashTrigger::IsActive()
         return _lastResult;
     _lastCheckMs = now;
 
+    // Two looks in a row: between one target dying and the next being picked a bot has no target
+    // for an update, and the pack its old target stood next to would count for that long.
     float const buffer = GetConfig().aggroLeashBuffer;
-    Unit* target = TargetOf(botAI, bot);
+    BotTargets const targets = TargetsOf(botAI, bot);
     std::shared_ptr<InstanceState> state = StateOf(bot->GetMap());
-    _lastResult = StandsTooClose(bot, IdleMobsNear(bot, *state, target, buffer), target, buffer);
+    bool const tooClose = StandsTooClose(bot, IdleMobsNear(bot, *state, targets, buffer), targets, buffer);
+    _lastResult = tooClose && _lastTooClose;
+    _lastTooClose = tooClose;
     return _lastResult;
 }
 
 bool RcAggroLeashAction::Execute(Event /*event*/)
 {
+    uint32 const now = getMSTime();
+    if (_noSpotAtMs && getMSTimeDiff(_noSpotAtMs, now) < STEP_BACK_RETRY_MS)
+        return false;
+
     float const buffer = GetConfig().aggroLeashBuffer;
-    Unit* target = TargetOf(botAI, bot);
+    BotTargets const targets = TargetsOf(botAI, bot);
     std::shared_ptr<InstanceState> state = StateOf(bot->GetMap());
-    std::vector<IdleMob> const mobs = IdleMobsNear(bot, *state, target, buffer);
-    if (!StandsTooClose(bot, mobs, target, buffer))
+    std::vector<IdleMob> const mobs = IdleMobsNear(bot, *state, targets, buffer);
+    if (!StandsTooClose(bot, mobs, targets, buffer))
         return false;
 
     // The nearest spot that is clear of every idle mob by the full buffer, on level floor the bot
@@ -304,16 +317,15 @@ bool RcAggroLeashAction::Execute(Event /*event*/)
             float const angle = float(i) * 2.0f * float(M_PI) / float(STEPS);
             float const x = botX + std::cos(angle) * ring;
             float const y = botY + std::sin(angle) * ring;
-            float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + SPOT_HEIGHT);
-            if (z <= INVALID_HEIGHT || std::fabs(z - botZ) > SPOT_HEIGHT)
+            // The cheap tests first: most spots near a pack fail on distance alone.
+            if (Clearance(mobs, x, y, botZ) < buffer + 1.0f)
                 continue;
-            if (Clearance(mobs, x, y, z) < buffer + 1.0f)
-                continue;
-
             float const score = mainTank && mainTank != bot ? mainTank->GetExactDist2d(x, y) : 0.0f;
             if (found && score >= bestScore)
                 continue;
-            if (!bot->IsWithinLOS(x, y, z + 2.0f))
+
+            float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + SPOT_HEIGHT);
+            if (z <= INVALID_HEIGHT || std::fabs(z - botZ) > SPOT_HEIGHT || !bot->IsWithinLOS(x, y, z + 2.0f))
                 continue;
 
             found = true;
@@ -330,22 +342,13 @@ bool RcAggroLeashAction::Execute(Event /*event*/)
                           MovementPriority::MOVEMENT_FORCED);
         }
     }
+    _noSpotAtMs = now;
     return false;
 }
 
-float RcAggroLeashMultiplier::GetValue(Action* action)
-{
-    // Picking a target isn't a walk, and a walk toward a target is always allowed (the map hook
-    // still stops it if it goes through a pack).
-    if (!action || !dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
-        dynamic_cast<ReachTargetAction*>(action) || dynamic_cast<RcAggroLeashAction*>(action))
-        return 1.0f;
-    return IsLeashed(bot) ? 0.0f : 1.0f;
-}
-
-// A bot in combat thinks twice a second (playerbots' react delay), and a bot running at 7 yd a
-// second is 3-4 yd further on by then. So a walk is judged here, on the map's own update, the
-// first time it is seen: before the bot has gone a yard.
+// A bot led by a player thinks ten times a second and one on its own twice a second (playerbots'
+// react delay), and either way it is on the move in between. So a walk is judged here, on the
+// map's own update, the first time its spline is seen: before the bot has gone a yard.
 class RaidClearLeashMapScript : public AllMapScript
 {
 public:
@@ -372,27 +375,30 @@ public:
 
             if (!state)
                 state = StateOf(map);
-            BotLeash& leash = state->bots[player->GetGUID()];
+            uint32& lastWalk = state->lastWalk[player->GetGUID()];
             uint32 const splineId = player->movespline->GetId();
-            if (leash.splineId == splineId)
+            if (lastWalk == splineId)
                 continue;  // looked at this walk already
-            leash.splineId = splineId;
+            lastWalk = splineId;
 
-            // Not a walk the bot chose: a knockback, a jump, a charge, a fear.
+            // Not a walk the bot's combat AI chose: a knockback, a jump, a charge, a fear, or a
+            // bot still following its leader with the combat flag lingering.
             if (player->movespline->isFalling() || player->HasUnitState(UNIT_STATE_JUMPING | UNIT_STATE_CHARGING) ||
-                !botAI->CanMove() || !botAI->HasStrategy(LEASH_STRATEGY, BOT_STATE_COMBAT))
+                !botAI->CanMove() || botAI->GetState() != BOT_STATE_COMBAT ||
+                !botAI->HasStrategy(LEASH_STRATEGY, BOT_STATE_COMBAT))
                 continue;
 
-            Unit* target = TargetOf(botAI, player);
-            if (!WalkPulls(player, IdleMobsNear(player, *state, target, config.aggroLeashBuffer), target,
+            BotTargets const targets = TargetsOf(botAI, player);
+            if (!WalkPulls(player, IdleMobsNear(player, *state, targets, config.aggroLeashBuffer), targets,
                            config.aggroLeashBuffer))
                 continue;
 
             player->StopMoving();
-            // Playerbots would otherwise wait for the walk it thinks is still going on.
-            botAI->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get().clear();
-            leash.leashed = true;
-            leash.leashedAtMs = getMSTime();
+            // Playerbots now believes the bot is standing here for a moment: the action that sent
+            // it would otherwise send it again on its next update, ten times a second.
+            botAI->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get().Set(
+                player->GetMapId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(),
+                player->GetOrientation(), HOLD_MS, MovementPriority::MOVEMENT_COMBAT);
         }
     }
 

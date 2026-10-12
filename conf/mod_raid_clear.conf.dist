@@ -104,10 +104,10 @@ RaidClear.DeathLog = 1
 #                     boss's AoE, the group for a Living Bomb) to a point straight behind it and
 #                     doesn't look at what stands there. With this on, a walk that would pass
 #                     inside an idle mob's aggro radius plus the buffer is stopped as it starts
-#                     (within one server tick), and for two seconds the bot only walks toward a
-#                     target. A bot standing within half the buffer of an idle mob steps back
-#                     out. A walk toward the bot's own target only has to stay a yard out of
-#                     other packs, and the target's own pack never counts.
+#                     (within a server tick or two). A walk toward the bot's own target only has
+#                     to pass other packs by half the buffer, and the target's own pack doesn't
+#                     count for it. A bot standing at the edge of an idle mob's aggro radius
+#                     steps back out.
 #        Default:     1
 #
 
@@ -116,8 +116,9 @@ RaidClear.AggroLeash = 1
 #
 #    RaidClear.AggroLeash.Buffer
 #        Description: Yards kept beyond a mob's aggro radius (its detection range, 20 yd by
-#                     default, plus a yard per level the mob is above the bot). A walk is
-#                     stopped at the full buffer; a bot standing within half of it steps back.
+#                     default, plus a yard per level the mob is above the bot). A walk away
+#                     from something is stopped at the full buffer, a walk toward the bot's
+#                     target at half of it, and a bot standing a yard inside that steps back.
 #                     Raise it if packs still get pulled, lower it if bots stop short in tight
 #                     rooms.
 #        Default:     6
