@@ -17,7 +17,8 @@
  *     Here nothing is fixed: the strip is read from the server's own spell data, a bot inside it
  *     walks to the nearest spot outside, a bot outside stays where it is, and nobody walks into
  *     or across the strip until the fire has passed. Playerbots' own safe zone walk is switched
- *     off.
+ *     off. The way out never ends in the whelp caves or the egg trench between them, which the
+ *     core's Onyxia sets on fire (Heated Ground) with every breath.
  *     A bot can't act in the middle of a cast, so the moment she starts the breath every bot in
  *     the strip is told to drop its spell.
  *
@@ -54,10 +55,15 @@ namespace RaidClear::OnyxiasLair
     // A bot closer than this to the edge of a blast leaves; it stops this far outside.
     constexpr float BREATH_KEEP_OUT = 4.0f;
     constexpr float BREATH_KEEP_OUT_TARGET = 7.0f;
-    // A spot more than this above or below the bot is up on a ledge or down a crack.
-    constexpr float BREATH_SPOT_HEIGHT = 6.0f;
+    // A spot more than this above or below the bot is up on a ledge or down in the egg trench
+    // (about 8 yd below the floor).
+    constexpr float BREATH_SPOT_HEIGHT = 4.0f;
     // The two whelp caves (their mouths; playerbots keeps bots 5 yd away from the same points).
     constexpr float EGGS_KEEP_OUT = 10.0f;
+    // Heated Ground: twelve patches of fire along the egg trench, a chain like the breath's.
+    // A bot leaving the breath doesn't stop within this of the edge of one.
+    constexpr uint32 SPELL_HEATED_GROUND = 22191;
+    constexpr float ROOKERY_KEEP_OUT = 2.0f;
 
     void AddScripts();
 }

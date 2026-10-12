@@ -56,37 +56,44 @@ namespace
     {
         std::unordered_map<uint32, Trail> trails;    // first spell of a chain -> where the chain burns
         std::unordered_map<uint32, uint32> firstOf;  // any spell of a chain -> its first spell
+        Trail rookery;                               // the Heated Ground patches
     };
 
     // The longest chain has 20 spells.
     constexpr uint8 MAX_CHAIN = 40;
     constexpr float DEFAULT_BLAST_RADIUS = 18.0f;
 
-    // Every chain, walked once from the server's spell data: each spell does its damage around
-    // its row in spell_target_position and leaves a short aura on Onyxia that casts the next.
+    // A chain, walked from the server's spell data: each spell lands around its row in
+    // spell_target_position and its second effect casts the next one.
+    Trail WalkChain(uint32 first, std::unordered_map<uint32, uint32>* firstOf = nullptr)
+    {
+        Trail trail;
+        uint32 id = first;
+        for (uint8 link = 0; id && link < MAX_CHAIN; ++link)
+        {
+            SpellInfo const* info = sSpellMgr->GetSpellInfo(id);
+            if (!info)
+                break;
+            if (firstOf)
+                firstOf->emplace(id, first);
+
+            SpellTargetPosition const* spot = sSpellMgr->GetSpellTargetPosition(id, EFFECT_0);
+            if (spot && spot->target_mapId == MAP_ID)
+            {
+                float const radius = info->Effects[EFFECT_0].CalcRadius();
+                trail.push_back({ spot->target_X, spot->target_Y, radius > 0.0f ? radius : DEFAULT_BLAST_RADIUS });
+            }
+            id = info->Effects[EFFECT_1].TriggerSpell;
+        }
+        return trail;
+    }
+
     BreathData BuildBreathData()
     {
         BreathData data;
         for (uint32 const first : DEEP_BREATHS)
-        {
-            Trail& trail = data.trails[first];
-            uint32 id = first;
-            for (uint8 link = 0; id && link < MAX_CHAIN; ++link)
-            {
-                SpellInfo const* info = sSpellMgr->GetSpellInfo(id);
-                if (!info)
-                    break;
-                data.firstOf.emplace(id, first);
-
-                SpellTargetPosition const* spot = sSpellMgr->GetSpellTargetPosition(id, EFFECT_0);
-                if (spot && spot->target_mapId == MAP_ID)
-                {
-                    float const radius = info->Effects[EFFECT_0].CalcRadius();
-                    trail.push_back({ spot->target_X, spot->target_Y, radius > 0.0f ? radius : DEFAULT_BLAST_RADIUS });
-                }
-                id = info->Effects[EFFECT_1].TriggerSpell;
-            }
-        }
+            data.trails[first] = WalkChain(first, &data.firstOf);
+        data.rookery = WalkChain(SPELL_HEATED_GROUND);
         return data;
     }
 
@@ -208,18 +215,23 @@ namespace
         return false;
     }
 
+    // The whelp caves and the egg trench between them: no place to wait out a breath. The core's
+    // Onyxia sets the trench on fire with every Deep Breath (Heated Ground, a chain like the
+    // breath's), so its patches mark the trench on any server.
     bool NearEggs(float x, float y)
     {
         static Position const caves[] = { { -35.0f, -165.0f, 0.0f }, { -35.0f, -260.0f, 0.0f } };
         for (Position const& cave : caves)
             if (cave.GetExactDist2d(x, y) < EGGS_KEEP_OUT)
                 return true;
-        return false;
+
+        Trail const& rookery = Breaths().rookery;
+        return !rookery.empty() && Clearance(rookery, x, y) < ROOKERY_KEEP_OUT;
     }
 
     // The nearest spot outside the fire: rings around the bot, closest first. On the first ring
     // with anything usable, the spot deepest outside wins, which is the one straight out of the
-    // strip. Level floor the bot can see, not in front of the whelp caves.
+    // strip. Level floor the bot can see, not at the whelp caves or in the egg trench.
     bool FindSafeSpot(Player* bot, Trail const& trail, Position& out)
     {
         Map* map = bot->GetMap();
@@ -327,8 +339,11 @@ float RcOnyDeepBreathMultiplier::GetValue(Action* action)
     if (Clearance(*trail, botX, botY) < BREATH_KEEP_OUT)
         return 0.0f;
 
-    // Out of it: a walk toward something on this side is fine (a whelp, someone to heal).
-    // Anything else waits until the fire has passed.
+    // Out of it: stepping out of something else on the floor is fine, and so is a walk toward
+    // something on this side (a whelp, someone to heal). Anything else waits until the fire has
+    // passed.
+    if (action->getName() == "avoid aoe")
+        return 1.0f;
     Unit* target = action->GetTarget();
     if (!target || target == bot)
         return 0.0f;
