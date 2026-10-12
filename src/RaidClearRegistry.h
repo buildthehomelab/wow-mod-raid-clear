@@ -27,6 +27,8 @@ namespace RaidClear
 
     // Main tank / off-tank split, installed on every raid map (see Common/TankRoles.h).
     inline constexpr char const* TANKS_STRATEGY = "rc raid tanks";
+    // Keeps bots from backing into packs that aren't in the fight (see Common/AggroLeash.h).
+    inline constexpr char const* LEASH_STRATEGY = "rc raid leash";
 
     inline constexpr std::array<RaidEntry, 4> Raids = {{
         { 409, "rc moltencore", "MoltenCore" },

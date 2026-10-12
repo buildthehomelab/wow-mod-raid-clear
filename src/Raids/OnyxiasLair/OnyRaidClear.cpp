@@ -7,6 +7,7 @@
 #include "OnyRaidClear.h"
 
 #include "RaidClearConfig.h"
+#include "Common/BossLookup.h"
 
 #include "AllSpellScript.h"
 #include "AttackAction.h"
@@ -103,55 +104,13 @@ namespace
         return data;
     }
 
-    // Onyxia is asked for by the trigger, the action and the multiplier of every bot in the
-    // room: look her up once a second per instance.
-    constexpr uint32 BOSS_CACHE_MS = 1000;
-    constexpr float BOSS_SEARCH_RANGE = 250.0f;
-    struct BossCache
-    {
-        bool valid = false;
-        uint32 instanceId = 0;
-        uint32 ms = 0;
-        ObjectGuid boss;
-    };
-    thread_local BossCache tBossCache;
-
     // Onyxia, alive and fighting. Not through playerbots' "find target": that only knows what the
     // bot itself has threat on, and she drops her threat list when she takes off.
     Creature* FightingOnyxia(Player* bot)
     {
-        Map* map = bot->GetMap();
-        if (!map || map->GetId() != MAP_ID)
+        if (bot->GetMapId() != MAP_ID)
             return nullptr;
-
-        uint32 const now = getMSTime();
-        Creature* boss = nullptr;
-        if (tBossCache.valid && tBossCache.instanceId == map->GetInstanceId() &&
-            getMSTimeDiff(tBossCache.ms, now) <= BOSS_CACHE_MS)
-        {
-            boss = tBossCache.boss.IsEmpty() ? nullptr : map->GetCreature(tBossCache.boss);
-        }
-        else
-        {
-            for (auto const& [spawnId, creature] : map->GetCreatureBySpawnIdStore())
-            {
-                if (creature && (creature->GetEntry() == NPC_ONYXIA || creature->GetEntry() == NPC_ONYXIA_40))
-                {
-                    boss = creature;
-                    break;
-                }
-            }
-            // Not a database spawn (a module that summons her): look around instead.
-            if (!boss)
-                boss = bot->FindNearestCreature(NPC_ONYXIA, BOSS_SEARCH_RANGE);
-            if (!boss)
-                boss = bot->FindNearestCreature(NPC_ONYXIA_40, BOSS_SEARCH_RANGE);
-            tBossCache.valid = true;
-            tBossCache.instanceId = map->GetInstanceId();
-            tBossCache.ms = now;
-            tBossCache.boss = boss ? boss->GetGUID() : ObjectGuid::Empty;
-        }
-        return boss && boss->IsAlive() && boss->IsInCombat() ? boss : nullptr;
+        return RaidClear::FightingCreature(bot, { NPC_ONYXIA, NPC_ONYXIA_40 });
     }
 
     // The first spell of the Deep Breath she is casting, or whose fire is still crossing the

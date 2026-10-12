@@ -46,6 +46,15 @@ namespace RaidClear
         }
     }
 
+    bool KillOrderSkips(Player* bot, Unit const* unit)
+    {
+        switch (bot->GetMapId())
+        {
+            case MoltenCore::MAP_ID: return MoltenCore::KillOrderSkips(bot, unit);
+            default:                 return false;
+        }
+    }
+
     Player* KillOrderMarker(Group* group)
     {
         if (!group)
@@ -70,8 +79,10 @@ namespace RaidClear
     }
 
     Unit* PickKillOrderTarget(PlayerbotAI* botAI, Player* bot, GuidVector const& attackers,
-                              std::vector<KillOrderEntry> const& table)
+                              std::vector<KillOrderEntry> const& table, bool* clearSkull)
     {
+        if (clearSkull)
+            *clearSkull = false;
         Group* group = bot->GetGroup();
         if (!group)
             return nullptr;
@@ -85,7 +96,7 @@ namespace RaidClear
                 continue;
 
             uint8 const rank = RankOf(unit, table);
-            if (rank == RANK_NONE)
+            if (rank == RANK_NONE || KillOrderSkips(bot, unit))
                 continue;
 
             // Same rank: finish the one closest to dying.
@@ -96,11 +107,16 @@ namespace RaidClear
             }
         }
 
-        if (!best)
-            return nullptr;
-
         Unit* skull = botAI->GetUnit(group->GetTargetIcon(RtiTargetValue::skullIndex));
-        if (skull && skull->IsAlive() && skull->IsInCombat() && RankOf(skull, table) <= bestRank)
+        bool const skullSkipped = skull && skull->IsAlive() && KillOrderSkips(bot, skull);
+        if (!best)
+        {
+            if (clearSkull)
+                *clearSkull = skullSkipped;
+            return nullptr;
+        }
+
+        if (skull && skull->IsAlive() && skull->IsInCombat() && !skullSkipped && RankOf(skull, table) <= bestRank)
             return nullptr;  // already on something at least as important
 
         return best;
@@ -118,7 +134,8 @@ bool RcKillOrderTrigger::IsActive()
     if (table.empty() || KillOrderMarker(bot->GetGroup()) != bot)
         return false;
 
-    return PickKillOrderTarget(botAI, bot, AI_VALUE(GuidVector, "attackers"), table) != nullptr;
+    bool clearSkull = false;
+    return PickKillOrderTarget(botAI, bot, AI_VALUE(GuidVector, "attackers"), table, &clearSkull) || clearSkull;
 }
 
 bool RcMarkKillOrderAction::Execute(Event /*event*/)
@@ -127,11 +144,12 @@ bool RcMarkKillOrderAction::Execute(Event /*event*/)
     if (!group)
         return false;
 
+    bool clearSkull = false;
     Unit* target = PickKillOrderTarget(botAI, bot, AI_VALUE(GuidVector, "attackers"),
-                                       KillOrderFor(bot->GetMapId()));
-    if (!target)
+                                       KillOrderFor(bot->GetMapId()), &clearSkull);
+    if (!target && !clearSkull)
         return false;
 
-    group->SetTargetIcon(RtiTargetValue::skullIndex, bot->GetGUID(), target->GetGUID());
+    group->SetTargetIcon(RtiTargetValue::skullIndex, bot->GetGUID(), target ? target->GetGUID() : ObjectGuid::Empty);
     return true;
 }

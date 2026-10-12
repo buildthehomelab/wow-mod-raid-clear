@@ -37,13 +37,19 @@ namespace RaidClear
     // The kill-order table for a map; empty when the raid has none.
     std::vector<KillOrderEntry> const& KillOrderFor(uint32 mapId);
 
+    // Whether the bot's raid wants this enemy left alone for now, though its entry is in the
+    // table (Garr's Firesworn while it would erupt for four times the damage).
+    bool KillOrderSkips(Player* bot, Unit const* unit);
+
     // The bot that marks for this group: the first living bot that is the main tank, else the
     // first living bot tank, else the first living bot. Real players never mark.
     Player* KillOrderMarker(Group* group);
 
-    // The enemy skull should move to, or nullptr when skull is fine where it is.
+    // The enemy skull should move to, or nullptr when skull is fine where it is. `clearSkull`
+    // is set when skull sits on an enemy the raid wants left alone and there is nothing to move
+    // it to: it has to come off.
     Unit* PickKillOrderTarget(PlayerbotAI* botAI, Player* bot, GuidVector const& attackers,
-                              std::vector<KillOrderEntry> const& table);
+                              std::vector<KillOrderEntry> const& table, bool* clearSkull = nullptr);
 }
 
 class RcKillOrderTrigger : public Trigger

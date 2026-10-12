@@ -98,10 +98,37 @@ RaidClear.Tanks.SeparateOnBosses = 0
 RaidClear.DeathLog = 1
 
 #
+#    RaidClear.AggroLeash
+#        Description: In every raid, a bot in combat doesn't back into a pack that isn't in the
+#                     fight. Playerbots moves a bot away from something (a mob in its face, a
+#                     boss's AoE, the group for a Living Bomb) to a point straight behind it and
+#                     doesn't look at what stands there. With this on, a walk that would end or
+#                     pass inside an idle mob's aggro radius plus the buffer is stopped on the
+#                     bot's next update, and a bot standing that close steps back out. A walk
+#                     toward the bot's own target (going to the fight, or pulling) is never
+#                     stopped.
+#        Default:     1
+#
+
+RaidClear.AggroLeash = 1
+
+#
+#    RaidClear.AggroLeash.Buffer
+#        Description: Yards kept beyond a mob's aggro radius (about 20 yd at the bot's level, a
+#                     yard more per level the mob is higher). A walk is stopped at the full
+#                     buffer; a bot standing within half of it steps back. Raise it if packs
+#                     still get pulled, lower it if bots stop short in tight rooms.
+#        Default:     6
+#
+
+RaidClear.AggroLeash.Buffer = 6
+
+#
 #    RaidClear.MoltenCore.Enable
 #        Description: Molten Core strategy (map 409): kill order, Tremor Totem on Magmadar,
 #                     no attacks into Majordomo's reflection shields, ranged out of Ragnaros'
-#                     knockback.
+#                     knockback, the raid stays within 30 yd of Garr and leaves a Firesworn
+#                     with Separation Anxiety alone.
 #        Default:     1
 #
 
