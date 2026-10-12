@@ -19,6 +19,7 @@
 #include "RaidClearConfig.h"
 #include "RaidClearContexts.h"
 #include "RaidClearRegistry.h"
+#include "Common/AggroLeash.h"
 #include "Common/DeathLog.h"
 #include "Common/TankRoles.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
@@ -46,6 +47,8 @@
 #include "WarlockAiObjectContext.h"
 #include "WarriorAiObjectContext.h"
 
+#include <algorithm>
+
 namespace RaidClear
 {
     namespace
@@ -65,6 +68,8 @@ namespace RaidClear
         sConfig.tankSeparation = sConfigMgr->GetOption<float>("RaidClear.Tanks.Separation", 12.0f);
         sConfig.separateOnBosses = sConfigMgr->GetOption<bool>("RaidClear.Tanks.SeparateOnBosses", false);
         sConfig.deathLog = sConfigMgr->GetOption<bool>("RaidClear.DeathLog", true);
+        sConfig.aggroLeash = sConfigMgr->GetOption<bool>("RaidClear.AggroLeash", true);
+        sConfig.aggroLeashBuffer = std::max(0.0f, sConfigMgr->GetOption<float>("RaidClear.AggroLeash.Buffer", 6.0f));
         sConfig.raidEnabled.clear();
         for (RaidEntry const& raid : Raids)
             sConfig.raidEnabled[raid.mapId] =
@@ -91,6 +96,14 @@ namespace RaidClear
             botAI->ChangeStrategy(std::string("+") + TANKS_STRATEGY, BOT_STATE_COMBAT);
         else if (!wantTanks && hasTanks)
             botAI->ChangeStrategy(std::string("-") + TANKS_STRATEGY, BOT_STATE_COMBAT);
+
+        // So does the aggro leash.
+        bool const wantLeash = sConfig.enable && sConfig.aggroLeash && map && map->IsRaid();
+        bool const hasLeash = botAI->HasStrategy(LEASH_STRATEGY, BOT_STATE_COMBAT);
+        if (wantLeash && !hasLeash)
+            botAI->ChangeStrategy(std::string("+") + LEASH_STRATEGY, BOT_STATE_COMBAT);
+        else if (!wantLeash && hasLeash)
+            botAI->ChangeStrategy(std::string("-") + LEASH_STRATEGY, BOT_STATE_COMBAT);
 
         for (RaidEntry const& raid : Raids)
         {
@@ -194,6 +207,7 @@ void AddRaidClearScripts()
     new RaidClearWorldScript();
     new RaidClearPlayerScript();
     DeathLog::AddScripts();
+    Leash::AddScripts();
     BlackwingLair::AddScripts();
     OnyxiasLair::AddScripts();
 }

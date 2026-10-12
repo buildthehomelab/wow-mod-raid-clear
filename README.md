@@ -61,6 +61,36 @@ pile. In any raid:
 - **Endless adds are ignored.** Off-tanks don't chase adds that respawn faster than anyone can
   tank them (Blackwing Lair's Suppression Room whelps).
 
+### Aggro leash (all raids)
+
+When playerbots moves a bot away from something (a mob in its face, a boss's AoE, the rest of the
+group for a Living Bomb), it picks a point straight behind the bot and doesn't look at what stands
+there. In a raid that is often the next pack or the next boss, and the raid ends up fighting both.
+
+So while a bot is in combat, its walks are checked against every mob nearby that isn't in the
+fight but would join it: hostile, aggressive, alive, in line of sight and on the same level.
+
+- A walk that would pass inside such a mob's aggro radius plus a buffer (6 yards), and takes the
+  bot closer to it, is stopped as it starts. The check runs on the server's own map update and
+  not in the bot's AI, which only looks every 100 to 500 milliseconds while the bot keeps
+  running.
+- After a stop the bot starts no walk for 0.7 seconds, so whatever sent it doesn't send it
+  straight back.
+- A walk toward the bot's target (going to the fight, or pulling the next pack) is judged more
+  gently. The target itself, and any mob whose aggro radius already covers the target, don't
+  count: there is no getting at the target without them. Every other pack only has to be passed
+  by half the buffer: round the corner of a pack is fine, through it is not.
+- Any other walk (backing off, spreading out, dodging) is judged against every idle mob: the
+  full buffer, or half of it for a mob the target stands next to. A boss tanked beside an idle
+  pack doesn't make that pack safe to back into.
+- A bot standing within 2 yards of an idle mob's aggro radius (a patrol walking up) steps back
+  out, toward the main tank where it can. A bot in melee with its target is never moved off it.
+
+The aggro radius is the core's own: the mob's detection range (20 yards unless its template says
+otherwise) plus a yard for every level the mob is above the bot.
+
+Knockbacks, charges and fears are not walks the bot chose and are left alone.
+
 ### Death log (all raids)
 
 Every death in a raid gets one line in the server log, so a bad night can be read back and the
@@ -85,6 +115,7 @@ Core Rager tank split (the off-tank split stays out of that fight), Core Hound p
 |---|---|
 | Firelord trash | Kill **Lava Spawn** before anything else (they split every 15 seconds). |
 | Lucifron, Gehennas, Garr | Kill the Flamewaker Protectors, Flamewalkers and Firesworn before the boss. |
+| Garr | A **Firesworn** more than 40 yards from Garr gets **Separation Anxiety** (four times the damage), and every Firesworn erupts when it dies: about 2,000 fire damage to everyone within 15 yards, or 8,000 with Separation Anxiety. So the fight stays with Garr. A bot more than 30 yards from him walks back to 22, and the Firesworn on it follows (a tank only comes when a Firesworn is on it, so trash pulled with the boss stays where its tank holds it). Nobody but the tanks hits a Firesworn that has Separation Anxiety or is far enough out to get it: bots already attacking one stop, pets and Auto Shot included, and the skull never goes on one. |
 | Magmadar | Every shaman keeps **Tremor Totem** down against **Panic**. |
 | Sulfuron Harbinger | Kill the Flamewaker Priests first. |
 | Majordomo Executus | Healers first, then Elites. No spells into **Magic Reflection**; melee stop swinging into **Damage Reflection** (tanks keep going). |
@@ -164,6 +195,8 @@ also keep playerbots' own raid strategies.
 | `RaidClear.Tanks.Separation` | 12 | Minimum yards between the two tanks' mobs on trash; big-AoE mobs get more (0 = off). |
 | `RaidClear.Tanks.SeparateOnBosses` | 0 | Also separate during boss fights. |
 | `RaidClear.DeathLog` | 1 | Log every raid death (cause, last 6s of damage, debuffs, boss) and a per-pull tally. |
+| `RaidClear.AggroLeash` | 1 | Bots in combat don't back into packs that aren't in the fight. |
+| `RaidClear.AggroLeash.Buffer` | 6 | Yards kept beyond a mob's aggro radius. |
 | `RaidClear.MoltenCore.Enable` | 1 | Molten Core strategy. |
 | `RaidClear.BlackwingLair.Enable` | 1 | Blackwing Lair strategy. |
 | `RaidClear.ZulGurub.Enable` | 1 | Zul'Gurub strategy. |
@@ -221,6 +254,11 @@ Category: Raids
 - Onyxia: bots get out of **Deep Breath** again. They used to run to fixed spots that are now in
   the fire for two of her eight breaths; now each bot walks out of the strip she is about to burn
   and stays out until it has passed.
+- Raids: bots no longer back into the next pack or the next boss when they move away from
+  something. A bot stops before it reaches an idle mob's aggro range, and steps away from a
+  patrol that walks up to it.
+- Garr: bots keep the fight within 30 yards of him and leave a **Firesworn** with **Separation
+  Anxiety** alone, so its **Eruption** no longer kills everyone around it.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.

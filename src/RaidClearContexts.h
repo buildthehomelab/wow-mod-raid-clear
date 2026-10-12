@@ -7,6 +7,7 @@
 #ifndef MOD_RAID_CLEAR_CONTEXTS_H
 #define MOD_RAID_CLEAR_CONTEXTS_H
 
+#include "Common/AggroLeash.h"
 #include "Common/KillOrder.h"
 #include "Common/TankRoles.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
@@ -22,6 +23,7 @@ public:
     RaidClearStrategyContext()
     {
         creators["rc raid tanks"] = &RaidClearStrategyContext::raid_tanks;
+        creators["rc raid leash"] = &RaidClearStrategyContext::raid_leash;
         creators["rc moltencore"] = &RaidClearStrategyContext::moltencore;
         creators["rc bwl"] = &RaidClearStrategyContext::bwl;
         creators["rc zg"] = &RaidClearStrategyContext::zg;
@@ -30,6 +32,7 @@ public:
 
 private:
     static Strategy* raid_tanks(PlayerbotAI* botAI) { return new RaidClearTanksStrategy(botAI); }
+    static Strategy* raid_leash(PlayerbotAI* botAI) { return new RaidClearLeashStrategy(botAI); }
     static Strategy* moltencore(PlayerbotAI* botAI) { return new RaidClearMoltenCoreStrategy(botAI); }
     static Strategy* bwl(PlayerbotAI* botAI) { return new RaidClearBlackwingLairStrategy(botAI); }
     static Strategy* zg(PlayerbotAI* botAI) { return new RaidClearZulGurubStrategy(botAI); }
@@ -45,10 +48,13 @@ public:
         creators["rc offtank target"] = &RaidClearActionContext::offtank_target;
         creators["rc offtank separate"] = &RaidClearActionContext::offtank_separate;
         creators["rc tank share threat"] = &RaidClearActionContext::tank_share_threat;
+        creators["rc aggro leash"] = &RaidClearActionContext::aggro_leash;
 
         creators["rc mc tremor totem"] = &RaidClearActionContext::mc_tremor_totem;
         creators["rc mc stop melee"] = &RaidClearActionContext::mc_stop_melee;
         creators["rc mc ragnaros move out"] = &RaidClearActionContext::mc_ragnaros_move_out;
+        creators["rc mc garr gather"] = &RaidClearActionContext::mc_garr_gather;
+        creators["rc mc leave firesworn"] = &RaidClearActionContext::mc_leave_firesworn;
 
         creators["rc bwl disarm suppression"] = &RaidClearActionContext::bwl_disarm_suppression;
         creators["rc bwl broodlord move out"] = &RaidClearActionContext::bwl_broodlord_move_out;
@@ -73,10 +79,13 @@ private:
     static Action* offtank_target(PlayerbotAI* botAI) { return new RcOffTankTargetAction(botAI); }
     static Action* offtank_separate(PlayerbotAI* botAI) { return new RcOffTankSeparateAction(botAI); }
     static Action* tank_share_threat(PlayerbotAI* botAI) { return new RcTankShareThreatAction(botAI); }
+    static Action* aggro_leash(PlayerbotAI* botAI) { return new RcAggroLeashAction(botAI); }
 
     static Action* mc_tremor_totem(PlayerbotAI* botAI) { return new RcMcTremorTotemAction(botAI); }
     static Action* mc_stop_melee(PlayerbotAI* botAI) { return new RcMcStopMeleeAction(botAI); }
     static Action* mc_ragnaros_move_out(PlayerbotAI* botAI) { return new RcMcRagnarosMoveOutAction(botAI); }
+    static Action* mc_garr_gather(PlayerbotAI* botAI) { return new RcMcGarrGatherAction(botAI); }
+    static Action* mc_leave_firesworn(PlayerbotAI* botAI) { return new RcMcLeaveFireswornAction(botAI); }
 
     static Action* bwl_disarm_suppression(PlayerbotAI* botAI) { return new RcBwlDisarmSuppressionAction(botAI); }
     static Action* bwl_broodlord_move_out(PlayerbotAI* botAI)
@@ -113,10 +122,13 @@ public:
         creators["rc offtank target"] = &RaidClearTriggerContext::offtank_target;
         creators["rc offtank separate"] = &RaidClearTriggerContext::offtank_separate;
         creators["rc tank share threat"] = &RaidClearTriggerContext::tank_share_threat;
+        creators["rc aggro leash"] = &RaidClearTriggerContext::aggro_leash;
 
         creators["rc mc magmadar tremor"] = &RaidClearTriggerContext::mc_magmadar_tremor;
         creators["rc mc damage reflection"] = &RaidClearTriggerContext::mc_damage_reflection;
         creators["rc mc ragnaros ranged"] = &RaidClearTriggerContext::mc_ragnaros_ranged;
+        creators["rc mc garr gather"] = &RaidClearTriggerContext::mc_garr_gather;
+        creators["rc mc anxious firesworn"] = &RaidClearTriggerContext::mc_anxious_firesworn;
 
         creators["rc bwl suppression device"] = &RaidClearTriggerContext::bwl_suppression_device;
         creators["rc bwl broodlord ranged"] = &RaidClearTriggerContext::bwl_broodlord_ranged;
@@ -141,10 +153,13 @@ private:
     static Trigger* offtank_target(PlayerbotAI* botAI) { return new RcOffTankTargetTrigger(botAI); }
     static Trigger* offtank_separate(PlayerbotAI* botAI) { return new RcOffTankSeparateTrigger(botAI); }
     static Trigger* tank_share_threat(PlayerbotAI* botAI) { return new RcTankShareThreatTrigger(botAI); }
+    static Trigger* aggro_leash(PlayerbotAI* botAI) { return new RcAggroLeashTrigger(botAI); }
 
     static Trigger* mc_magmadar_tremor(PlayerbotAI* botAI) { return new RcMcMagmadarTremorTrigger(botAI); }
     static Trigger* mc_damage_reflection(PlayerbotAI* botAI) { return new RcMcDamageReflectionTrigger(botAI); }
     static Trigger* mc_ragnaros_ranged(PlayerbotAI* botAI) { return new RcMcRagnarosRangedTrigger(botAI); }
+    static Trigger* mc_garr_gather(PlayerbotAI* botAI) { return new RcMcGarrGatherTrigger(botAI); }
+    static Trigger* mc_anxious_firesworn(PlayerbotAI* botAI) { return new RcMcAnxiousFireswornTrigger(botAI); }
 
     static Trigger* bwl_suppression_device(PlayerbotAI* botAI) { return new RcBwlSuppressionDeviceTrigger(botAI); }
     static Trigger* bwl_broodlord_ranged(PlayerbotAI* botAI)

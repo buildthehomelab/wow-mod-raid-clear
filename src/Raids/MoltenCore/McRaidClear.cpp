@@ -6,7 +6,11 @@
 
 #include "McRaidClear.h"
 
+#include "Common/BossLookup.h"
+
 #include "AttackAction.h"
+#include "Creature.h"
+#include "Pet.h"
 #include "GenericSpellActions.h"
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
@@ -63,11 +67,16 @@ void RaidClearMoltenCoreStrategy::InitTriggers(std::vector<TriggerNode*>& trigge
 
     triggers.push_back(
         new TriggerNode("rc mc ragnaros ranged", { NextAction("rc mc ragnaros move out", ACTION_RAID + 1) }));
+
+    triggers.push_back(new TriggerNode("rc mc garr gather", { NextAction("rc mc garr gather", ACTION_RAID + 1) }));
+    triggers.push_back(
+        new TriggerNode("rc mc anxious firesworn", { NextAction("rc mc leave firesworn", ACTION_RAID + 2) }));
 }
 
 void RaidClearMoltenCoreStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcMcReflectionMultiplier(botAI));
+    multipliers.push_back(new RcMcAnxiousFireswornMultiplier(botAI));
 }
 
 // --- Magmadar -------------------------------------------------------------
@@ -143,6 +152,98 @@ float RcMcReflectionMultiplier::GetValue(Action* action)
         return 0.0f;
 
     return 1.0f;
+}
+
+// --- Garr -----------------------------------------------------------------
+
+namespace
+{
+    // Garr, alive and fighting.
+    Creature* FightingGarr(Player* bot)
+    {
+        return bot->GetMapId() == MAP_ID ? RaidClear::FightingCreature(bot, { NPC_GARR }) : nullptr;
+    }
+
+    // A living Firesworn that has Separation Anxiety, or is far enough from Garr to get it on his
+    // next check: it hits for four times the damage, and so does its Eruption when it dies.
+    bool IsAnxiousFiresworn(Player* bot, Unit const* unit)
+    {
+        if (!unit || unit->GetEntry() != NPC_FIRESWORN || !unit->IsAlive())
+            return false;
+        if (unit->HasAura(SPELL_SEPARATION_ANXIETY))
+            return true;
+        Creature* garr = FightingGarr(bot);
+        return garr && unit->GetDistance(garr) > GARR_ANXIOUS_RANGE;
+    }
+}
+
+bool RaidClear::MoltenCore::KillOrderSkips(Player* bot, Unit const* unit)
+{
+    return IsAnxiousFiresworn(bot, unit);
+}
+
+bool RcMcGarrGatherTrigger::IsActive()
+{
+    if (!bot->IsAlive() || !bot->IsInCombat())
+        return false;
+
+    // Whoever Garr is on stays where it is: everyone else comes to it.
+    Creature* garr = FightingGarr(bot);
+    if (!garr || garr->GetVictim() == bot || bot->GetDistance(garr) <= GARR_GATHER)
+        return false;
+
+    // Only while there is a Firesworn left to bring along. A tank only comes when one is on it:
+    // a tank holding trash that was pulled with the boss keeps it away from the raid.
+    bool const tank = PlayerbotAI::IsTank(bot);
+    GuidVector const attackers = AI_VALUE(GuidVector, "attackers");
+    for (ObjectGuid const& guid : attackers)
+    {
+        Unit* unit = botAI->GetUnit(guid);
+        if (unit && unit->GetEntry() == NPC_FIRESWORN && unit->IsAlive() && (!tank || unit->GetVictim() == bot))
+            return true;
+    }
+    return false;
+}
+
+bool RcMcGarrGatherAction::Execute(Event /*event*/)
+{
+    Creature* garr = FightingGarr(bot);
+    if (!garr || bot->GetDistance(garr) <= GARR_GATHER_TARGET)
+        return false;
+    return MoveTo(garr, GARR_GATHER_TARGET, MovementPriority::MOVEMENT_COMBAT);
+}
+
+bool RcMcAnxiousFireswornTrigger::IsActive()
+{
+    // The multiplier keeps a bot from starting on one; this is for a bot that was already on it
+    // when it ran out of Garr's range. Auto-attack, Auto Shot and wands need no action to go on.
+    if (!bot->IsInCombat() || PlayerbotAI::IsTank(bot))
+        return false;
+    return IsAnxiousFiresworn(bot, bot->GetVictim());
+}
+
+bool RcMcLeaveFireswornAction::Execute(Event /*event*/)
+{
+    bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+    bot->AttackStop();
+    if (Pet* pet = bot->GetPet())
+        if (IsAnxiousFiresworn(bot, pet->GetVictim()))
+            pet->AttackStop();
+    return true;
+}
+
+float RcMcAnxiousFireswornMultiplier::GetValue(Action* action)
+{
+    // Tanks keep hitting it: they are the ones bringing it back to Garr.
+    if (!action || !bot->IsInCombat() || PlayerbotAI::IsTank(bot))
+        return 1.0f;
+    if (!dynamic_cast<CastSpellAction*>(action) && !dynamic_cast<AttackAction*>(action))
+        return 1.0f;
+
+    Unit* target = action->GetTarget();
+    if (!target || target->GetEntry() != NPC_FIRESWORN || !bot->IsValidAttackTarget(target))
+        return 1.0f;
+    return IsAnxiousFiresworn(bot, target) ? 0.0f : 1.0f;
 }
 
 // --- Ragnaros -------------------------------------------------------------

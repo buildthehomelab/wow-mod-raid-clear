@@ -23,6 +23,8 @@ namespace RaidClear
         float tankSeparation = 12.0f;
         bool separateOnBosses = false;
         bool deathLog = true;
+        bool aggroLeash = true;
+        float aggroLeashBuffer = 6.0f;
         std::unordered_map<uint32, bool> raidEnabled;  // mapId -> RaidClear.<Raid>.Enable
 
         bool IsRaidEnabled(uint32 mapId) const

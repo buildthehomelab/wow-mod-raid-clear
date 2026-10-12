@@ -14,6 +14,14 @@
  *   - Majordomo: nobody casts at an enemy with Magic Reflection, and melee (not tanks) stop
  *     swinging at one with Damage Reflection. Both shields cover all of his adds.
  *   - Ragnaros: ranged and healers stay out of Wrath of Ragnaros (25 yd knockback around him).
+ *   - Garr: a Firesworn more than 40 yd from him gets Separation Anxiety (23492, +300% damage),
+ *     and a Firesworn erupts when it dies (Eruption, 19497: about 2,000 fire to everyone within
+ *     15 yd). With the two together that is 8,000, which kills everyone around it. So the fight
+ *     stays with Garr: a bot more than 30 yd from him walks back to 22 (a Firesworn follows
+ *     whoever it is on; a tank only comes when a Firesworn is on it, so trash pulled with the
+ *     boss stays where its tank holds it), nobody but the tanks hits a Firesworn that has
+ *     Separation Anxiety or is about to get it (bots already on one stop, pets too), and the
+ *     kill order skips it.
  *
  * Released under the MIT License.
  */
@@ -39,6 +47,7 @@ namespace RaidClear::MoltenCore
     enum Creatures : uint32
     {
         NPC_MAGMADAR             = 11982,
+        NPC_GARR                 = 12057,
         NPC_GOLEMAGG             = 11988,
 
         NPC_MOLTEN_GIANT         = 11658,  // Smash: 10 yd AoE, Knock Away
@@ -60,6 +69,7 @@ namespace RaidClear::MoltenCore
     {
         SPELL_MAGIC_REFLECTION   = 20619,
         SPELL_DAMAGE_REFLECTION  = 21075,
+        SPELL_SEPARATION_ANXIETY = 23492,  // on a Firesworn more than 40 yd from Garr
     };
 
     // Panic (19408) radius.
@@ -69,7 +79,16 @@ namespace RaidClear::MoltenCore
     constexpr float RAGNAROS_RANGED_MIN = 27.0f;
     constexpr float RAGNAROS_RANGED_TARGET = 30.0f;
 
+    // Garr checks his Firesworn once a second: more than 40 yd from him (edge to edge) and it
+    // gets Separation Anxiety. A Firesworn this far out counts as having it already.
+    constexpr float GARR_ANXIOUS_RANGE = 36.0f;
+    // A bot further than this from Garr walks back to the target distance.
+    constexpr float GARR_GATHER = 30.0f;
+    constexpr float GARR_GATHER_TARGET = 22.0f;
+
     std::vector<KillOrderEntry> const& KillOrder();
+    // Adds the kill order leaves alone for now (a Firesworn with Separation Anxiety).
+    bool KillOrderSkips(Player* bot, Unit const* unit);
 
     // Bosses where mod-playerbots places the tanks itself (Golemagg: main tank on him, assist
     // tank on the Core Ragers at fixed spots), so the generic off-tank split stays out.
@@ -124,6 +143,46 @@ class RcMcReflectionMultiplier : public Multiplier
 {
 public:
     RcMcReflectionMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc mc reflection") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Garr -----------------------------------------------------------------
+
+class RcMcGarrGatherTrigger : public Trigger
+{
+public:
+    RcMcGarrGatherTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc garr gather") {}
+    bool IsActive() override;
+};
+
+class RcMcGarrGatherAction : public MovementAction
+{
+public:
+    RcMcGarrGatherAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc mc garr gather") {}
+    bool Execute(Event event) override;
+};
+
+// A bot that isn't a tank is attacking a Firesworn that has Separation Anxiety.
+class RcMcAnxiousFireswornTrigger : public Trigger
+{
+public:
+    RcMcAnxiousFireswornTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc anxious firesworn") {}
+    bool IsActive() override;
+};
+
+// Stops the swing, the Auto Shot or the wand, and the pet.
+class RcMcLeaveFireswornAction : public Action
+{
+public:
+    RcMcLeaveFireswornAction(PlayerbotAI* botAI) : Action(botAI, "rc mc leave firesworn") {}
+    bool Execute(Event event) override;
+};
+
+// Nobody but the tanks hits a Firesworn that would erupt for four times the damage.
+class RcMcAnxiousFireswornMultiplier : public Multiplier
+{
+public:
+    RcMcAnxiousFireswornMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc mc anxious firesworn") {}
     float GetValue(Action* action) override;
 };
 
