@@ -18,8 +18,10 @@
  *     and a Firesworn erupts when it dies (Eruption, 19497: about 2,000 fire to everyone within
  *     15 yd). With the two together that is 8,000, which kills everyone around it. So the fight
  *     stays with Garr: a bot more than 30 yd from him walks back to 22 (a Firesworn follows
- *     whoever it is on, tank or healer), nobody but the tanks hits a Firesworn that has
- *     Separation Anxiety or is about to get it, and the kill order skips it.
+ *     whoever it is on; a tank only comes when a Firesworn is on it, so trash pulled with the
+ *     boss stays where its tank holds it), nobody but the tanks hits a Firesworn that has
+ *     Separation Anxiety or is about to get it (bots already on one stop, pets too), and the
+ *     kill order skips it.
  *
  * Released under the MIT License.
  */
@@ -157,6 +159,22 @@ class RcMcGarrGatherAction : public MovementAction
 {
 public:
     RcMcGarrGatherAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc mc garr gather") {}
+    bool Execute(Event event) override;
+};
+
+// A bot that isn't a tank is attacking a Firesworn that has Separation Anxiety.
+class RcMcAnxiousFireswornTrigger : public Trigger
+{
+public:
+    RcMcAnxiousFireswornTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc anxious firesworn") {}
+    bool IsActive() override;
+};
+
+// Stops the swing, the Auto Shot or the wand, and the pet.
+class RcMcLeaveFireswornAction : public Action
+{
+public:
+    RcMcLeaveFireswornAction(PlayerbotAI* botAI) : Action(botAI, "rc mc leave firesworn") {}
     bool Execute(Event event) override;
 };
 

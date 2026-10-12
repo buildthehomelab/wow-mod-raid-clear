@@ -54,6 +54,7 @@ public:
         creators["rc mc stop melee"] = &RaidClearActionContext::mc_stop_melee;
         creators["rc mc ragnaros move out"] = &RaidClearActionContext::mc_ragnaros_move_out;
         creators["rc mc garr gather"] = &RaidClearActionContext::mc_garr_gather;
+        creators["rc mc leave firesworn"] = &RaidClearActionContext::mc_leave_firesworn;
 
         creators["rc bwl disarm suppression"] = &RaidClearActionContext::bwl_disarm_suppression;
         creators["rc bwl broodlord move out"] = &RaidClearActionContext::bwl_broodlord_move_out;
@@ -84,6 +85,7 @@ private:
     static Action* mc_stop_melee(PlayerbotAI* botAI) { return new RcMcStopMeleeAction(botAI); }
     static Action* mc_ragnaros_move_out(PlayerbotAI* botAI) { return new RcMcRagnarosMoveOutAction(botAI); }
     static Action* mc_garr_gather(PlayerbotAI* botAI) { return new RcMcGarrGatherAction(botAI); }
+    static Action* mc_leave_firesworn(PlayerbotAI* botAI) { return new RcMcLeaveFireswornAction(botAI); }
 
     static Action* bwl_disarm_suppression(PlayerbotAI* botAI) { return new RcBwlDisarmSuppressionAction(botAI); }
     static Action* bwl_broodlord_move_out(PlayerbotAI* botAI)
@@ -126,6 +128,7 @@ public:
         creators["rc mc damage reflection"] = &RaidClearTriggerContext::mc_damage_reflection;
         creators["rc mc ragnaros ranged"] = &RaidClearTriggerContext::mc_ragnaros_ranged;
         creators["rc mc garr gather"] = &RaidClearTriggerContext::mc_garr_gather;
+        creators["rc mc anxious firesworn"] = &RaidClearTriggerContext::mc_anxious_firesworn;
 
         creators["rc bwl suppression device"] = &RaidClearTriggerContext::bwl_suppression_device;
         creators["rc bwl broodlord ranged"] = &RaidClearTriggerContext::bwl_broodlord_ranged;
@@ -156,6 +159,7 @@ private:
     static Trigger* mc_damage_reflection(PlayerbotAI* botAI) { return new RcMcDamageReflectionTrigger(botAI); }
     static Trigger* mc_ragnaros_ranged(PlayerbotAI* botAI) { return new RcMcRagnarosRangedTrigger(botAI); }
     static Trigger* mc_garr_gather(PlayerbotAI* botAI) { return new RcMcGarrGatherTrigger(botAI); }
+    static Trigger* mc_anxious_firesworn(PlayerbotAI* botAI) { return new RcMcAnxiousFireswornTrigger(botAI); }
 
     static Trigger* bwl_suppression_device(PlayerbotAI* botAI) { return new RcBwlSuppressionDeviceTrigger(botAI); }
     static Trigger* bwl_broodlord_ranged(PlayerbotAI* botAI)

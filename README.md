@@ -70,16 +70,24 @@ there. In a raid that is often the next pack or the next boss, and the raid ends
 So while a bot is in combat, its walks are checked against every mob nearby that isn't in the
 fight but would join it: hostile, aggressive, alive, in line of sight and on the same level.
 
-- A walk that would end or pass inside such a mob's aggro radius plus a buffer (6 yards) is
-  stopped on the bot's next update. The bot stands still for a second and a half, so whatever
-  sent it doesn't send it straight back.
-- A bot standing within half the buffer of one (a patrol walking up, or a bot that stopped late)
-  steps back out, toward the main tank where it can.
-- A walk toward the bot's own target is never stopped. Going to the fight, or pulling the next
-  pack, is the point. A bot in melee with its target isn't moved off it either.
+- A walk that would pass inside such a mob's aggro radius plus a buffer (6 yards), and takes the
+  bot closer to it, is stopped as it starts. The check runs on the server's own map update and
+  not in the bot's AI: a bot in combat only thinks twice a second, and would be 3 or 4 yards
+  further on by then.
+- For two seconds after that, the bot only walks toward a target (to reach it in melee, with a
+  spell, or to heal someone), so whatever sent it doesn't send it straight back.
+- A bot standing within half the buffer of one (a patrol walking up) steps back out, toward the
+  main tank where it can.
+- A mob the bot can't avoid if it wants its target doesn't count: the target itself (a pull) and
+  any mob whose aggro radius already covers the target. A walk toward the target is still checked
+  against every other pack on the way, with a 1-yard buffer: round the corner of a pack is fine,
+  through it is not.
+- A bot in melee with its target is never moved off it.
 
-The aggro radius is the core's own: about 20 yards for a mob of the bot's level, a yard more for
-every level the mob is higher.
+The aggro radius is the core's own: the mob's detection range (20 yards unless its template says
+otherwise) plus a yard for every level the mob is above the bot.
+
+Knockbacks, charges and fears are not walks the bot chose and are left alone.
 
 ### Death log (all raids)
 
@@ -105,7 +113,7 @@ Core Rager tank split (the off-tank split stays out of that fight), Core Hound p
 |---|---|
 | Firelord trash | Kill **Lava Spawn** before anything else (they split every 15 seconds). |
 | Lucifron, Gehennas, Garr | Kill the Flamewaker Protectors, Flamewalkers and Firesworn before the boss. |
-| Garr | A **Firesworn** more than 40 yards from Garr gets **Separation Anxiety** (four times the damage), and every Firesworn erupts when it dies: about 2,000 fire damage to everyone within 15 yards, or 8,000 with Separation Anxiety. So the fight stays with Garr. A bot more than 30 yards from him walks back to 22, and the Firesworn on it follows. Nobody but the tanks hits a Firesworn that has Separation Anxiety or is far enough out to get it, and the skull never goes on one. |
+| Garr | A **Firesworn** more than 40 yards from Garr gets **Separation Anxiety** (four times the damage), and every Firesworn erupts when it dies: about 2,000 fire damage to everyone within 15 yards, or 8,000 with Separation Anxiety. So the fight stays with Garr. A bot more than 30 yards from him walks back to 22, and the Firesworn on it follows (a tank only comes when a Firesworn is on it, so trash pulled with the boss stays where its tank holds it). Nobody but the tanks hits a Firesworn that has Separation Anxiety or is far enough out to get it: bots already attacking one stop, pets and Auto Shot included, and the skull never goes on one. |
 | Magmadar | Every shaman keeps **Tremor Totem** down against **Panic**. |
 | Sulfuron Harbinger | Kill the Flamewaker Priests first. |
 | Majordomo Executus | Healers first, then Elites. No spells into **Magic Reflection**; melee stop swinging into **Damage Reflection** (tanks keep going). |

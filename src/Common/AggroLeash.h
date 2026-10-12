@@ -7,17 +7,25 @@
  * the raid is fighting both. This module's own "move out" actions do the same.
  *
  * In every raid, while a bot is in combat:
- *   - A walk that would end, or pass, within a mob's aggro radius plus a buffer is stopped on
- *     the bot's next update, and the bot stands still for a moment. Only mobs that would
- *     actually come count: hostile, aggressive, alive, not in combat, not evading, on the bot's
- *     level (they don't aggro more than a few yards up or down) and with line of sight.
- *   - A bot standing that close to such a mob (a patrol walking up, or the bot stopped late)
- *     steps back out, toward the main tank where it can.
- *   - A walk toward the bot's own target is never stopped: going to the fight, or pulling, is
- *     the point. Neither is a bot in melee with its target moved off it.
+ *   - Every walk a bot starts is looked at from the map's own update, not from the bot's AI: a
+ *     bot in combat only thinks twice a second and would be 3-4 yd further on by then. A walk
+ *     that passes within a mob's aggro radius plus a buffer, and takes the bot closer to that
+ *     mob than it is, is stopped before the bot has gone a yard. For the next two seconds the
+ *     bot may only walk toward a target (reach melee, reach spell, reach someone to heal), so
+ *     whatever sent it doesn't send it again at once.
+ *   - Only mobs that would actually come count: hostile, aggressive, alive, not in combat, not
+ *     evading, on the bot's level (they don't aggro more than a few yards up or down) and with
+ *     line of sight.
+ *   - A bot standing within half the buffer of such a mob (a patrol walking up) steps back out,
+ *     toward the main tank where it can.
+ *   - A mob the bot can't avoid if it wants its target doesn't count: the target itself (a
+ *     pull), and any mob whose aggro radius plus the buffer already covers the target. A walk
+ *     toward the target is still checked against every other mob on the way, with a 1 yd buffer:
+ *     going round the corner of a pack is fine, through it is not.
+ *   - A bot in melee with its target is never moved off it.
  *
- * The aggro radius is the core's own (Creature::GetAggroRange: about 20 yd at the same level,
- * a yard more per level the mob is above the bot).
+ * The aggro radius is the core's own (Creature::GetAggroRange: the mob's detection range, 20 yd
+ * by default, plus a yard per level the mob is above the bot).
  *
  * Released under the MIT License.
  */
@@ -27,8 +35,14 @@
 
 #include "Action.h"
 #include "MovementActions.h"
+#include "Multiplier.h"
 #include "Strategy.h"
 #include "Trigger.h"
+
+namespace RaidClear::Leash
+{
+    void AddScripts();
+}
 
 class RaidClearLeashStrategy : public Strategy
 {
@@ -36,8 +50,10 @@ public:
     RaidClearLeashStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
     std::string const getName() override { return "rc raid leash"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
+    void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
 };
 
+// The bot is standing at the edge of an idle mob's aggro radius.
 class RcAggroLeashTrigger : public Trigger
 {
 public:
@@ -45,9 +61,9 @@ public:
     bool IsActive() override;
 
 private:
-    // A bot standing still is only looked at a few times a second.
-    uint32 _lastIdleCheckMs = 0;
-    bool _lastIdleResult = false;
+    // Looked at a few times a second, not on every update.
+    uint32 _lastCheckMs = 0;
+    bool _lastResult = false;
 };
 
 class RcAggroLeashAction : public MovementAction
@@ -55,6 +71,14 @@ class RcAggroLeashAction : public MovementAction
 public:
     RcAggroLeashAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc aggro leash") {}
     bool Execute(Event event) override;
+};
+
+// For two seconds after one of its walks was stopped, a bot only walks toward a target.
+class RcAggroLeashMultiplier : public Multiplier
+{
+public:
+    RcAggroLeashMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aggro leash") {}
+    float GetValue(Action* action) override;
 };
 
 #endif

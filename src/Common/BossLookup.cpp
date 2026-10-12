@@ -19,6 +19,8 @@ namespace RaidClear
     namespace
     {
         constexpr uint32 CACHE_MS = 1000;
+        // A boss that isn't on the map at all (killed in an earlier visit) is looked for less often.
+        constexpr uint32 MISSING_CACHE_MS = 10000;
         constexpr float SEARCH_RANGE = 250.0f;
 
         // One slot per boss asked for on this map thread; a raid asks for one or two.
@@ -53,7 +55,7 @@ namespace RaidClear
                 slot = &candidate;
 
         Creature* creature = nullptr;
-        if (slot && getMSTimeDiff(slot->ms, now) <= CACHE_MS)
+        if (slot && getMSTimeDiff(slot->ms, now) <= (slot->guid.IsEmpty() ? MISSING_CACHE_MS : CACHE_MS))
         {
             creature = slot->guid.IsEmpty() ? nullptr : map->GetCreature(slot->guid);
         }

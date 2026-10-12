@@ -19,6 +19,7 @@
 #include "RaidClearConfig.h"
 #include "RaidClearContexts.h"
 #include "RaidClearRegistry.h"
+#include "Common/AggroLeash.h"
 #include "Common/DeathLog.h"
 #include "Common/TankRoles.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
@@ -206,6 +207,7 @@ void AddRaidClearScripts()
     new RaidClearWorldScript();
     new RaidClearPlayerScript();
     DeathLog::AddScripts();
+    Leash::AddScripts();
     BlackwingLair::AddScripts();
     OnyxiasLair::AddScripts();
 }
