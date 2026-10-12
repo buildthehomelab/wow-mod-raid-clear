@@ -6,29 +6,39 @@
 
 #include "ZgRaidClear.h"
 
+#include "Common/AggroLeash.h"
 #include "Common/BossLookup.h"
 #include "RaidClearConfig.h"
 
 #include "AttackAction.h"
 #include "Creature.h"
+#include "GameObject.h"
 #include "GenericSpellActions.h"
 #include "Group.h"
+#include "LastMovementValue.h"
 #include "Map.h"
+#include "MoveSpline.h"
+#include "PathGenerator.h"
 #include "Pet.h"
 #include "AllSpellScript.h"
 #include "ObjectAccessor.h"
 #include "ThreatManager.h"
+#include "Timer.h"
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
 #include "ReachTargetActions.h"
 #include "RtiTargetValue.h"
 #include "Spell.h"
+#include "SpellAuraEffects.h"
+#include "SpellAuras.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <list>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -68,10 +78,16 @@ void RaidClearZulGurubStrategy::InitTriggers(std::vector<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode("rc zg holy wrath keep away",
                                        { NextAction("rc zg holy wrath keep away", ACTION_RAID + 3) }));
 
+    // Above the life-savers (ACTION_EMERGENCY + 5 or 6): a healer that stays for one more cast is
+    // dead three seconds later. Under the aggro leash's own step back.
     triggers.push_back(new TriggerNode("rc zg concoction",
-                                       { NextAction("rc zg concoction move away", ACTION_RAID + 5) }));
+                                       { NextAction("rc zg concoction move away", ACTION_EMERGENCY + 7) }));
     triggers.push_back(new TriggerNode("rc zg bad target",
                                        { NextAction("rc zg leave bad target", ACTION_RAID + 3) }));
+    triggers.push_back(new TriggerNode("rc zg liquid fire",
+                                       { NextAction("rc zg leave liquid fire", ACTION_RAID + 3) }));
+    triggers.push_back(new TriggerNode("rc zg charmed member",
+                                       { NextAction("rc zg control charmed", ACTION_RAID + 4) }));
 
     triggers.push_back(new TriggerNode("rc zg thekal even kill",
                                        { NextAction("rc zg thekal even kill", ACTION_RAID + 2) }));
@@ -85,6 +101,7 @@ void RaidClearZulGurubStrategy::InitMultipliers(std::vector<Multiplier*>& multip
     multipliers.push_back(new RcZgThekalSingleTargetMultiplier(botAI));
     multipliers.push_back(new RcZgBadTargetMultiplier(botAI));
     multipliers.push_back(new RcZgConcoctionHoldMultiplier(botAI));
+    multipliers.push_back(new RcZgLiquidFireHoldMultiplier(botAI));
     multipliers.push_back(new RcZgCharmedSplashMultiplier(botAI));
 }
 
@@ -158,28 +175,151 @@ namespace
         return IsOffLimits(bot, unit) || (IsSpellShielded(unit) && PlayerbotAI::IsCaster(bot));
     }
 
-    // The nearest Gurubashi Bat Rider casting Unstable Concoction with its centre less than
-    // `range` from `pos`.
-    Unit* CastingBatRider(PlayerbotAI* botAI, Position const* pos, float range)
+    // Every Gurubashi Bat Rider in the fight that is casting Unstable Concoction.
+    std::vector<Unit*> CastingBatRiders(PlayerbotAI* botAI)
     {
-        Unit* nearest = nullptr;
-        float best = range;
+        std::vector<Unit*> riders;
         for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
         {
             Unit* unit = botAI->GetUnit(guid);
             if (!unit || unit->GetEntry() != NPC_BAT_RIDER || !unit->IsAlive())
                 continue;
             Spell const* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-            if (!spell || spell->GetSpellInfo()->Id != SPELL_UNSTABLE_CONCOCTION)
-                continue;
-            float const dist = unit->GetExactDist(pos);
-            if (dist < best)
+            if (spell && spell->GetSpellInfo()->Id == SPELL_UNSTABLE_CONCOCTION)
+                riders.push_back(unit);
+        }
+        return riders;
+    }
+
+    // Yards from a spot to the nearest of them, centre to centre (how the blast is measured).
+    float ConcoctionGap(std::vector<Unit*> const& riders, float x, float y, float z)
+    {
+        float gap = 1000.0f;
+        for (Unit const* rider : riders)
+            gap = std::min(gap, rider->GetExactDist(x, y, z));
+        return gap;
+    }
+
+    float ConcoctionGap(std::vector<Unit*> const& riders, Position const* pos)
+    {
+        return ConcoctionGap(riders, pos->GetPositionX(), pos->GetPositionY(), pos->GetPositionZ());
+    }
+
+    // Whether one of them is casting with its centre less than `range` from `pos`.
+    bool BatRiderCastingNear(PlayerbotAI* botAI, Position const* pos, float range)
+    {
+        return ConcoctionGap(CastingBatRiders(botAI), pos) < range;
+    }
+
+    // Liquid Fire burning near the bot, while Jeklik is being fought.
+    std::vector<GameObject*> LiquidFiresNear(Player* bot)
+    {
+        std::vector<GameObject*> fires;
+        if (!RaidClear::FightingCreature(bot, { NPC_JEKLIK }))
+            return fires;
+        std::list<GameObject*> found;
+        bot->GetGameObjectListWithEntryInGrid(found, GO_LIQUID_FIRE, LIQUID_FIRE_SCAN);
+        for (GameObject* fire : found)
+            if (fire && fire->isSpawned())
+                fires.push_back(fire);
+        return fires;
+    }
+
+    float LiquidFireGap(std::vector<GameObject*> const& fires, float x, float y, float z)
+    {
+        float gap = 1000.0f;
+        for (GameObject const* fire : fires)
+            gap = std::min(gap, fire->GetExactDist(x, y, z));
+        return gap;
+    }
+
+    float LiquidFireGap(std::vector<GameObject*> const& fires, Position const* pos)
+    {
+        return LiquidFireGap(fires, pos->GetPositionX(), pos->GetPositionY(), pos->GetPositionZ());
+    }
+
+    // How far from every Liquid Fire the bot should get; 0 when it is fine where it stands.
+    float LiquidFireWant(Player* bot, std::vector<GameObject*> const& fires)
+    {
+        if (fires.empty())
+            return 0.0f;
+        float const gap = LiquidFireGap(fires, bot);
+        // Whoever Jeklik is on takes her along when either of them stands in one, far enough that
+        // she ends up outside too: the melee wait for that.
+        Creature* jeklik = RaidClear::FightingCreature(bot, { NPC_JEKLIK });
+        if (jeklik && jeklik->GetVictim() == bot && gap < LIQUID_FIRE_TANK_SPOT &&
+            (gap < LIQUID_FIRE_KEEP_AWAY || LiquidFireGap(fires, jeklik) < LIQUID_FIRE_KEEP_AWAY))
+            return LIQUID_FIRE_TANK_SPOT;
+        return gap < LIQUID_FIRE_KEEP_AWAY ? LIQUID_FIRE_SPOT : 0.0f;
+    }
+
+    // Whether the bot is already running to somewhere `gapAt` (yards from a spot to whatever the
+    // bot is getting away from) is at least `want`.
+    template <typename GapAt>
+    bool OnItsWayOut(Player* bot, GapAt const& gapAt, float want)
+    {
+        if (!bot->isMoving() || bot->movespline->Finalized())
+            return false;
+        G3D::Vector3 const dest = bot->movespline->FinalDestination();
+        return gapAt(dest.x, dest.y, dest.z) >= want;
+    }
+
+    // The nearest spot, all the way round the bot, where `gapAt` is at least `want`. The bat cave
+    // is all walls and ledges, and a point straight behind the bot is as often as not inside one,
+    // so it is the walk there that is looked at: a whole path that ends at the spot and isn't a
+    // detour, and that the aggro leash wouldn't stop for heading into the next pack. With nowhere
+    // that good, the spot with the widest gap, if that is at least `worthIt` yards more than the
+    // bot has where it stands.
+    template <typename GapAt>
+    bool FindWayOut(PlayerbotAI* botAI, Player* bot, GapAt const& gapAt, float want, float worthIt, Position& spot)
+    {
+        Map* map = bot->GetMap();
+        float const botX = bot->GetPositionX();
+        float const botY = bot->GetPositionY();
+        float const botZ = bot->GetPositionZ();
+        RaidClear::Leash::WalkCheck const leash(botAI, bot);
+
+        constexpr int STEPS = 16;
+        bool found = false;
+        // What a spot has to beat: good enough, or that much better than here.
+        float bestGap = std::min(gapAt(botX, botY, botZ) + worthIt, want) - 0.01f;
+        for (float ring = 3.0f; ring <= WAY_OUT_SEARCH && (!found || bestGap < want); ring += 3.0f)
+        {
+            for (int i = 0; i < STEPS; ++i)
             {
-                nearest = unit;
-                best = dist;
+                float const angle = float(i) * 2.0f * float(M_PI) / float(STEPS);
+                float const x = botX + std::cos(angle) * ring;
+                float const y = botY + std::sin(angle) * ring;
+                // The cheap test first: most of the circle is no better than where the bot is.
+                if (gapAt(x, y, botZ) <= bestGap)
+                    continue;
+
+                // The floor at the bot's own level: asked from higher up, a ledge over it answers.
+                float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + WAY_OUT_UP);
+                if (z <= INVALID_HEIGHT || z < botZ - WAY_OUT_DOWN)
+                    continue;
+
+                PathGenerator path(bot);
+                // A whole path over the floor: not one that stops short, and not the straight line
+                // the core hands back when it finds no floor under either end.
+                constexpr uint32 NOT_A_WALK = PATHFIND_INCOMPLETE | PATHFIND_NOPATH | PATHFIND_SHORTCUT |
+                                              PATHFIND_NOT_USING_PATH | PATHFIND_FARFROMPOLY;
+                if (!path.CalculatePath(x, y, z) || !(path.GetPathType() & PATHFIND_NORMAL) ||
+                    (path.GetPathType() & NOT_A_WALK))
+                    continue;
+                G3D::Vector3 const& end = path.GetActualEndPosition();
+                if (std::hypot(end.x - x, end.y - y) > WAY_OUT_END_SLACK || path.getPathLength() > ring * 1.5f + 2.0f)
+                    continue;
+                float const gap = gapAt(end.x, end.y, end.z);
+                if (gap <= bestGap || leash.Pulls(path.GetPath()))
+                    continue;
+
+                found = true;
+                bestGap = gap;
+                spot.Relocate(end.x, end.y, end.z);
             }
         }
-        return nearest;
+        return found;
     }
 }
 
@@ -269,13 +409,50 @@ float RcZgBadTargetMultiplier::GetValue(Action* action)
 
 bool RcZgConcoctionTrigger::IsActive()
 {
-    return bot->IsAlive() && bot->IsInCombat() && CastingBatRider(botAI, bot, CONCOCTION_KEEP_AWAY);
+    // A bot that is feared or rooted isn't going anywhere.
+    return bot->IsAlive() && bot->IsInCombat() && botAI->CanMove() &&
+           BatRiderCastingNear(botAI, bot, CONCOCTION_KEEP_AWAY);
 }
 
 bool RcZgConcoctionMoveAwayAction::Execute(Event /*event*/)
 {
-    Unit* rider = CastingBatRider(botAI, bot, CONCOCTION_KEEP_AWAY);
-    return rider && MoveAway(rider, CONCOCTION_TARGET - bot->GetExactDist(rider));
+    std::vector<Unit*> const riders = CastingBatRiders(botAI);
+    auto const gapAt = [&riders](float x, float y, float z) { return ConcoctionGap(riders, x, y, z); };
+    if (ConcoctionGap(riders, bot) >= CONCOCTION_KEEP_AWAY)
+        return false;
+    // Already running somewhere clear of all of them: nothing else this tick, so nothing (a
+    // potion, a cast) stops the run.
+    if (OnItsWayOut(bot, gapAt, CONCOCTION_KEEP_AWAY))
+        return true;
+
+    // Sent off a moment ago and not running: that walk was stopped (the aggro leash's own look
+    // at it) or ended short. Found nowhere to go a moment ago: nothing has changed yet.
+    uint32 const now = getMSTime();
+    if ((_sentAtMs && getMSTimeDiff(_sentAtMs, now) < WAY_OUT_RESEND_MS) ||
+        (_noSpotAtMs && getMSTimeDiff(_noSpotAtMs, now) < WAY_OUT_RETRY_MS))
+        return false;
+
+    Position spot;
+    if (!FindWayOut(botAI, bot, gapAt, CONCOCTION_SPOT, CONCOCTION_WORTH_IT, spot))
+    {
+        _noSpotAtMs = now ? now : 1;
+        return false;
+    }
+
+    // Whatever the bot was told last (a walk to its target, an earlier way out that a second Bat
+    // Rider has just made useless) would make this walk wait its turn. Straight to the spot the
+    // path was checked for: playerbots' own planning could settle for another.
+    AI_VALUE(LastMovement&, "last movement").clear();
+    bot->CastStop();
+    if (!MoveTo(bot->GetMapId(), spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), false, false, false,
+                true, MovementPriority::MOVEMENT_FORCED))
+    {
+        _noSpotAtMs = now ? now : 1;
+        return false;
+    }
+    _sentAtMs = now ? now : 1;
+    _noSpotAtMs = 0;
+    return true;
 }
 
 float RcZgConcoctionHoldMultiplier::GetValue(Action* action)
@@ -286,13 +463,76 @@ float RcZgConcoctionHoldMultiplier::GetValue(Action* action)
                        !dynamic_cast<RcZgConcoctionMoveAwayAction*>(action);
     if (!walks && !dynamic_cast<CastReachTargetSpellAction*>(action))
         return 1.0f;
-    if (!bot->IsInCombat() || !CastingBatRider(botAI, bot, CONCOCTION_HOLD))
+    if (!bot->IsInCombat())
         return 1.0f;
 
     Unit* target = action->GetTarget();
     if (!target || target == bot)
         return 1.0f;
-    return CastingBatRider(botAI, target, CONCOCTION_KEEP_AWAY) ? 0.0f : 1.0f;
+
+    std::vector<Unit*> const riders = CastingBatRiders(botAI);
+    if (ConcoctionGap(riders, bot) >= CONCOCTION_HOLD)
+        return 1.0f;
+    return ConcoctionGap(riders, target) < CONCOCTION_KEEP_AWAY ? 0.0f : 1.0f;
+}
+
+bool RcZgLiquidFireTrigger::IsActive()
+{
+    return bot->IsAlive() && bot->IsInCombat() && botAI->CanMove() &&
+           LiquidFireWant(bot, LiquidFiresNear(bot)) > 0.0f;
+}
+
+bool RcZgLeaveLiquidFireAction::Execute(Event /*event*/)
+{
+    std::vector<GameObject*> const fires = LiquidFiresNear(bot);
+    auto const gapAt = [&fires](float x, float y, float z) { return LiquidFireGap(fires, x, y, z); };
+    float const want = LiquidFireWant(bot, fires);
+    if (want <= 0.0f)
+        return false;
+    // The tank taking Jeklik out of one has further to go than the edge of it.
+    if (OnItsWayOut(bot, gapAt, want >= LIQUID_FIRE_TANK_SPOT ? LIQUID_FIRE_TANK_SPOT : LIQUID_FIRE_KEEP_AWAY))
+        return true;
+
+    uint32 const now = getMSTime();
+    if ((_sentAtMs && getMSTimeDiff(_sentAtMs, now) < WAY_OUT_RESEND_MS) ||
+        (_noSpotAtMs && getMSTimeDiff(_noSpotAtMs, now) < WAY_OUT_RETRY_MS))
+        return false;
+
+    Position spot;
+    if (!FindWayOut(botAI, bot, gapAt, want, LIQUID_FIRE_WORTH_IT, spot))
+    {
+        _noSpotAtMs = now ? now : 1;
+        return false;
+    }
+
+    AI_VALUE(LastMovement&, "last movement").clear();
+    bot->CastStop();
+    if (!MoveTo(bot->GetMapId(), spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), false, false, false,
+                true, MovementPriority::MOVEMENT_FORCED))
+    {
+        _noSpotAtMs = now ? now : 1;
+        return false;
+    }
+    _sentAtMs = now ? now : 1;
+    _noSpotAtMs = 0;
+    return true;
+}
+
+float RcZgLiquidFireHoldMultiplier::GetValue(Action* action)
+{
+    // Melee would end up standing in it; ranged and healers stop at spell range.
+    bool const walks = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+                       !dynamic_cast<RcZgLeaveLiquidFireAction*>(action) &&
+                       !dynamic_cast<RcZgConcoctionMoveAwayAction*>(action);
+    if (!walks && !dynamic_cast<CastReachTargetSpellAction*>(action))
+        return 1.0f;
+    if (!bot->IsInCombat() || PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot))
+        return 1.0f;
+
+    Unit* target = action->GetTarget();
+    if (!target || target == bot)
+        return 1.0f;
+    return LiquidFireGap(LiquidFiresNear(bot), target) < LIQUID_FIRE_KEEP_AWAY ? 0.0f : 1.0f;
 }
 
 // A bot in the middle of a cast doesn't run its engine until the cast ends, and a 2.5 s spell
@@ -877,4 +1117,166 @@ float RcZgCharmedSplashMultiplier::GetValue(Action* action)
             return 0.0f;
     }
     return 1.0f;
+}
+
+// --- Mind-controlled raid members -----------------------------------------
+
+namespace
+{
+    struct Control
+    {
+        char const* spell;  // playerbots name
+        float range;
+        int32 needMs;       // how much longer the mind control has to run for this to be worth it
+    };
+    // What stops a raid member an enemy has taken over without hurting it. On a player Polymorph
+    // lasts 10 s (after a 1.5 s cast) and Hammer of Justice 6 s; whichever is still on the member
+    // when the mind control ends is taken off again by the bot that cast it. Not Blind: nothing
+    // takes that off.
+    constexpr std::array<Control, 2> CONTROLS = {{
+        { "polymorph", 30.0f, 6000 },
+        { "hammer of justice", 10.0f, 3000 },
+    }};
+    // A hold with no end of its own (Brain Wash lasts as long as its totem stands, and the totem
+    // dies within seconds) counts as a short one: only the stun is used on it.
+    constexpr int32 CHARM_NO_END_MS = 5000;
+    // One bot at a time per member: whoever starts first has this long to land it.
+    constexpr uint32 CONTROL_CLAIM_MS = 2500;
+
+    struct ControlClaim
+    {
+        ObjectGuid by;
+        uint32 atMs = 0;
+    };
+    // By mind-controlled member. Bots of one raid think on that raid's map update, but which
+    // thread runs that update changes from one update to the next.
+    std::mutex sControlClaimsMutex;
+    std::unordered_map<ObjectGuid, ControlClaim> sControlClaims;
+
+    bool ControlClaimedByOther(Player const* bot, Player const* member)
+    {
+        std::lock_guard<std::mutex> lock(sControlClaimsMutex);
+        auto it = sControlClaims.find(member->GetGUID());
+        return it != sControlClaims.end() && it->second.by != bot->GetGUID() &&
+               getMSTimeDiff(it->second.atMs, getMSTime()) < CONTROL_CLAIM_MS;
+    }
+
+    void ClaimControl(Player const* bot, Player const* member)
+    {
+        std::lock_guard<std::mutex> lock(sControlClaimsMutex);
+        if (sControlClaims.size() > 64)
+            sControlClaims.clear();
+        sControlClaims[member->GetGUID()] = { bot->GetGUID(), getMSTime() };
+    }
+
+    void DropControlClaim(Player const* member)
+    {
+        std::lock_guard<std::mutex> lock(sControlClaimsMutex);
+        sControlClaims.erase(member->GetGUID());
+    }
+
+    // How much longer an enemy's hold on this member runs, in ms.
+    int32 CharmLeftMs(Player const* member)
+    {
+        int32 left = 0;
+        for (AuraType const type : { SPELL_AURA_MOD_CHARM, SPELL_AURA_MOD_POSSESS, SPELL_AURA_AOE_CHARM })
+            for (AuraEffect const* effect : member->GetAuraEffectsByType(type))
+            {
+                int32 const duration = effect->GetBase()->GetDuration();
+                left = std::max(left, duration < 0 ? CHARM_NO_END_MS : duration);
+            }
+        return left;
+    }
+
+    // A mind-controlled member of the raid this bot can stop right now, and with what. Nobody
+    // who is stopped already, and nobody another bot has just started on.
+    Player* MemberToControl(PlayerbotAI* botAI, Player* bot, char const*& with)
+    {
+        Group* group = bot->GetGroup();
+        if (!group || !bot->IsAlive() || !bot->IsInCombat() || bot->IsCharmed())
+            return nullptr;
+
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || member == bot || !member->IsAlive() || !member->IsCharmed() || !member->IsInMap(bot))
+                continue;
+            if (member->HasUnitState(UNIT_STATE_CONTROLLED) || ControlClaimedByOther(bot, member))
+                continue;
+
+            int32 const left = CharmLeftMs(member);
+            float const dist = bot->GetDistance(member);
+            for (Control const& control : CONTROLS)
+            {
+                if (left < control.needMs || dist > control.range)
+                    continue;
+                if (!bot->IsWithinLOSInMap(member) || !botAI->CanCastSpell(control.spell, member) ||
+                    !CanPayFor(botAI, bot, control.spell))
+                    continue;
+                with = control.spell;
+                return member;
+            }
+        }
+        return nullptr;
+    }
+}
+
+namespace
+{
+    // The bot's own stuns and Polymorphs on members of its raid who are themselves again (the mind
+    // control ran out first, or whatever cast it died).
+    std::vector<std::pair<Player*, uint32>> ControlsToLetGo(Player* bot)
+    {
+        std::vector<std::pair<Player*, uint32>> spells;
+        Group* group = bot->GetGroup();
+        if (!group)
+            return spells;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || member == bot || !member->IsAlive() || member->IsCharmed() || !member->IsInMap(bot) ||
+                !member->HasUnitState(UNIT_STATE_CONTROLLED))
+                continue;
+            for (AuraType const type : { SPELL_AURA_MOD_CONFUSE, SPELL_AURA_MOD_STUN })
+                for (AuraEffect const* effect : member->GetAuraEffectsByType(type))
+                    if (effect->GetCasterGUID() == bot->GetGUID())
+                        spells.emplace_back(member, effect->GetId());
+        }
+        return spells;
+    }
+
+    bool ControlsCharmed(Player const* bot)
+    {
+        return bot->getClass() == CLASS_MAGE || bot->getClass() == CLASS_PALADIN;
+    }
+}
+
+bool RcZgCharmedMemberTrigger::IsActive()
+{
+    if (!ControlsCharmed(bot) || !bot->IsAlive())
+        return false;
+    char const* with = nullptr;
+    return !ControlsToLetGo(bot).empty() || MemberToControl(botAI, bot, with) != nullptr;
+}
+
+bool RcZgControlCharmedAction::Execute(Event /*event*/)
+{
+    if (!ControlsCharmed(bot))
+        return false;
+
+    // A member who is back before the sheep or the stun has worn off: let go of it. It isn't this
+    // bot's whole turn.
+    for (auto const& [freed, spellId] : ControlsToLetGo(bot))
+        freed->RemoveAurasDueToSpell(spellId, bot->GetGUID());
+
+    char const* with = nullptr;
+    Player* member = MemberToControl(botAI, bot, with);
+    if (!member)
+        return false;
+
+    ClaimControl(bot, member);
+    if (botAI->CastSpell(with, member))
+        return true;
+    DropControlClaim(member);
+    return false;
 }

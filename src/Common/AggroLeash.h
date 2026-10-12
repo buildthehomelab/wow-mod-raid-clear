@@ -40,9 +40,36 @@
 #include "Strategy.h"
 #include "Trigger.h"
 
+#include <memory>
+#include <vector>
+
+namespace G3D
+{
+    class Vector3;
+}
+
 namespace RaidClear::Leash
 {
     void AddScripts();
+
+    // For a "move out" action that looks for its own spot: what the leash would say to a walk
+    // from the bot to that spot, straight or along a path (from the bot's feet to the spot, as
+    // PathGenerator gives it). The idle mobs around the bot are listed once, when this is made,
+    // so make one per search.
+    class WalkCheck
+    {
+    public:
+        WalkCheck(PlayerbotAI* botAI, Player* bot);
+        ~WalkCheck();
+
+        bool Pulls(float x, float y, float z) const;
+        bool Pulls(std::vector<G3D::Vector3> const& path) const;
+
+    private:
+        struct Mobs;
+        Player* _bot;
+        std::unique_ptr<Mobs> _mobs;  // none: the leash is off for this bot
+    };
 }
 
 class RaidClearLeashStrategy : public Strategy

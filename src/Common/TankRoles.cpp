@@ -718,16 +718,64 @@ namespace RaidClear::Tanks
         return mine < top * THREAT_LOST ? ShareNeed::Lost : ShareNeed::Drift;
     }
 
+    namespace
+    {
+        // Warrior Taunt: the two effects every single-target taunt has.
+        constexpr uint32 SPELL_TAUNT = 355;
+        constexpr uint32 SPELL_HAND_OF_SALVATION = 1038;
+        constexpr std::array<uint32, 3> HAND_OF_PROTECTION = { 1022, 5599, 10278 };
+        constexpr uint32 SPELL_RIGHTEOUS_FURY = 25780;
+        constexpr uint32 SPELL_FROST_PRESENCE = 48263;
+
+        // Bots are told by their talents. A player tanking off-spec only shows it by what it has on.
+        bool PlaysTank(Player* player)
+        {
+            if (PlayerbotAI::IsTank(player))
+                return true;
+            if (GET_PLAYERBOT_AI(player))
+                return false;
+            ShapeshiftForm const form = player->GetShapeshiftForm();
+            return form == FORM_BEAR || form == FORM_DIREBEAR || form == FORM_DEFENSIVESTANCE ||
+                   player->HasAura(SPELL_RIGHTEOUS_FURY) || player->HasAura(SPELL_FROST_PRESENCE);
+        }
+
+        // Who the boss turns to when the one it is on drops out: the highest threat among those it
+        // can attack right now.
+        Unit* NextInLine(Unit* boss, Unit const* victim)
+        {
+            Unit* next = nullptr;
+            float most = 0.0f;
+            for (ThreatReference const* ref : boss->GetThreatMgr().GetSortedThreatList())
+            {
+                if (!ref->IsOnline() || ref->GetVictim() == victim)
+                    continue;
+                if (!next || ref->GetThreat() > most)
+                {
+                    next = ref->GetVictim();
+                    most = ref->GetThreat();
+                }
+            }
+            return next;
+        }
+    }
+
+    bool CantBeTaunted(Unit* boss)
+    {
+        SpellInfo const* taunt = sSpellMgr->GetSpellInfo(SPELL_TAUNT);
+        return taunt && boss->IsImmunedToSpell(taunt);
+    }
+
     float ThreatShareLimit(Player* bot, Unit* boss)
     {
         // Loose on someone who can't hold it: a tank taunts and lands on top of the list whatever
-        // anyone adds meanwhile, and stopping the whole raid helps nobody.
+        // anyone adds meanwhile, and stopping the whole raid helps nobody. Not where no taunt
+        // lands: there the order behind whoever it is on is all that puts it back on a tank.
         Unit* victim = boss->GetVictim();
-        if (!CanHoldBoss(victim))
+        bool const loose = !CanHoldBoss(victim);
+        if (loose && !CantBeTaunted(boss))
             return 0.0f;
 
         ThreatManager const& threat = boss->GetThreatMgr();
-        float const holder = threat.GetThreat(victim);
         float backup = 0.0f;
         if (Group* group = bot->GetGroup())
             for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
@@ -736,8 +784,65 @@ namespace RaidClear::Tanks
                 if (member && member != victim && member->IsInMap(bot) && CanHoldBoss(member))
                     backup = std::max(backup, threat.GetThreat(member));
             }
+        if (loose)
+            return backup;
 
+        float const holder = threat.GetThreat(victim);
         return backup >= holder * BACKUP_COUNTS ? backup : holder;
+    }
+
+    Player* BossVictimToProtect(Unit* boss)
+    {
+        // Where a taunt lands, a taunt is the answer: it costs the victim nothing.
+        if (!CantBeTaunted(boss) || !(boss->GetMeleeDamageSchoolMask() & SPELL_SCHOOL_MASK_NORMAL))
+            return nullptr;
+
+        Unit* victim = boss->GetVictim();
+        Player* player = victim ? victim->ToPlayer() : nullptr;
+        if (!player || !player->IsAlive() || player->IsCharmed() || PlaysTank(player))
+            return nullptr;
+        // Protected already (a Hand of Protection on its way out, Divine Shield, Ice Block): the
+        // boss is about to turn away by itself.
+        if (player->IsImmunedToDamage(SPELL_SCHOOL_MASK_NORMAL))
+            return nullptr;
+        // Only when it would go to a tank. With a damage dealer next in line (the tanks have just
+        // had their threat wiped) it would only move on to that one, and the next.
+        return CanHoldBoss(NextInLine(boss, player)) ? player : nullptr;
+    }
+
+    Player* PlayerOverThreatShare(Player* bot, Unit* boss)
+    {
+        float const limit = ThreatShareLimit(bot, boss);
+        Group* group = bot->GetGroup();
+        if (limit <= 0.0f || !group)
+            return nullptr;
+
+        ThreatManager const& threat = boss->GetThreatMgr();
+        Player* over = nullptr;
+        float most = limit * DAMAGE_SHARE;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            // Bots hold themselves back; a player has nothing that tells it to.
+            if (!member || !member->IsAlive() || !member->IsInMap(bot) || GET_PLAYERBOT_AI(member) ||
+                PlaysTank(member) || member->HasAura(SPELL_HAND_OF_SALVATION))
+                continue;
+            // A paladin has one Hand on a player at a time: its Salvation would take off the Hand
+            // of Protection it has just put there.
+            bool ownProtection = false;
+            for (uint32 const hand : HAND_OF_PROTECTION)
+                ownProtection = ownProtection || member->HasAura(hand, bot->GetGUID());
+            if (ownProtection)
+                continue;
+
+            float const theirs = threat.GetThreat(member);
+            if (theirs >= most)
+            {
+                over = member;
+                most = theirs;
+            }
+        }
+        return over;
     }
 }
 
@@ -765,6 +870,11 @@ void RaidClearTanksStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // With the raid mechanics: a boss loose on a mage doesn't wait for anything.
     triggers.push_back(
         new TriggerNode("rc tank share threat", { NextAction("rc tank share threat", ACTION_RAID + 3) }));
+    // The same boss, where no taunt lands. With the life-savers: whoever it is on has seconds.
+    triggers.push_back(
+        new TriggerNode("rc boss on non tank", { NextAction("rc protect boss victim", ACTION_EMERGENCY + 4) }));
+    triggers.push_back(
+        new TriggerNode("rc player over threat", { NextAction("rc salvation on player", ACTION_RAID + 3) }));
 }
 
 void RaidClearTanksStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
@@ -993,6 +1103,52 @@ bool RcTankShareThreatAction::Execute(Event /*event*/)
         return false;
     lastTauntMs = getMSTime();
     return true;
+}
+
+namespace
+{
+    // The Hands reach 30 yd; CanCastSpell lets an out-of-range target through.
+    constexpr float HAND_RANGE = 30.0f;
+
+    bool CanHand(PlayerbotAI* botAI, Player* bot, char const* hand, Player* target)
+    {
+        return target && (target == bot || (bot->GetDistance(target) <= HAND_RANGE && bot->IsWithinLOSInMap(target))) &&
+               botAI->CanCastSpell(hand, target);
+    }
+
+    // The paladins' part of a threat-share boss: every one of them, healers included.
+    Unit* ThreatShareBossForPaladin(PlayerbotAI* botAI, Player* bot)
+    {
+        if (!GetConfig().tankSplit || bot->getClass() != CLASS_PALADIN || !bot->IsAlive() || !bot->IsInCombat())
+            return nullptr;
+        return ThreatShareBoss(botAI, bot, botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get());
+    }
+}
+
+bool RcBossOnNonTankTrigger::IsActive()
+{
+    Unit* boss = ThreatShareBossForPaladin(botAI, bot);
+    return boss && CanHand(botAI, bot, "hand of protection", BossVictimToProtect(boss));
+}
+
+bool RcProtectBossVictimAction::Execute(Event /*event*/)
+{
+    Unit* boss = ThreatShareBossForPaladin(botAI, bot);
+    Player* victim = boss ? BossVictimToProtect(boss) : nullptr;
+    return CanHand(botAI, bot, "hand of protection", victim) && botAI->CastSpell("hand of protection", victim);
+}
+
+bool RcPlayerOverThreatTrigger::IsActive()
+{
+    Unit* boss = ThreatShareBossForPaladin(botAI, bot);
+    return boss && CanHand(botAI, bot, "hand of salvation", PlayerOverThreatShare(bot, boss));
+}
+
+bool RcSalvationOnPlayerAction::Execute(Event /*event*/)
+{
+    Unit* boss = ThreatShareBossForPaladin(botAI, bot);
+    Player* player = boss ? PlayerOverThreatShare(bot, boss) : nullptr;
+    return CanHand(botAI, bot, "hand of salvation", player) && botAI->CastSpell("hand of salvation", player);
 }
 
 namespace
