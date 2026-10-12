@@ -72,7 +72,7 @@ public:
         creators["rc zg holy wrath keep away"] = &RaidClearActionContext::zg_holy_wrath_keep_away;
 
         creators["rc ony leave deep breath"] = &RaidClearActionContext::ony_leave_deep_breath;
-        creators["rc ony offtank side"] = &RaidClearActionContext::ony_offtank_side;
+        creators["rc ony offtank position"] = &RaidClearActionContext::ony_offtank_position;
         creators["rc ony leave evading target"] = &RaidClearActionContext::ony_leave_evading_target;
         creators["rc ony kill whelps"] = &RaidClearActionContext::ony_kill_whelps;
     }
@@ -114,7 +114,7 @@ private:
     static Action* zg_holy_wrath_keep_away(PlayerbotAI* botAI) { return new RcZgHolyWrathKeepAwayAction(botAI); }
 
     static Action* ony_leave_deep_breath(PlayerbotAI* botAI) { return new RcOnyLeaveDeepBreathAction(botAI); }
-    static Action* ony_offtank_side(PlayerbotAI* botAI) { return new RcOnyOffTankSideAction(botAI); }
+    static Action* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionAction(botAI); }
     static Action* ony_leave_evading_target(PlayerbotAI* botAI) { return new RcOnyLeaveEvadingTargetAction(botAI); }
     static Action* ony_kill_whelps(PlayerbotAI* botAI) { return new RcOnyKillWhelpsAction(botAI); }
 };
@@ -152,7 +152,7 @@ public:
         creators["rc zg holy wrath keep away"] = &RaidClearTriggerContext::zg_holy_wrath_keep_away;
 
         creators["rc ony deep breath"] = &RaidClearTriggerContext::ony_deep_breath;
-        creators["rc ony offtank side"] = &RaidClearTriggerContext::ony_offtank_side;
+        creators["rc ony offtank position"] = &RaidClearTriggerContext::ony_offtank_position;
         creators["rc ony evading target"] = &RaidClearTriggerContext::ony_evading_target;
     }
 
@@ -195,7 +195,7 @@ private:
     static Trigger* zg_holy_wrath_keep_away(PlayerbotAI* botAI) { return new RcZgHolyWrathKeepAwayTrigger(botAI); }
 
     static Trigger* ony_deep_breath(PlayerbotAI* botAI) { return new RcOnyDeepBreathTrigger(botAI); }
-    static Trigger* ony_offtank_side(PlayerbotAI* botAI) { return new RcOnyOffTankSideTrigger(botAI); }
+    static Trigger* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionTrigger(botAI); }
     static Trigger* ony_evading_target(PlayerbotAI* botAI) { return new RcOnyEvadingTargetTrigger(botAI); }
 };
 

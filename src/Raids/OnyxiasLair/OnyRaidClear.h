@@ -26,14 +26,17 @@
  *   - Off-tanks at her side. Playerbots' "keep off her head and tail" rule skips every tank, so a
  *     raid's second, third and fourth tank stand in front of her next to the main tank and take
  *     each Flame Breath, Cleave and Wing Buffet with it. Here only the tank she is on and the
- *     main tank (who has to catch her when she lands) stay in front; every other tank stands at
- *     her side like the melee.
+ *     main tank (who has to catch her when she lands) stay in front; every other tank that is
+ *     fighting her stands at her side. An off-tank she turns to walks over to the main tank, so
+ *     she faces the way she did and not the bots at her side.
  *   - Evading mobs. A whelp that can't find a way to its victim evades every attack (the core's
  *     guard against mobs being hit from a spot they can't reach) but goes on biting. Bots kept
- *     attacking it: nothing in playerbots looks at whether a target evades. Here a bot whose
- *     target evades takes the nearest enemy that doesn't, or Onyxia when there is none, and no
- *     bot picks an evading mob. Playerbots' own whelp action (first whelp it finds, and it never
- *     leaves a whelp) is replaced by one that picks the nearest whelp that isn't evading.
+ *     attacking it: nothing in playerbots looks at whether a target evades. Here playerbots'
+ *     target picking is told to skip an evading mob (its own hook, target exclusions), and a bot
+ *     already on one takes what playerbots picks next, else the nearest enemy it can hurt, else
+ *     Onyxia. Playerbots' whelp action for the core's fight (first whelp it finds, and it never
+ *     leaves a whelp) is replaced by one that picks the nearest whelp that isn't evading; the
+ *     level 60 fight's whelps are another creature, which that action never knew.
  *   - Hunter's Mark stays off the whelps: they die within seconds.
  *
  * Released under the MIT License.
@@ -89,6 +92,10 @@ namespace RaidClear::OnyxiasLair
     constexpr float SIDE_RANGE = 30.0f;
     constexpr float SIDE_CONE = float(M_PI_4);
     constexpr float SIDE_DISTANCE = 15.0f;
+    // An off-tank she has turned to joins the main tank: closer than JOIN_NEAR it is there, and
+    // past JOIN_RANGE the main tank is somewhere else for a reason.
+    constexpr float JOIN_NEAR = 8.0f;
+    constexpr float JOIN_RANGE = 40.0f;
 
     void AddScripts();
 }
@@ -100,6 +107,8 @@ public:
     std::string const getName() override { return "rc ony"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
     void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
+    bool HasTargetExclusions() const override { return true; }
+    void AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type) override;
 };
 
 // --- Deep Breath ----------------------------------------------------------
@@ -136,25 +145,27 @@ public:
 
 // --- Off-tanks ------------------------------------------------------------
 
-// Onyxia is on the ground, on somebody else, and this tank, who isn't the main tank, stands at
-// her head or her tail.
-class RcOnyOffTankSideTrigger : public Trigger
+// Onyxia is on the ground and this tank, who isn't the main tank, is in the wrong place: fighting
+// her from her head or her tail while she is on somebody else, or holding her away from the main
+// tank.
+class RcOnyOffTankPositionTrigger : public Trigger
 {
 public:
-    RcOnyOffTankSideTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc ony offtank side") {}
+    RcOnyOffTankPositionTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc ony offtank position") {}
     bool IsActive() override;
 };
 
-class RcOnyOffTankSideAction : public MovementAction
+class RcOnyOffTankPositionAction : public MovementAction
 {
 public:
-    RcOnyOffTankSideAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc ony offtank side") {}
+    RcOnyOffTankPositionAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc ony offtank position") {}
     bool Execute(Event event) override;
 };
 
 // --- Evading mobs ---------------------------------------------------------
 
-// The bot's target evades every attack.
+// The bot's target evades every attack. (Playerbots' target picking already skips such a mob:
+// see the strategy's target exclusions.)
 class RcOnyEvadingTargetTrigger : public Trigger
 {
 public:
@@ -177,8 +188,8 @@ public:
     bool Execute(Event event) override;
 };
 
-// Keeps bots from picking a mob that evades, switches off playerbots' whelp action (replaced
-// above) and keeps Hunter's Mark off the whelps.
+// Switches off playerbots' whelp action (replaced above), keeps Hunter's Mark off the whelps,
+// and stops the target picking that doesn't go through the exclusions from taking an evading mob.
 class RcOnyTargetMultiplier : public Multiplier
 {
 public:
