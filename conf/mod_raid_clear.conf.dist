@@ -138,3 +138,16 @@ RaidClear.BlackwingLair.Enable = 1
 #
 
 RaidClear.ZulGurub.Enable = 1
+
+#
+#    RaidClear.OnyxiasLair.Enable
+#        Description: Onyxia's Lair strategy (map 249), for Onyxia herself and for
+#                     mod-individual-progression's level 60 Onyxia: when she takes a Deep Breath,
+#                     bots standing in the strip of fire walk to the nearest spot outside it and
+#                     nobody walks into or across it until it has passed. The strip is read from
+#                     the server's spell data (spell_target_position), so it follows the core.
+#                     Replaces playerbots' fixed safe zones for the breath.
+#        Default:     1
+#
+
+RaidClear.OnyxiasLair.Enable = 1

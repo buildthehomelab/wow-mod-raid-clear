@@ -167,6 +167,7 @@ also keep playerbots' own raid strategies.
 | `RaidClear.MoltenCore.Enable` | 1 | Molten Core strategy. |
 | `RaidClear.BlackwingLair.Enable` | 1 | Blackwing Lair strategy. |
 | `RaidClear.ZulGurub.Enable` | 1 | Zul'Gurub strategy. |
+| `RaidClear.OnyxiasLair.Enable` | 1 | Onyxia's Lair strategy. |
 
 ## Patch Notes: Raid Clear
 
@@ -217,15 +218,30 @@ Category: Raids
   his snake form, and his cobras die first.
 - Zul'Gurub, Hakkar: the tanks now share his threat and damage dealers stay below them, so when he
   mind-controls his tank or wipes its threat he goes to another tank and not to a mage.
+- Onyxia: bots get out of **Deep Breath** again. They used to run to fixed spots that are now in
+  the fire for two of her eight breaths; now each bot walks out of the strip she is about to burn
+  and stays out until it has passed.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.
+
+### Onyxia's Lair
+
+Playerbots' own strategy keeps bots off her head and tail, away from the whelp eggs, apart for
+**Fireball** and on the whelps while she flies. This module takes over one thing. It works for
+Onyxia as the core spawns her and for
+[mod-individual-progression](https://github.com/ZhengPeiRu21/mod-individual-progression)'s level 60
+Onyxia.
+
+| Fight | What the bots do |
+|---|---|
+| Onyxia, in the air | **Deep Breath** burns a strip 36 yards wide from one side of the room to the other, along one of eight lines. Playerbots sends its bots to two fixed safe spots per breath. Since Playerbot core `2a2211c` moved the strips, those spots are in the fire for two of the eight breaths. Here the strip is read from the server's own spell data instead: a bot standing in it drops its spell and walks to the nearest spot outside (never into the whelp caves or the egg trench), a bot outside stays where it is and keeps fighting, and nobody walks into or across the strip until the fire has passed. |
 
 ## Troubleshooting
 
 - **Bots don't use any of the raid mechanics.** Check that `AiPlayerbot.ApplyInstanceStrategies`
   is `1`, that `RaidClear.Enable` and the raid's own setting (`RaidClear.MoltenCore.Enable`,
-  `RaidClear.BlackwingLair.Enable`, `RaidClear.ZulGurub.Enable`) are `1`, and restart the worldserver: `RaidClear.Enable` is
+  `RaidClear.BlackwingLair.Enable`, `RaidClear.ZulGurub.Enable`, `RaidClear.OnyxiasLair.Enable`) are `1`, and restart the worldserver: `RaidClear.Enable` is
   read at startup only.
 - **The worldserver doesn't start or the module doesn't link.** The folder must be named exactly
   `mod-raid-clear`, because AzerothCore derives the loader function from it. Re-run CMake after
