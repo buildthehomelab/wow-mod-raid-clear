@@ -177,6 +177,7 @@ and the fire resistance auras. On top of that:
 | Fight | What the bots do |
 |---|---|
 | Razorgore | Kill his adds in order: **Death Talon Dragonspawn**, then **Blackwing Mages**, then **Legionnaires**. The off-tank split stays out of the fight (playerbots places the tanks). |
+| Vaelastrasz's room | The six **Blackwing Technicians** standing round him run for the far door as soon as a player walks in (the bots arriving first doesn't set them off) and are gone about 25 seconds later, loot and all. One hit stops a technician for five minutes. Every bot that isn't a healer hits one that is still running, each bot starting with a different one so the first volley stops several, and moves on to the next runner as soon as its own has stopped. Damage dealers with none in reach go after the nearest (melee only while it is still on their floor: nobody on foot catches one up the ramp); tanks hit what they can reach from where they stand and don't walk after one. Once nothing is running the raid kills them like any other pack. Not once Vaelastrasz himself is fighting. |
 | Vaelastrasz | He can't be taunted, so the off-tank keeps itself second on threat for when **Burning Adrenaline** kills the main tank. |
 | Warlock packs | Kill the **Blackwing Warlocks** first: each one keeps opening Demon Portals that summon Enraged Felguards until it dies. Then Taskmasters and Spellbinders, then the felguards. |
 | Death Talon packs (Hall of the Dragonspawn) | The **Death Talon Captain** puts **Mark of Detonation** on whoever he hits, and every melee hit on that player then explodes on all of that player's allies within 30 yards. So he gets an off-tank of his own: the main tank leaves him alone, an off-tank taunts him off whoever has him and holds him 36 yards from the main tank's mob until he dies. Every other non-tank stays 32 yards from anyone carrying the Mark (moving out toward the main tank) and doesn't walk back toward a target inside that circle. Kill order: **Wyrmkin** first (**Fireball Volley** hits everyone within 45 yards), then **Flamescales** and **Seethers**, the Captain last, mostly by ranged; melee join in whenever the Mark is dispelled. The nearest hunter **Tranquilizing Shots** an enraged Seether. |
@@ -368,6 +369,8 @@ Category: Raids
   was too late for nearly all of them.
 - Death Talon Wyrmguards: bots that aren't tanking or in melee with one stay out of its
   **War Stomp**.
+- Blackwing Lair, Vaelastrasz's room: bots now stop and kill the **Blackwing Technicians** that
+  run for the door when you walk in. They used to let all but one get away, loot included.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.

@@ -8,8 +8,8 @@
  *     per-class shared lists. Every bot of a class reads its class list by reference, so bots
  *     that already exist see the new names too. The per-class lists are public statics.
  *
- *  2. Install "rc <raid>" on the combat engine of every bot on that raid's map, and strip it
- *     when the bot leaves. Login and map-change hooks do it immediately; a sweep every few
+ *  2. Install "rc <raid>" on the combat engine of every bot on that raid's map (and a raid's
+ *     "early" strategy, if it has one, on both engines), and strip it when the bot leaves. Login and map-change hooks do it immediately; a sweep every few
  *     seconds puts it back after anything that resets a bot's strategies inside the raid
  *     (group change, talent swap, `.playerbots reset`).
  *
@@ -133,6 +133,17 @@ namespace RaidClear
                 botAI->ChangeStrategy(std::string("+") + raid.strategy, BOT_STATE_COMBAT);
             else if (!want && has)
                 botAI->ChangeStrategy(std::string("-") + raid.strategy, BOT_STATE_COMBAT);
+
+            if (!raid.earlyStrategy)
+                continue;
+            for (BotState const state : { BOT_STATE_COMBAT, BOT_STATE_NON_COMBAT })
+            {
+                bool const hasEarly = botAI->HasStrategy(raid.earlyStrategy, state);
+                if (want && !hasEarly)
+                    botAI->ChangeStrategy(std::string("+") + raid.earlyStrategy, state);
+                else if (!want && hasEarly)
+                    botAI->ChangeStrategy(std::string("-") + raid.earlyStrategy, state);
+            }
         }
     }
 

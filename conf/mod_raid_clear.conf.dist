@@ -217,7 +217,8 @@ RaidClear.MoltenCore.Enable = 1
 #                     calls (priests stop healing under Corrupted Healing unless a tank is below
 #                     35%, corrupted totems and Infernals die first, everyone but the tanks walks
 #                     away from the Fire Nova totem), Onyxia Scale Cloak aura back on revived bots, stay out of Nefarian's Bellowing Roar, Razorgore/Nefarian add
-#                     kill order, Vaelastrasz co-tanked.
+#                     kill order, Vaelastrasz co-tanked, the Blackwing Technicians that run from
+#                     Vaelastrasz's room stopped and killed.
 #        Default:     1
 #
 

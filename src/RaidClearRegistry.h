@@ -23,6 +23,9 @@ namespace RaidClear
         uint32 mapId;
         char const* strategy;  // combat-engine strategy name
         char const* confKey;   // RaidClear.<confKey>.Enable
+        // A second strategy for both engines, or nullptr: what has to happen before anything
+        // is fighting the raid (Blackwing Lair's technicians running from Vaelastrasz's room).
+        char const* earlyStrategy = nullptr;
     };
 
     // Main tank / off-tank split, installed on every raid map (see Common/TankRoles.h).
@@ -35,7 +38,7 @@ namespace RaidClear
 
     inline constexpr std::array<RaidEntry, 4> Raids = {{
         { 409, "rc moltencore", "MoltenCore" },
-        { 469, "rc bwl", "BlackwingLair" },
+        { 469, "rc bwl", "BlackwingLair", "rc bwl runners" },
         { 309, "rc zg", "ZulGurub" },
         { 249, "rc ony", "OnyxiasLair" },
     }};
