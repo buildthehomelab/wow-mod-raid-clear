@@ -25,6 +25,13 @@
  *   - Vaelastrasz is taunt immune, so the off-tank keeps itself second on threat for when Burning
  *     Adrenaline kills the main tank. Razorgore's tanks are placed by playerbots and
  *     mod-dungeon-clear, so the tank split stays out of that fight.
+ *   - Vaelastrasz's room (BwlRunners.cpp): the six Blackwing Technicians round him run for the
+ *     far door the moment a player walks in, and are gone some 25 seconds later, their loot
+ *     (Elementium Ore, Hourglass Sand) with them. They are passive while they run, so no bot
+ *     ever picked one up: playerbots only offers what is fighting the raid. One hit stops a
+ *     technician for five minutes. Every bot that isn't a healer hits one that is still
+ *     running, each starting with a different one, and the damage dealers go after those out of
+ *     reach; tanks stay where they are. Not once Vaelastrasz himself is in the fight.
  *   - Firemaw: Flame Buffet (23341) stacks on everyone in his line of sight every 5s. A non-tank
  *     at 5 stacks hides behind cover until it drops off.
  *   - Firemaw, Ebonroc, Flamegor, Nefarian (BwlPositions.cpp): Shadow Flame is a 120-degree
@@ -90,6 +97,7 @@
 #include "Common/WayOut.h"
 
 #include "Action.h"
+#include "AttackAction.h"
 #include "MovementActions.h"
 #include "Multiplier.h"
 #include "Strategy.h"
@@ -199,6 +207,20 @@ namespace RaidClear::BlackwingLair
     // the whole camp zigzag as every bot reacts to every other bot's last move.
     constexpr float TECHNICIAN_STEP = 4.0f;
     constexpr uint32 TECHNICIAN_STEP_INTERVAL_MS = 1500;
+
+    // The technicians that run from Vaelastrasz's room. A bot hits one that is this close
+    // (edge to edge) and in sight, melee only one on their own floor, and stays on it out to
+    // RUNNER_KEEP. A damage dealer with none that close goes after the nearest
+    // within RUNNER_CHASE: melee only after one on their own floor (within RUNNER_FLOOR of
+    // their height; on foot nobody catches one up a ramp), a caster to RUNNER_STAND_OFF short
+    // of it on the ground (they run along a gallery 15 yd up, and there is no seeing one from
+    // right underneath). The walk is aimed again every RUNNER_WALK_INTERVAL_MS.
+    constexpr float RUNNER_REACH = 30.0f;
+    constexpr float RUNNER_KEEP = 36.0f;
+    constexpr float RUNNER_CHASE = 60.0f;
+    constexpr float RUNNER_FLOOR = 5.0f;
+    constexpr float RUNNER_STAND_OFF = 18.0f;
+    constexpr uint32 RUNNER_WALK_INTERVAL_MS = 500;
 
     // Firemaw: hide at 5-7 Flame Buffet stacks (each one adds fire damage taken), the exact
     // number varying per bot so the raid doesn't leave at once. At most a third of the healers
@@ -386,6 +408,51 @@ class RcBwlTechnicianSpreadAction : public MovementAction
 public:
     RcBwlTechnicianSpreadAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl technician spread") {}
     bool Execute(Event event) override;
+};
+
+// --- Vaelastrasz's room: the technicians that run (BwlRunners.cpp) --------
+
+// On both engines: nothing is fighting anyone when they set off.
+class RaidClearBwlRunnersStrategy : public Strategy
+{
+public:
+    RaidClearBwlRunnersStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    std::string const getName() override { return "rc bwl runners"; }
+    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
+    void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
+};
+
+// A technician is running and this bot isn't on one yet, or has none in reach to be on.
+class RcBwlFleeingTechnicianTrigger : public Trigger
+{
+public:
+    RcBwlFleeingTechnicianTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl fleeing technician") {}
+    bool IsActive() override;
+};
+
+// Attacks one in reach; lets go of one that has got out of it, and goes after one that isn't.
+class RcBwlCatchTechnicianAction : public AttackAction
+{
+public:
+    RcBwlCatchTechnicianAction(PlayerbotAI* botAI) : AttackAction(botAI, "rc bwl catch technician") {}
+    bool Execute(Event event) override;
+
+private:
+    bool GoAfter(Creature* runner);
+    bool OwnWalk();
+
+    uint32 _walkAtMs = 0;  // when the bot was last sent after one; 0 = not on such a walk
+    Position _walkTo;      // and where to
+};
+
+// While a bot has a runner to hit, nothing else picks its target: the first technician that
+// stops is fighting the raid, and playerbots would put every bot on that one. And a tank
+// doesn't walk after a runner.
+class RcBwlCatchTechnicianMultiplier : public Multiplier
+{
+public:
+    RcBwlCatchTechnicianMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl catch technician") {}
+    float GetValue(Action* action) override;
 };
 
 // --- Line-of-sight cover (Firemaw, Chromaggus) ----------------------------

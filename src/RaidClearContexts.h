@@ -28,6 +28,7 @@ public:
         creators["rc raid discipline"] = &RaidClearStrategyContext::raid_discipline;
         creators["rc moltencore"] = &RaidClearStrategyContext::moltencore;
         creators["rc bwl"] = &RaidClearStrategyContext::bwl;
+        creators["rc bwl runners"] = &RaidClearStrategyContext::bwl_runners;
         creators["rc zg"] = &RaidClearStrategyContext::zg;
         creators["rc ony"] = &RaidClearStrategyContext::ony;
     }
@@ -38,6 +39,7 @@ private:
     static Strategy* raid_discipline(PlayerbotAI* botAI) { return new RaidClearDisciplineStrategy(botAI); }
     static Strategy* moltencore(PlayerbotAI* botAI) { return new RaidClearMoltenCoreStrategy(botAI); }
     static Strategy* bwl(PlayerbotAI* botAI) { return new RaidClearBlackwingLairStrategy(botAI); }
+    static Strategy* bwl_runners(PlayerbotAI* botAI) { return new RaidClearBwlRunnersStrategy(botAI); }
     static Strategy* zg(PlayerbotAI* botAI) { return new RaidClearZulGurubStrategy(botAI); }
     static Strategy* ony(PlayerbotAI* botAI) { return new RaidClearOnyxiasLairStrategy(botAI); }
 };
@@ -69,6 +71,7 @@ public:
         creators["rc bwl broodlord move out"] = &RaidClearActionContext::bwl_broodlord_move_out;
         creators["rc bwl ebonroc taunt"] = &RaidClearActionContext::bwl_ebonroc_taunt;
         creators["rc bwl technician spread"] = &RaidClearActionContext::bwl_technician_spread;
+        creators["rc bwl catch technician"] = &RaidClearActionContext::bwl_catch_technician;
         creators["rc bwl firemaw hide"] = &RaidClearActionContext::bwl_firemaw_hide;
         creators["rc bwl chromaggus hide"] = &RaidClearActionContext::bwl_chromaggus_hide;
         creators["rc bwl dragon move"] = &RaidClearActionContext::bwl_dragon_move;
@@ -125,6 +128,7 @@ private:
     }
     static Action* bwl_ebonroc_taunt(PlayerbotAI* botAI) { return new RcBwlEbonrocTauntAction(botAI); }
     static Action* bwl_technician_spread(PlayerbotAI* botAI) { return new RcBwlTechnicianSpreadAction(botAI); }
+    static Action* bwl_catch_technician(PlayerbotAI* botAI) { return new RcBwlCatchTechnicianAction(botAI); }
     static Action* bwl_firemaw_hide(PlayerbotAI* botAI) { return new RcBwlFiremawHideAction(botAI); }
     static Action* bwl_chromaggus_hide(PlayerbotAI* botAI) { return new RcBwlChromaggusHideAction(botAI); }
     static Action* bwl_dragon_move(PlayerbotAI* botAI) { return new RcBwlDragonMoveAction(botAI); }
@@ -181,6 +185,7 @@ public:
         creators["rc bwl broodlord ranged"] = &RaidClearTriggerContext::bwl_broodlord_ranged;
         creators["rc bwl ebonroc taunt"] = &RaidClearTriggerContext::bwl_ebonroc_taunt;
         creators["rc bwl technician spread"] = &RaidClearTriggerContext::bwl_technician_spread;
+        creators["rc bwl fleeing technician"] = &RaidClearTriggerContext::bwl_fleeing_technician;
         creators["rc bwl firemaw hide"] = &RaidClearTriggerContext::bwl_firemaw_hide;
         creators["rc bwl chromaggus breath"] = &RaidClearTriggerContext::bwl_chromaggus_breath;
         creators["rc bwl dragon position"] = &RaidClearTriggerContext::bwl_dragon_position;
@@ -239,6 +244,7 @@ private:
     }
     static Trigger* bwl_ebonroc_taunt(PlayerbotAI* botAI) { return new RcBwlEbonrocTauntTrigger(botAI); }
     static Trigger* bwl_technician_spread(PlayerbotAI* botAI) { return new RcBwlTechnicianSpreadTrigger(botAI); }
+    static Trigger* bwl_fleeing_technician(PlayerbotAI* botAI) { return new RcBwlFleeingTechnicianTrigger(botAI); }
     static Trigger* bwl_firemaw_hide(PlayerbotAI* botAI) { return new RcBwlFiremawHideTrigger(botAI); }
     static Trigger* bwl_chromaggus_breath(PlayerbotAI* botAI) { return new RcBwlChromaggusBreathTrigger(botAI); }
     static Trigger* bwl_dragon_position(PlayerbotAI* botAI) { return new RcBwlDragonPositionTrigger(botAI); }
