@@ -27,13 +27,34 @@
  *     mod-dungeon-clear, so the tank split stays out of that fight.
  *   - Firemaw: Flame Buffet (23341) stacks on everyone in his line of sight every 5s. A non-tank
  *     at 5 stacks hides behind cover until it drops off.
- *   - Chromaggus: non-tanks duck behind cover while he casts a breath, except Time Lapse, which
+ *   - Firemaw, Ebonroc, Flamegor, Nefarian (BwlPositions.cpp): Shadow Flame is a 120-degree
+ *     cone 45 yd long that kills a non-tank outright; Wing Buffet and Cleave go the same way.
+ *     Everyone but the dragon's victim and the tank that takes it next stays out of the front,
+ *     and a bot standing in it when a cast starts drops everything and runs. Playerbots' own
+ *     rule takes every non-victim to the flank at melee range, casters and healers included;
+ *     for those it is switched off.
+ *   - Chromaggus: he breathes every 30s from the pull, his two breaths taking turns, and a 2s
+ *     cast is too short to reach cover in. Non-tanks go behind cover a few seconds before a
+ *     breath is due (the clock is kept from his casts), except for Time Lapse, which
  *     everyone should take because it halves the threat of everyone it hits, tank included.
  *     Brood Affliction: Black (a curse that makes its target take more fire damage, which
  *     Incinerate and Ignite Flesh deal) is removed before anything else the curse removers would
  *     do: mages, druids and Cleanse Spirit shamans split the cursed players between them, tanks
  *     first, then the lowest on health. Healers leave it while a tank is below half health.
- *   - Nefarian: ranged and healers stay out of Bellowing Roar (35 yd fear).
+ *   - Nefarian: no taunt lands on him, and the druid call (cat form) kills a bear that has
+ *     him. So a paladin tank holds him when there is one: the other tanks stay under 80% of its
+ *     threat, the damage dealers under the tanks' (the threat cap in Common/TankRoles.h).
+ *     Ranged and healers stay outside Bellowing Roar (35 yd from his middle; he is 17 yd deep,
+ *     so spells reach him from 48), healers where they still reach whoever he is on, and
+ *     nobody stands behind him (Tail Lash). Shamans keep Tremor Totem down; a priest walks over
+ *     to put Fear Ward on his tank whenever it is ready. His rogue call teleports every rogue
+ *     to 5 yd in front of his middle and stuns them there for 30s, two or three Shadow Flames:
+ *     the tank he is on walks round him so he turns his back on them. At 20% he raises the
+ *     dead drakonids as Bone Constructs: a spare tank stands still at his side, the casters
+ *     and healers stand on it, and the pile dies to everyone's area damage.
+ *   - Death Talon Wyrmguards: War Stomp hits everything within 15 yd. Non-tanks stay 17.5 yd
+ *     from every Wyrmguard they aren't in melee with.
+ *   - Hunters Tranquilizing Shot Flamegor's and Chromaggus' Frenzy, like the Seethers' Enrage.
  *     Class calls: priests stop healing while Corrupted Healing is on them (every heal would put
  *     a shadow DoT on its target; shields still go out, and a tank below 35% still gets healed);
  *     the shaman call's corrupted Healing Stream totem dies first, then Stoneskin and Windfury,
@@ -66,6 +87,7 @@
 
 #include "Common/KillOrder.h"
 #include "Common/TankRoles.h"
+#include "Common/WayOut.h"
 
 #include "Action.h"
 #include "MovementActions.h"
@@ -101,6 +123,7 @@ namespace RaidClear::BlackwingLair
         NPC_VAELASTRASZ           = 13020,
         NPC_CHROMAGGUS            = 14020,
         NPC_NEFARIAN              = 11583,
+        NPC_VICTOR_NEFARIUS       = 10162,  // phase one
 
         NPC_BLACKWING_LEGIONNAIRE = 12416,  // Razorgore adds
         NPC_BLACKWING_MAGE        = 12420,
@@ -134,6 +157,12 @@ namespace RaidClear::BlackwingLair
         SPELL_FLAME_BUFFET      = 23341,
         SPELL_MARK_OF_DETONATION = 22438,  // Death Talon Captain
         SPELL_SEETHER_ENRAGE    = 22428,
+        SPELL_FLAMEGOR_FRENZY   = 23342,   // "Enrage" in the client: Fire Nova on the whole raid while it lasts
+        SPELL_CHROMAGGUS_FRENZY = 23128,   // "Enrage" in the client; the one below 20% can't be removed
+        SPELL_SHADOW_FLAME      = 22539,   // Firemaw, Ebonroc, Flamegor, Nefarian: 120 degrees, 45 yd
+        SPELL_WING_BUFFET       = 23339,   // the three drakes: 120 degrees, 20 yd
+        SPELL_FEAR_WARD         = 6346,
+        SPELL_ROGUE_PARALYZE    = 23414,   // Nefarian's rogue call
         SPELL_BROOD_AFFLICTION_BLACK = 23154,  // Chromaggus: curse, more fire damage taken
         SPELL_CORRUPTED_HEALING = 23401,       // Nefarian's priest call
         SPELL_ONYXIA_SCALE_CLOAK = 22683,      // the cloak's aura; Shadow Flame checks for it
@@ -181,11 +210,88 @@ namespace RaidClear::BlackwingLair
     // room; Chromaggus' breath gives 2s, about 14 yd of running.
     constexpr float FIREMAW_COVER_RANGE = 30.0f;
     constexpr float FIREMAW_COVER_PATH = 45.0f;
-    constexpr float CHROMAGGUS_COVER_RANGE = 12.0f;
-    constexpr float CHROMAGGUS_COVER_PATH = 14.0f;
-    // Bellowing Roar (22686) fears everyone within 35 yd. Healers still reach a tank at his feet.
-    constexpr float NEFARIAN_RANGED_MIN = 36.0f;
-    constexpr float NEFARIAN_RANGED_TARGET = 37.5f;
+    constexpr float CHROMAGGUS_COVER_RANGE = 25.0f;
+    constexpr float CHROMAGGUS_COVER_PATH = 40.0f;
+    // Chromaggus breathes every 30s from the pull, his two breaths taking turns. Non-tanks go
+    // for cover this long before one is due (healers much later, so the tank isn't left without
+    // heals for the whole walk: a healer whose cover is further than a 3s run takes the breath),
+    // and give up on a breath that is this late.
+    constexpr uint32 CHROMAGGUS_BREATH_INTERVAL_MS = 30000;
+    constexpr uint32 CHROMAGGUS_HIDE_LEAD_MS = 7000;
+    constexpr uint32 CHROMAGGUS_HEALER_HIDE_LEAD_MS = 3000;
+    constexpr uint32 CHROMAGGUS_BREATH_LATE_MS = 4000;
+
+    // Shadow Flame and Wing Buffet are 120-degree cones (spell_cone) from the middle of the
+    // dragon, Shadow Flame 45 yd long plus the size of whoever it hits. Bots keep a wider angle
+    // than the cone itself, so a small turn of the dragon doesn't put them in it.
+    constexpr float BREATH_HALF_ANGLE = 1.0472f;       // 60 degrees
+    constexpr float BREATH_KEEP_HALF_ANGLE = 1.2566f;  // 72 degrees
+    constexpr float BREATH_RANGE = 48.0f;
+    // Nefarian's Tail Lash: 120 degrees behind him, 30 yd.
+    constexpr float TAIL_HALF_ANGLE = 1.0472f;
+    constexpr float TAIL_RANGE = 32.0f;
+    // A spot counts as out with this much room to spare; a spot that isn't out is still worth
+    // the walk when it is this much better; how far round the bot spots are looked for (a bot
+    // dead ahead of him at 30 yd has 26 yd to the side of the cone).
+    constexpr float DRAGON_SPOT_MIN = 0.5f;
+    constexpr float DRAGON_SPOT = 3.0f;
+    constexpr float DRAGON_WORTH_IT = 2.0f;
+    constexpr float DRAGON_SEARCH = 39.0f;
+    // Bellowing Roar (22686) fears everyone within 35 yd of Nefarian's middle (plus their own
+    // size). He is 17 yd deep, so spells reach him from 48: ranged and healers stay outside the
+    // roar, healers where whoever he is on is still within this of them. Closer than ROAR_HOLD
+    // nothing walks them toward a target that is under the roar.
+    // (A heal reaches 40 yd edge to edge, 43 between two players' middles. With the tank 18 yd
+    // in front of him that leaves a healer an arc of about 12 by 5 yd on either side.)
+    constexpr float ROAR_KEEP_AWAY = 37.5f;
+    constexpr float ROAR_HEALER_REACH = 41.5f;
+    constexpr float ROAR_HOLD = 46.0f;
+    // No taunt lands on Nefarian. The other tanks stay under this share of the threat of the tank
+    // that should have him (he changes target at 110% in melee).
+    constexpr float NEFARIAN_OFFTANK_SHARE = 0.8f;
+    // ...as long as that tank is in melee with him, and until they have NEFARIAN_HANDOVER_THREAT
+    // themselves: past that the tank he is on is never held back, and another only while the
+    // tank that should have him has at least this share of its threat. A tank that was just
+    // revived can't catch up with minutes of threat, and nobody waits for it.
+    constexpr float NEFARIAN_HANDOVER_THREAT = 30000.0f;
+    constexpr float NEFARIAN_CATCH_UP_SHARE = 0.5f;
+    // His rogue call puts every rogue 5 yd in front of his middle and stuns them there for 30s.
+    // The tank he is on walks round to where they are this many radians clear of the breath.
+    constexpr float NEFARIAN_TURN_CLEAR = 0.15f;
+    // At 20% he raises every drakonid that died in phase one as a Bone Construct: some 45 of
+    // them, about 6,000 health each, and every heal puts all of them on the healers. They only
+    // die to area damage, and that only works on a pile. So while this many are up (he is under
+    // CONSTRUCT_PHASE_PCT), one spare tank stands still at his side and the casters and healers
+    // stand on it: further than GATHER_FAR they walk to within GATHER_SPOT. That is inside the
+    // roar; a fear every half minute is the price. The tank the pile is made on stands in the
+    // middle of his flank (85 to 105 degrees off his facing, so the pile round it is clear of
+    // his front and tail), within ANCHOR_REACH of whoever he is on, and only steps toward
+    // something within GATHER_NEAR. A bot on his other side walks round behind him in steps
+    // of RING_STEP radians.
+    constexpr float CONSTRUCT_PHASE_PCT = 21.0f;
+    constexpr uint32 CONSTRUCTS_TO_GATHER = 4;
+    constexpr float CONSTRUCT_GATHER_SPOT = 3.0f;
+    constexpr float CONSTRUCT_GATHER_FAR = 7.0f;
+    constexpr float CONSTRUCT_GATHER_NEAR = 9.0f;
+    constexpr float CONSTRUCT_ANCHOR_FRONT = 1.4835f;  // 85 degrees
+    constexpr float CONSTRUCT_ANCHOR_TAIL = 1.3090f;   // 75 degrees
+    constexpr float CONSTRUCT_ANCHOR_REACH = 30.0f;
+    constexpr float CONSTRUCT_RING_STEP = 0.35f;
+    // Fear Ward reaches 30 yd; a priest this far from the tank or nearer walks over to cast it.
+    constexpr float FEAR_WARD_RANGE = 30.0f;
+    constexpr float FEAR_WARD_WALK = 70.0f;
+    constexpr uint32 FEAR_WARD_RETRY_MS = 3000;
+
+    // War Stomp (24375) hits everyone within 15 yd of the Wyrmguard's middle, plus their own
+    // size. Non-tanks stay this far from every Wyrmguard they aren't in melee with, and go to a
+    // spot a little further. Two Wyrmguards closer together than WYRMGUARD_APART can't be told
+    // apart by a melee bot: it stays on its own. Within WYRMGUARD_HOLD of one, casters and
+    // healers don't walk toward anything in its stomp.
+    constexpr float WYRMGUARD_KEEP_AWAY = 17.5f;
+    constexpr float WYRMGUARD_SPOT = 20.0f;
+    constexpr float WYRMGUARD_WORTH_IT = 2.0f;
+    constexpr float WYRMGUARD_APART = 20.0f;
+    constexpr float WYRMGUARD_HOLD = 24.0f;
 
     // Mark of Detonation's explosion (22439) hits the marked player's allies within 30 yd.
     // Non-tanks keep a margin beyond it. Within DETONATION_HOLD (+4) of the marked player they
@@ -223,8 +329,17 @@ namespace RaidClear::BlackwingLair
     // Packs where every tank takes one (the Death Talon Wyrmguards).
     std::vector<uint32> const& TankSplitSpreadAdds();
 
+    // Nefarian: no taunt lands on him, so the tanks share threat and the damage dealers stay
+    // under them (see Common/TankRoles.h).
+    std::vector<uint32> const& TankSplitThreatShareBosses();
+
+    // Chromaggus has started casting something: kept for the breath clock.
+    void NoteChromaggusBreath(Creature* boss, uint32 spellId);
+
     // Player hooks for Blackwing Lair (the Onyxia Scale Cloak aura on revived bots).
     void AddScripts();
+    // Spell hooks: bots woken out of a cast when a dragon starts its breath, the breath clock.
+    void AddPositionScripts();
 }
 
 class RaidClearBlackwingLairStrategy : public Strategy
@@ -346,13 +461,13 @@ protected:
 class RcBwlKeepOutTrigger : public Trigger
 {
 public:
-    RcBwlKeepOutTrigger(PlayerbotAI* botAI, std::string const& name, char const* bossName, float minDistance,
+    RcBwlKeepOutTrigger(PlayerbotAI* botAI, std::string const& name, uint32 bossEntry, float minDistance,
                         float targetDistance)
-        : Trigger(botAI, name), _bossName(bossName), _minDistance(minDistance), _targetDistance(targetDistance) {}
+        : Trigger(botAI, name), _bossEntry(bossEntry), _minDistance(minDistance), _targetDistance(targetDistance) {}
     bool IsActive() override;
 
 private:
-    char const* _bossName;
+    uint32 _bossEntry;
     float _minDistance;
     float _targetDistance;
 };
@@ -360,12 +475,12 @@ private:
 class RcBwlKeepOutAction : public MovementAction
 {
 public:
-    RcBwlKeepOutAction(PlayerbotAI* botAI, std::string const& name, char const* bossName, float targetDistance)
-        : MovementAction(botAI, name), _bossName(bossName), _targetDistance(targetDistance) {}
+    RcBwlKeepOutAction(PlayerbotAI* botAI, std::string const& name, uint32 bossEntry, float targetDistance)
+        : MovementAction(botAI, name), _bossEntry(bossEntry), _targetDistance(targetDistance) {}
     bool Execute(Event event) override;
 
 private:
-    char const* _bossName;
+    uint32 _bossEntry;
     float _targetDistance;
 };
 
@@ -479,18 +594,174 @@ public:
     bool Execute(Event event) override;
 };
 
-class RcBwlSeetherTranqTrigger : public Trigger
+// --- Tranquilizing Shot: Seethers, Flamegor, Chromaggus -------------------
+
+class RcBwlTranqTrigger : public Trigger
 {
 public:
-    RcBwlSeetherTranqTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl seether tranq") {}
+    RcBwlTranqTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl tranq") {}
     bool IsActive() override;
 };
 
-class RcBwlSeetherTranqAction : public Action
+class RcBwlTranqAction : public Action
 {
 public:
-    RcBwlSeetherTranqAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl seether tranq") {}
+    RcBwlTranqAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl tranq") {}
     bool Execute(Event event) override;
+};
+
+// --- The dragons: breath, tail, roar (BwlPositions.cpp) -------------------
+
+// The bot stands somewhere it shouldn't around Firemaw, Ebonroc, Flamegor or Nefarian: in front
+// (Shadow Flame, Wing Buffet, Cleave), behind Nefarian (Tail Lash), or, for a caster or healer,
+// under his Bellowing Roar or (a healer) out of reach of whoever he is on. Not the bot the
+// dragon is on, nor the tank that takes it next.
+class RcBwlDragonPositionTrigger : public Trigger
+{
+public:
+    RcBwlDragonPositionTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl dragon position") {}
+    bool IsActive() override;
+};
+
+// The dragon is casting Shadow Flame or Wing Buffet and the bot is in it.
+class RcBwlDragonBreathTrigger : public Trigger
+{
+public:
+    RcBwlDragonBreathTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl dragon breath") {}
+    bool IsActive() override;
+};
+
+// Not a MovementAction: see RaidClear::WayOutWalk.
+class RcBwlDragonMoveAction : public Action
+{
+public:
+    RcBwlDragonMoveAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl dragon move"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
+// Casters and healers aren't taken to the dragon's flank at melee range by playerbots' own
+// positioning, and nothing walks them in under Nefarian's roar.
+class RcBwlDragonHoldMultiplier : public Multiplier
+{
+public:
+    RcBwlDragonHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl dragon hold") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Nefarian: who holds him, fear -----------------------------------------
+
+// The tanks that shouldn't have Nefarian stay under the threat of the one that should.
+class RcBwlNefarianTankMultiplier : public Multiplier
+{
+public:
+    RcBwlNefarianTankMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl nefarian tank") {}
+    float GetValue(Action* action) override;
+};
+
+// A shaman in the Nefarian fight without a Tremor Totem down ("rc mc tremor totem" drops it).
+class RcBwlNefarianTremorTrigger : public Trigger
+{
+public:
+    RcBwlNefarianTremorTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl nefarian tremor") {}
+    bool IsActive() override;
+};
+
+// ...and nothing else goes in the earth slot meanwhile.
+class RcBwlNefarianTremorMultiplier : public Multiplier
+{
+public:
+    RcBwlNefarianTremorMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl nefarian tremor") {}
+    float GetValue(Action* action) override;
+};
+
+// A priest's Fear Ward is ready and Nefarian's tank doesn't have one.
+class RcBwlFearWardTrigger : public Trigger
+{
+public:
+    RcBwlFearWardTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl nefarian fear ward") {}
+    bool IsActive() override;
+};
+
+// Walks into range if it has to, and casts it.
+class RcBwlFearWardAction : public MovementAction
+{
+public:
+    RcBwlFearWardAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl nefarian fear ward") {}
+    bool Execute(Event event) override;
+    Unit* GetTarget() override;
+
+private:
+    uint32 _failedAtMs = 0;
+};
+
+// Nefarian's rogue call: the bot he is on has stunned raid members in front of him.
+class RcBwlNefarianRogueCallTrigger : public Trigger
+{
+public:
+    RcBwlNefarianRogueCallTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl nefarian rogue call") {}
+    bool IsActive() override;
+};
+
+// Walks to the other side of him, so he turns his back on them.
+class RcBwlNefarianTurnAction : public MovementAction
+{
+public:
+    RcBwlNefarianTurnAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl nefarian turn") {}
+    bool Execute(Event event) override;
+};
+
+// Nefarian's Bone Constructs are up, the tank that collects them is in place, and this caster
+// or healer isn't with it.
+class RcBwlConstructGatherTrigger : public Trigger
+{
+public:
+    RcBwlConstructGatherTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl construct gather") {}
+    bool IsActive() override;
+};
+
+class RcBwlConstructGatherAction : public MovementAction
+{
+public:
+    RcBwlConstructGatherAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl construct gather") {}
+    bool Execute(Event event) override;
+};
+
+// That tank stays where it is: it takes what comes to it and doesn't chase the rest.
+class RcBwlConstructAnchorMultiplier : public Multiplier
+{
+public:
+    RcBwlConstructAnchorMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl construct anchor") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Death Talon Wyrmguards: War Stomp -------------------------------------
+
+// A bot that isn't a tank stands in the War Stomp of a Wyrmguard it isn't in melee with.
+class RcBwlWyrmguardKeepAwayTrigger : public Trigger
+{
+public:
+    RcBwlWyrmguardKeepAwayTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl wyrmguard keep away") {}
+    bool IsActive() override;
+};
+
+class RcBwlWyrmguardKeepAwayAction : public Action
+{
+public:
+    RcBwlWyrmguardKeepAwayAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl wyrmguard keep away"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
+class RcBwlWyrmguardHoldMultiplier : public Multiplier
+{
+public:
+    RcBwlWyrmguardHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl wyrmguard hold") {}
+    float GetValue(Action* action) override;
 };
 
 #endif

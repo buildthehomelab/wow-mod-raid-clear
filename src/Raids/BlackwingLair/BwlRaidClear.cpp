@@ -7,6 +7,7 @@
 #include "BwlRaidClear.h"
 
 #include "RaidClearConfig.h"
+#include "Common/BossLookup.h"
 
 #include "GameObject.h"
 #include "GameTime.h"
@@ -18,6 +19,10 @@
 #include "PlayerScript.h"
 #include "Playerbots.h"
 #include "Spell.h"
+#include "Timer.h"
+
+#include <mutex>
+#include <unordered_map>
 #include "PlayerbotAI.h"
 
 #include <algorithm>
@@ -85,8 +90,16 @@ std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitCoTankBosses()
     // Ebonroc also needs a second tank for Shadow of Ebonroc. Vaelastrasz can't be taunted, so
     // whoever is next on threat when Burning Adrenaline kills his tank gets him.
     static std::vector<uint32> const bosses = {
-        NPC_BROODLORD, NPC_FIREMAW, NPC_EBONROC, NPC_FLAMEGOR, NPC_VAELASTRASZ,
+        NPC_BROODLORD, NPC_FIREMAW, NPC_EBONROC, NPC_FLAMEGOR, NPC_VAELASTRASZ, NPC_NEFARIAN,
     };
+    return bosses;
+}
+
+std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitThreatShareBosses()
+{
+    // No taunt lands on Nefarian (417 Growls in one evening's log, none took), so the tanks'
+    // threat order is all that puts him back on a tank, and the damage dealers stay under it.
+    static std::vector<uint32> const bosses = { NPC_NEFARIAN };
     return bosses;
 }
 
@@ -133,10 +146,12 @@ std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitIgnore()
 
 namespace
 {
-    Unit* LivingBossInCombat(PlayerbotAI* botAI, char const* name)
+    // The boss, alive and fighting. Looked up on the map, not through playerbots' "find target":
+    // that only knows what the bot itself has threat on, so a bot that was just revived, or has
+    // only healed or hit the adds, would not find it.
+    Creature* FightingBoss(Player* bot, uint32 entry)
     {
-        Unit* boss = botAI->GetAiObjectContext()->GetValue<Unit*>("find target", name)->Get();
-        return boss && boss->IsAlive() && boss->IsInCombat() ? boss : nullptr;
+        return bot->GetMapId() == MAP_ID ? RaidClear::FightingCreature(bot, { entry }) : nullptr;
     }
 }
 
@@ -162,13 +177,31 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
     triggers.push_back(
         new TriggerNode("rc bwl chromaggus breath", { NextAction("rc bwl chromaggus hide", ACTION_RAID + 4) }));
 
+    // The dragons. Out of the front (and Nefarian's tail and roar) as a standing rule; out of a
+    // breath that is being cast before anything else, heals included: it one-shots a non-tank.
     triggers.push_back(
-        new TriggerNode("rc bwl nefarian ranged", { NextAction("rc bwl nefarian move out", ACTION_RAID + 1) }));
+        new TriggerNode("rc bwl dragon position", { NextAction("rc bwl dragon move", ACTION_RAID + 2) }));
+    triggers.push_back(
+        new TriggerNode("rc bwl dragon breath", { NextAction("rc bwl dragon move", ACTION_EMERGENCY + 6) }));
+    triggers.push_back(
+        new TriggerNode("rc bwl nefarian tremor", { NextAction("rc mc tremor totem", ACTION_RAID + 1) }));
+    triggers.push_back(
+        new TriggerNode("rc bwl nefarian fear ward", { NextAction("rc bwl nefarian fear ward", ACTION_RAID + 4) }));
+    triggers.push_back(
+        new TriggerNode("rc bwl nefarian rogue call", { NextAction("rc bwl nefarian turn", ACTION_RAID + 5) }));
+    // Under the standing rule (out of his front and tail first) and under the heals that can't
+    // wait: the walk to the pile can take a while.
+    triggers.push_back(
+        new TriggerNode("rc bwl construct gather", { NextAction("rc bwl construct gather", ACTION_MOVE + 5) }));
+
+    // Above the heals, like the other blasts a bot can simply walk out of.
+    triggers.push_back(new TriggerNode("rc bwl wyrmguard keep away",
+                                       { NextAction("rc bwl wyrmguard keep away", ACTION_EMERGENCY + 4) }));
 
     triggers.push_back(
         new TriggerNode("rc bwl detonation keep away", { NextAction("rc bwl detonation keep away", ACTION_RAID + 1) }));
 
-    triggers.push_back(new TriggerNode("rc bwl seether tranq", { NextAction("rc bwl seether tranq", ACTION_RAID) }));
+    triggers.push_back(new TriggerNode("rc bwl tranq", { NextAction("rc bwl tranq", ACTION_RAID + 1) }));
     triggers.push_back(new TriggerNode("rc bwl fire nova totem",
                                        { NextAction("rc bwl fire nova totem move away", ACTION_RAID + 3) }));
     triggers.push_back(new TriggerNode("rc bwl black affliction",
@@ -186,6 +219,11 @@ void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& m
     multipliers.push_back(new RcBwlDetonationHoldMultiplier(botAI));
     multipliers.push_back(new RcBwlCaptainMainTankMultiplier(botAI));
     multipliers.push_back(new RcBwlCorruptedHealingMultiplier(botAI));
+    multipliers.push_back(new RcBwlDragonHoldMultiplier(botAI));
+    multipliers.push_back(new RcBwlNefarianTankMultiplier(botAI));
+    multipliers.push_back(new RcBwlNefarianTremorMultiplier(botAI));
+    multipliers.push_back(new RcBwlConstructAnchorMultiplier(botAI));
+    multipliers.push_back(new RcBwlWyrmguardHoldMultiplier(botAI));
 }
 
 // --- Suppression Room -----------------------------------------------------
@@ -432,6 +470,11 @@ namespace
         }
     }
 
+    bool IsBreath(uint32 spellId)
+    {
+        return spellId == SPELL_TIME_LAPSE || IsAvoidableBreath(spellId);
+    }
+
     // The breath Chromaggus is casting right now, or 0.
     uint32 ChromaggusBreath(Unit* boss)
     {
@@ -441,6 +484,74 @@ namespace
         uint32 const id = spell->GetSpellInfo()->Id;
         return IsAvoidableBreath(id) ? id : 0;
     }
+
+    // His breath clock. The core schedules one breath 30s into the fight and the other at 60s,
+    // each then every 60s: one every 30s, taking turns. Two seconds of cast are not enough to
+    // reach cover in, so the bots go by the clock: when the fight was first seen, and what he
+    // breathed last and before that (which is what comes next).
+    struct BreathClock
+    {
+        ObjectGuid boss;
+        uint32 engagedMs = 0;     // when a bot first saw him in this fight
+        uint32 seenMs = 0;        // when a bot last saw him fighting
+        uint32 lastBreathMs = 0;  // 0: none yet in this fight
+        uint32 lastBreath = 0;
+        uint32 breathBefore = 0;
+    };
+    // A fight nobody has looked at for this long is over: the next look starts a new one.
+    constexpr uint32 BREATH_CLOCK_STALE_MS = 10000;
+
+    std::mutex sBreathLock;
+    std::unordered_map<uint32, BreathClock> sBreathClocks;  // by instance id
+
+    // The clock for this boss in this fight. Call with the lock held.
+    BreathClock& ClockOf(Creature* boss, uint32 now)
+    {
+        BreathClock& clock = sBreathClocks[boss->GetInstanceId()];
+        if (clock.boss != boss->GetGUID() || getMSTimeDiff(clock.seenMs, now) > BREATH_CLOCK_STALE_MS)
+        {
+            clock = BreathClock();
+            clock.boss = boss->GetGUID();
+            clock.engagedMs = now;
+        }
+        clock.seenMs = now;
+        return clock;
+    }
+
+    // A breath worth hiding from is due within `leadMs`, or overdue by less than a few seconds.
+    bool BreathDue(Creature* boss, uint32 leadMs)
+    {
+        uint32 const now = getMSTime();
+        std::lock_guard<std::mutex> guard(sBreathLock);
+        BreathClock const& clock = ClockOf(boss, now);
+
+        // The one that comes next is the one before the last. Unknown for his first two.
+        if (clock.lastBreathMs && clock.breathBefore && !IsAvoidableBreath(clock.breathBefore))
+            return false;
+        uint32 const since = getMSTimeDiff(clock.lastBreathMs ? clock.lastBreathMs : clock.engagedMs, now);
+        return since + leadMs >= CHROMAGGUS_BREATH_INTERVAL_MS &&
+               since <= CHROMAGGUS_BREATH_INTERVAL_MS + CHROMAGGUS_BREATH_LATE_MS;
+    }
+
+    // Time for this bot to be behind something: he is breathing, or about to.
+    bool HideFromChromaggus(Player* bot, Creature* boss)
+    {
+        if (ChromaggusBreath(boss))
+            return true;
+        return BreathDue(boss, PlayerbotAI::IsHeal(bot) ? CHROMAGGUS_HEALER_HIDE_LEAD_MS : CHROMAGGUS_HIDE_LEAD_MS);
+    }
+}
+
+void RaidClear::BlackwingLair::NoteChromaggusBreath(Creature* boss, uint32 spellId)
+{
+    if (!boss || !IsBreath(spellId))
+        return;
+    uint32 const now = getMSTime();
+    std::lock_guard<std::mutex> guard(sBreathLock);
+    BreathClock& clock = ClockOf(boss, now);
+    clock.breathBefore = clock.lastBreath;
+    clock.lastBreath = spellId;
+    clock.lastBreathMs = now ? now : 1;
 }
 
 bool RcBwlHideAction::Execute(Event /*event*/)
@@ -480,12 +591,12 @@ namespace
     bool HoldingCover(PlayerbotAI* botAI, Player* bot)
     {
         if (bot->HasAura(SPELL_FLAME_BUFFET))
-            if (Unit* boss = LivingBossInCombat(botAI, "firemaw"))
+            if (Creature* boss = FightingBoss(bot, NPC_FIREMAW))
                 if (!boss->IsWithinLOSInMap(bot))
                     return true;
 
-        if (Unit* boss = LivingBossInCombat(botAI, "chromaggus"))
-            if (ChromaggusBreath(boss) && !boss->IsWithinLOSInMap(bot))
+        if (Creature* boss = FightingBoss(bot, NPC_CHROMAGGUS))
+            if (HideFromChromaggus(bot, boss) && !boss->IsWithinLOSInMap(bot))
                 return true;
         return false;
     }
@@ -535,7 +646,7 @@ bool RcBwlFiremawHideTrigger::IsActive()
     if (!buffet)
         return false;
 
-    Unit* boss = LivingBossInCombat(botAI, "firemaw");
+    Creature* boss = FightingBoss(bot, NPC_FIREMAW);
     if (!boss)
         return false;
 
@@ -551,7 +662,7 @@ bool RcBwlFiremawHideTrigger::IsActive()
 
 Unit* RcBwlFiremawHideAction::HideFrom()
 {
-    return LivingBossInCombat(botAI, "firemaw");
+    return FightingBoss(bot, NPC_FIREMAW);
 }
 
 bool RcBwlChromaggusBreathTrigger::IsActive()
@@ -559,14 +670,14 @@ bool RcBwlChromaggusBreathTrigger::IsActive()
     if (PlayerbotAI::IsTank(bot))
         return false;
 
-    Unit* boss = LivingBossInCombat(botAI, "chromaggus");
-    return boss && ChromaggusBreath(boss) != 0;
+    Creature* boss = FightingBoss(bot, NPC_CHROMAGGUS);
+    return boss && HideFromChromaggus(bot, boss);
 }
 
 Unit* RcBwlChromaggusHideAction::HideFrom()
 {
-    Unit* boss = LivingBossInCombat(botAI, "chromaggus");
-    return boss && ChromaggusBreath(boss) ? boss : nullptr;
+    Creature* boss = FightingBoss(bot, NPC_CHROMAGGUS);
+    return boss && HideFromChromaggus(bot, boss) ? boss : nullptr;
 }
 
 // --- Keep out of a boss's AoE (Broodlord, Nefarian) -----------------------
@@ -611,7 +722,7 @@ bool RcBwlKeepOutTrigger::IsActive()
     if (!KeepsOut(bot))
         return false;
 
-    Unit* boss = LivingBossInCombat(botAI, _bossName);
+    Creature* boss = FightingBoss(bot, _bossEntry);
     if (!boss || bot->GetDistance2d(boss) >= _minDistance)
         return false;
 
@@ -620,7 +731,7 @@ bool RcBwlKeepOutTrigger::IsActive()
 
 bool RcBwlKeepOutAction::Execute(Event /*event*/)
 {
-    Unit* boss = LivingBossInCombat(botAI, _bossName);
+    Creature* boss = FightingBoss(bot, _bossEntry);
     if (!boss || bot->GetDistance2d(boss) >= _targetDistance)
         return false;
 
@@ -651,7 +762,7 @@ bool RcBwlEbonrocTauntTrigger::IsActive()
     if (!PlayerbotAI::IsTank(bot) || bot->HasAura(SPELL_SHADOW_OF_EBONROC))
         return false;
 
-    Unit* boss = LivingBossInCombat(botAI, "ebonroc");
+    Creature* boss = FightingBoss(bot, NPC_EBONROC);
     if (!boss)
         return false;
 
@@ -661,7 +772,7 @@ bool RcBwlEbonrocTauntTrigger::IsActive()
 
 bool RcBwlEbonrocTauntAction::Execute(Event /*event*/)
 {
-    Unit* boss = LivingBossInCombat(botAI, "ebonroc");
+    Creature* boss = FightingBoss(bot, NPC_EBONROC);
     if (!boss)
         return false;
 
@@ -673,7 +784,7 @@ bool RcBwlEbonrocTauntAction::Execute(Event /*event*/)
 
 float RcBwlShadowOfEbonrocMultiplier::GetValue(Action* action)
 {
-    if (!action || !bot->HasAura(SPELL_SHADOW_OF_EBONROC) || !LivingBossInCombat(botAI, "ebonroc"))
+    if (!action || !bot->HasAura(SPELL_SHADOW_OF_EBONROC) || !FightingBoss(bot, NPC_EBONROC))
         return 1.0f;
 
     std::string const name = action->getName();
@@ -867,46 +978,67 @@ float RcBwlCaptainMainTankMultiplier::GetValue(Action* action)
 
 namespace
 {
-    // An enraged Seether within Tranquilizing Shot range that this hunter should take: the nearest
-    // of the group's hunter bots that can shoot it now, so they don't all fire at the same one.
-    Creature* SeetherToTranq(PlayerbotAI* botAI, Player* bot)
+    // The bosses whose Frenzy a Tranquilizing Shot takes off (both auras are called "Enrage").
+    // Flamegor's fires a Fire Nova at the whole raid every two seconds while it is up.
+    struct BossEnrage
     {
-        std::list<Creature*> seethers;
-        bot->GetCreatureListWithEntryInGrid(seethers, NPC_DEATH_TALON_SEETHER, TRANQUILIZING_SHOT_RANGE);
-        for (Creature* seether : seethers)
+        uint32 entry;
+        uint32 aura;
+    };
+    constexpr std::array<BossEnrage, 2> BOSS_ENRAGES = {{
+        { NPC_FLAMEGOR, SPELL_FLAMEGOR_FRENZY },
+        { NPC_CHROMAGGUS, SPELL_CHROMAGGUS_FRENZY },
+    }};
+
+    // An enraged Seether or boss in Tranquilizing Shot range that this hunter should take: the
+    // nearest of the group's hunter bots that can shoot it now, so they don't all fire at the
+    // same one.
+    Creature* EnragedToTranq(PlayerbotAI* botAI, Player* bot)
+    {
+        std::list<Creature*> enraged;
+        bot->GetCreatureListWithEntryInGrid(enraged, NPC_DEATH_TALON_SEETHER, TRANQUILIZING_SHOT_RANGE);
+        enraged.remove_if([](Creature* seether) { return !seether->IsAlive() || !seether->HasAura(SPELL_SEETHER_ENRAGE); });
+        for (BossEnrage const& enrage : BOSS_ENRAGES)
+            if (Creature* boss = FightingBoss(bot, enrage.entry))
+                if (boss->HasAura(enrage.aura))
+                    enraged.push_back(boss);
+
+        for (Creature* mob : enraged)
         {
-            if (!seether->IsAlive() || !seether->HasAura(SPELL_SEETHER_ENRAGE) ||
-                !botAI->CanCastSpell("tranquilizing shot", seether))
+            // CanCastSpell lets an out-of-range target through.
+            if (!bot->IsWithinCombatRange(mob, TRANQUILIZING_SHOT_RANGE) ||
+                !botAI->CanCastSpell("tranquilizing shot", mob))
                 continue;
 
-            float const mine = bot->GetExactDist(seether);
+            float const mine = bot->GetExactDist(mob);
             bool closer = false;
             if (Group* group = bot->GetGroup())
                 for (GroupReference* ref = group->GetFirstMember(); ref && !closer; ref = ref->next())
                     if (Player* member = ref->GetSource())
                     {
                         if (member == bot || !member->IsAlive() || !member->IsClass(CLASS_HUNTER) ||
-                            !member->IsInMap(bot) || member->GetExactDist(seether) >= mine)
+                            !member->IsInMap(bot) || member->GetExactDist(mob) >= mine ||
+                            !member->IsWithinCombatRange(mob, TRANQUILIZING_SHOT_RANGE))
                             continue;
                         PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member);
-                        closer = memberAI && memberAI->CanCastSpell("tranquilizing shot", seether);
+                        closer = memberAI && memberAI->CanCastSpell("tranquilizing shot", mob);
                     }
             if (!closer)
-                return seether;
+                return mob;
         }
         return nullptr;
     }
 }
 
-bool RcBwlSeetherTranqTrigger::IsActive()
+bool RcBwlTranqTrigger::IsActive()
 {
-    return bot->IsClass(CLASS_HUNTER) && bot->IsInCombat() && SeetherToTranq(botAI, bot);
+    return bot->IsClass(CLASS_HUNTER) && bot->IsInCombat() && EnragedToTranq(botAI, bot);
 }
 
-bool RcBwlSeetherTranqAction::Execute(Event /*event*/)
+bool RcBwlTranqAction::Execute(Event /*event*/)
 {
-    Creature* seether = SeetherToTranq(botAI, bot);
-    return seether && botAI->CastSpell("tranquilizing shot", seether);
+    Creature* mob = EnragedToTranq(botAI, bot);
+    return mob && botAI->CastSpell("tranquilizing shot", mob);
 }
 
 // --- Chromaggus: Brood Affliction: Black ----------------------------------
@@ -939,7 +1071,7 @@ namespace
     Player* FindBlackToRemove(PlayerbotAI* botAI, Player* bot)
     {
         Group* group = bot->GetGroup();
-        if (!group || !CanRemoveCurses(bot) || !LivingBossInCombat(botAI, "chromaggus"))
+        if (!group || !CanRemoveCurses(bot) || !FightingBoss(bot, NPC_CHROMAGGUS))
             return nullptr;
 
         std::vector<Player*> cursed;
@@ -1080,7 +1212,7 @@ float RcBwlCorruptedHealingMultiplier::GetValue(Action* action)
     if (!action || !bot->IsClass(CLASS_PRIEST))
         return 1.0f;
     auto* heal = dynamic_cast<CastHealingSpellAction*>(action);
-    if (!heal || heal->getSpell() == "power word: shield" || !LivingBossInCombat(botAI, "nefarian") ||
+    if (!heal || heal->getSpell() == "power word: shield" || !FightingBoss(bot, NPC_NEFARIAN) ||
         !HasCorruptedHealing(bot))
         return 1.0f;
 
@@ -1094,7 +1226,7 @@ float RcBwlCorruptedHealingMultiplier::GetValue(Action* action)
 bool RcBwlFireNovaTotemTrigger::IsActive()
 {
     // Tanks stay with their mobs; everyone else walks out before the totem goes off.
-    return bot->IsInCombat() && !PlayerbotAI::IsTank(bot) && LivingBossInCombat(botAI, "nefarian") &&
+    return bot->IsInCombat() && !PlayerbotAI::IsTank(bot) && FightingBoss(bot, NPC_NEFARIAN) &&
            FireNovaTotemNear(bot);
 }
 
@@ -1127,4 +1259,5 @@ public:
 void RaidClear::BlackwingLair::AddScripts()
 {
     new RaidClearBwlPlayerScript();
+    RaidClear::BlackwingLair::AddPositionScripts();
 }

@@ -102,7 +102,9 @@ namespace RaidClear
         for (ObjectGuid const& guid : attackers)
         {
             Unit* unit = botAI->GetUnit(guid);
-            if (!unit || !unit->IsAlive() || !bot->IsValidAttackTarget(unit))
+            // Playerbots lists the skull among the attackers whether it is fighting or not: a
+            // mark on a pack nobody has pulled is not a reason to mark it again.
+            if (!unit || !unit->IsAlive() || !unit->IsInCombat() || !bot->IsValidAttackTarget(unit))
                 continue;
 
             uint8 const rank = RankOf(unit, table);

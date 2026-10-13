@@ -80,7 +80,8 @@ namespace RaidClear::Tanks
                 return none;
             switch (mapId)
             {
-                case ZulGurub::MAP_ID: return ZulGurub::TankSplitThreatShareBosses();
+                case ZulGurub::MAP_ID:      return ZulGurub::TankSplitThreatShareBosses();
+                case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitThreatShareBosses();
                 default:               return none;
             }
         }
@@ -301,6 +302,11 @@ namespace RaidClear::Tanks
                     bot->IsValidAttackTarget(unit) && bot->GetDistance(unit) <= PICKUP_RANGE)
                     return unit;
         return nullptr;
+    }
+
+    bool IsEndlessAdd(Unit const* unit)
+    {
+        return unit && IsIgnoredAdd(unit);
     }
 
     bool IsOwnTankAdd(Unit const* unit)
