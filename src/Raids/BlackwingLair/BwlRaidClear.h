@@ -221,6 +221,8 @@ namespace RaidClear::BlackwingLair
     constexpr float RUNNER_FLOOR = 5.0f;
     constexpr float RUNNER_STAND_OFF = 18.0f;
     constexpr uint32 RUNNER_WALK_INTERVAL_MS = 500;
+    // A bot lets go of a runner that has been out of reach or sight this long.
+    constexpr uint32 RUNNER_LET_GO_MS = 500;
 
     // Firemaw: hide at 5-7 Flame Buffet stacks (each one adds fire damage taken), the exact
     // number varying per bot so the raid doesn't leave at once. At most a third of the healers
@@ -428,6 +430,9 @@ class RcBwlFleeingTechnicianTrigger : public Trigger
 public:
     RcBwlFleeingTechnicianTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl fleeing technician") {}
     bool IsActive() override;
+
+private:
+    uint32 _lostAtMs = 0;  // since when the runner the bot is on has been out of reach; 0 = it isn't
 };
 
 // Attacks one in reach; lets go of one that has got out of it, and goes after one that isn't.
@@ -441,7 +446,7 @@ private:
     bool GoAfter(Creature* runner);
     bool OwnWalk();
 
-    uint32 _walkAtMs = 0;  // when the bot was last sent after one; 0 = not on such a walk
+    uint32 _walkAtMs = 0;  // when the bot was last sent after one; 0 = never, or that walk was called off
     Position _walkTo;      // and where to
 };
 

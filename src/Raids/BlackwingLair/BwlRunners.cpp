@@ -139,6 +139,25 @@ namespace
         return RaidClear::FightingCreature(bot, { NPC_VAELASTRASZ }) != nullptr;
     }
 
+    // Whether this bot drops `current`, a runner it can no longer hit. A tank keeps it: it
+    // doesn't walk after a runner anyway (see the multiplier), "tank assist" takes it to
+    // whatever is fighting, and if mod-dungeon-clear chose that target for its leader, dropping
+    // it every tick would only have the two take turns.
+    bool LetsGo(Player* bot, Unit const* current)
+    {
+        return IsRunner(current) && !PlayerbotAI::IsTank(bot);
+    }
+
+    // A caster as near as it gets on the ground to a runner on the gallery overhead, before the
+    // fight has started. The runner comes into view by itself, and the bot waits for it:
+    // whatever ran next would walk it back to the tank, and half a second later it would be
+    // walked here again.
+    bool WaitsUnder(Player* bot, Creature const* runner)
+    {
+        return PlayerbotAI::IsRanged(bot) && !bot->IsInCombat() && !SameFloor(bot, runner) &&
+               bot->GetExactDist2d(runner) <= RUNNER_STAND_OFF + 2.0f;
+    }
+
     // Whether this bot goes after a runner it can't hit from where it stands. The tanks don't:
     // the main tank is who mod-dungeon-clear walks the raid with.
     bool GoesAfter(Player* bot, Creature const* runner)
@@ -170,16 +189,28 @@ bool RcBwlFleeingTechnicianTrigger::IsActive()
     Unit* current = AI_VALUE(Unit*, "current target");
     bool const onRunner = IsRunner(current);
     Pick const pick = Choose(bot, current);
-    if (!pick.hit && !pick.walk && !onRunner)
+    if ((!pick.hit && !pick.walk && !onRunner) || VaelastraszFighting(bot))
+    {
+        _lostAtMs = 0;
         return false;
-    if (VaelastraszFighting(bot))
-        return false;
+    }
 
     if (pick.hit)
+    {
+        _lostAtMs = 0;
         return pick.hit != current || botAI->GetState() != BOT_STATE_COMBAT;
+    }
+    if (!LetsGo(bot, current))
+    {
+        _lostAtMs = 0;
+        return GoesAfter(bot, pick.walk);
+    }
     // Still on one that has got out of reach or sight: the bot lets go of it, or playerbots
-    // walks it after its target all the way to the far door.
-    return onRunner || GoesAfter(bot, pick.walk);
+    // walks it after its target all the way to the far door. Not for one step behind a pillar.
+    uint32 const now = getMSTime();
+    if (!_lostAtMs)
+        _lostAtMs = now ? now : 1;
+    return getMSTimeDiff(_lostAtMs, now) >= RUNNER_LET_GO_MS;
 }
 
 bool RcBwlCatchTechnicianAction::Execute(Event /*event*/)
@@ -203,16 +234,21 @@ bool RcBwlCatchTechnicianAction::Execute(Event /*event*/)
     }
 
     bool letGo = false;
-    if (IsRunner(current))
+    if (LetsGo(bot, current))
     {
         context->GetValue<Unit*>("current target")->Set(nullptr);
         bot->SetTarget(ObjectGuid::Empty);
         bot->SetSelection(ObjectGuid::Empty);
         bot->AttackStop();
         bot->InterruptNonMeleeSpells(false);
-        // And the walk after it, which would make the next one wait its turn.
-        AI_VALUE(LastMovement&, "last movement").clear();
-        bot->StopMoving();
+        // And the walk after it, which would make the next one wait its turn. Not a walk
+        // out of something (a way out, the leash holding the bot where it stopped it).
+        LastMovement& last = AI_VALUE(LastMovement&, "last movement");
+        if (last.priority != MovementPriority::MOVEMENT_FORCED)
+        {
+            last.clear();
+            bot->StopMoving();
+        }
         _walkAtMs = 0;
         letGo = true;
     }
@@ -225,8 +261,9 @@ bool RcBwlCatchTechnicianAction::OwnWalk()
     if (!_walkAtMs)
         return false;
     LastMovement& last = AI_VALUE(LastMovement&, "last movement");
-    return last.lastMoveShort.GetExactDist(_walkTo.GetPositionX(), _walkTo.GetPositionY(), _walkTo.GetPositionZ()) <
-           0.5f;
+    return last.priority == MovementPriority::MOVEMENT_COMBAT &&
+           last.lastMoveShort.GetExactDist(_walkTo.GetPositionX(), _walkTo.GetPositionY(), _walkTo.GetPositionZ()) <
+               0.5f;
 }
 
 bool RcBwlCatchTechnicianAction::GoAfter(Creature* runner)
@@ -236,6 +273,8 @@ bool RcBwlCatchTechnicianAction::GoAfter(Creature* runner)
     // was stopped (the aggro leash's own look at it) or something else moved the bot, and the
     // bot does what it would otherwise.
     uint32 const now = getMSTime();
+    if (WaitsUnder(bot, runner))
+        return true;
     if (_walkAtMs && getMSTimeDiff(_walkAtMs, now) < RUNNER_WALK_INTERVAL_MS)
         return OwnWalk() && bot->isMoving();
 
@@ -249,6 +288,10 @@ bool RcBwlCatchTechnicianAction::GoAfter(Creature* runner)
         float const dy = bot->GetPositionY() - y;
         float const dist = std::hypot(dx, dy);
         bool const sameFloor = SameFloor(bot, runner);
+        // As near as it gets to one overhead (see WaitsUnder; in a fight the bot gets on with
+        // that instead).
+        if (!sameFloor && dist <= RUNNER_STAND_OFF + 2.0f)
+            return false;
         bool onGround = false;
         if (dist > RUNNER_STAND_OFF)
         {
@@ -264,9 +307,8 @@ bool RcBwlCatchTechnicianAction::GoAfter(Creature* runner)
                 onGround = true;
             }
         }
-        // No such spot, or close enough on the map already. One on the gallery overhead comes
-        // into view by itself; one on this floor is behind something, and the way to it is the
-        // way round.
+        // No such spot. One on this floor that is close enough on the map already is behind
+        // something, and the way to it is the way round.
         if (!onGround && !sameFloor)
             return false;
     }
@@ -299,13 +341,16 @@ float RcBwlCatchTechnicianMultiplier::GetValue(Action* action)
     // Whatever picks a target: "dps assist", "tank assist", the off-tank's own picker.
     if (!action || !dynamic_cast<AttackAction*>(action) || dynamic_cast<RcBwlCatchTechnicianAction*>(action))
         return 1.0f;
-    // A player's own order goes through; the bot stays on it if it is a runner.
-    if (!Catches(bot) || action->getName() == "attack my target")
+    // A player's own order goes through; the bot stays on it while it is a runner in reach.
+    if (!Catches(bot) || action->getName() == "attack my target" || VaelastraszFighting(bot))
         return 1.0f;
 
     Pick const pick = Choose(bot, AI_VALUE(Unit*, "current target"));
-    if (!pick.hit || VaelastraszFighting(bot))
-        return 1.0f;
+    Unit* target = action->GetTarget();
     // "melee" on the runner itself is the bot doing its job.
-    return action->GetTarget() == pick.hit ? 1.0f : 0.0f;
+    if (pick.hit)
+        return target == pick.hit ? 1.0f : 0.0f;
+    // No runner in reach: nothing hands the bot one all the same (a skull on one, a player's
+    // order that put it on playerbots' list), or it would be taken and let go of by turns.
+    return IsRunner(target) && !PlayerbotAI::IsTank(bot) ? 0.0f : 1.0f;
 }
