@@ -105,6 +105,37 @@ its target where it would reach an idle mob (how far each spell reaches is read 
 spell data), and uses its single-target spells until the fight has moved or that pack is dead.
 A target that isn't in combat itself is a pull and isn't judged.
 
+### Pull discipline, and healers who stay back (all raids)
+
+Playerbots counts the raid's skull as a target for every bot, whether it is in the fight or
+not. So the moment a pack is marked, every damage dealer opens on it: a mage's Flamestrike lands
+before a tank has moved, the pack runs through the casters, and whoever backs away finds the
+next pack. In one Blackwing Lair evening that was six wipes and about two deaths in three.
+
+With `RaidClear.PullDiscipline` on:
+
+- A bot that isn't a tank leaves a pack alone until something in the raid has started the fight
+  with it: a tank's pull, a patrol walking in, your own opener. It doesn't attack it, cast on
+  it or walk up to it, and its pet is called off.
+- No bot, tank or not, opens on a boss that isn't in the fight while the raid is still fighting
+  something else.
+- A bot whose target turns out to be one of those takes the nearest enemy that *is* in the
+  fight, or lets go until the pull has happened.
+
+Only mobs standing where they spawned count. Anything the fight itself brings in (adds, totems,
+a summoned boss) is fair game the moment it appears. The rule is off when the raid has no living
+tank. A bot you tell to attack such a pack waits like the rest until you, or a tank, have hit it.
+
+`RaidClear.HealersStayBack`: a healer paladin's idle action in playerbots is **Judgement of
+Light**, 10 yards, and the bot walks into range for it, which put nine holy paladins in every
+Cleave, War Stomp and breath. A healer paladin now only judges what is already in range from
+where it stands.
+
+`RaidClear.Bots.TeachTranquilizingShot`: mod-individual-progression moves **Tranquilizing
+Shot** to level 61 on the hunter trainers (it was a book from Molten Core), so a level 60 hunter
+bot never has it and no Frenzy is ever removed. Hunter bots that enter a raid are taught it.
+The spell stays on the character.
+
 ### Death log (all raids)
 
 Every death in a raid gets one line in the server log, so a bad night can be read back and the
@@ -149,14 +180,14 @@ and the fire resistance auras. On top of that:
 | Vaelastrasz | He can't be taunted, so the off-tank keeps itself second on threat for when **Burning Adrenaline** kills the main tank. |
 | Warlock packs | Kill the **Blackwing Warlocks** first: each one keeps opening Demon Portals that summon Enraged Felguards until it dies. Then Taskmasters and Spellbinders, then the felguards. |
 | Death Talon packs (Hall of the Dragonspawn) | The **Death Talon Captain** puts **Mark of Detonation** on whoever he hits, and every melee hit on that player then explodes on all of that player's allies within 30 yards. So he gets an off-tank of his own: the main tank leaves him alone, an off-tank taunts him off whoever has him and holds him 36 yards from the main tank's mob until he dies. Every other non-tank stays 32 yards from anyone carrying the Mark (moving out toward the main tank) and doesn't walk back toward a target inside that circle. Kill order: **Wyrmkin** first (**Fireball Volley** hits everyone within 45 yards), then **Flamescales** and **Seethers**, the Captain last, mostly by ranged; melee join in whenever the Mark is dispelled. The nearest hunter **Tranquilizing Shots** an enraged Seether. |
-| Wyrmguard packs | Every **Death Talon Wyrmguard** gets its own tank. As soon as a pack is pulled (like the three before Ebonroc), the main tank keeps one and each off-tank runs in, taunts another off whoever has it and holds it. Then they spread 30 yards from each other (**War Stomp** reaches 15): the first off-tank drags its Wyrmguard away from the main tank's, the next one away from both. With fewer tanks than Wyrmguards the main tank keeps the extra ones. |
+| Wyrmguard packs | Everyone who isn't a tank stays 17 yards from every **Death Talon Wyrmguard** it isn't in melee with (**War Stomp** hits everything within 15 for about 2,000 and stuns), and casters and healers don't walk in toward anything standing in one. Every Wyrmguard gets its own tank. As soon as a pack is pulled (like the three before Ebonroc), the main tank keeps one and each off-tank runs in, taunts another off whoever has it and holds it. Then they spread 30 yards from each other (**War Stomp** reaches 15): the first off-tank drags its Wyrmguard away from the main tank's, the next one away from both. With fewer tanks than Wyrmguards the main tank keeps the extra ones. |
 | Technician packs | Ranged bots and healers keep 6 yards from each other while **Blackwing Technicians** are fighting nearby, so one **Bomb** (5-yard splash) hits one bot. Only bots in a clump move, one short step every 1.5 seconds. |
 | Suppression Room | With the `raid` bot cheat on (the default), bots turn off every armed **Suppression Device** within 22 yards: the aura reaches 20, playerbots' own disarm only 15. Kill the Hatchers and Taskmasters before Broodlord if they come along. Off-tanks ignore the whelps. |
 | Broodlord Lashlayer | The off-tank co-tanks him through **Knock Away**. Ranged and healers stay out of **Blast Wave** (20 yards); a healer only backs off as far as it can still reach the tank. |
-| Firemaw, Ebonroc, Flamegor | The off-tank co-tanks through **Wing Buffet**. |
+| Firemaw, Ebonroc, Flamegor | The off-tank co-tanks through **Wing Buffet**. Everyone but the dragon's target and the main tank stays out of the 120 degrees in front of it (**Shadow Flame** reaches 45 yards and kills a non-tank outright; **Wing Buffet** 20), and a bot caught in front when a cast starts drops what it is doing and runs. Casters and healers are no longer taken to the dragon's flank at melee range by playerbots' own positioning. Hunters take Flamegor's **Frenzy** off with Tranquilizing Shot. |
 | Firemaw | At 5-7 stacks of **Flame Buffet** (varies per bot, so the raid doesn't leave together) a non-tank hides behind cover until the stacks drop. At most a third of the healers hide at once. Hidden bots keep healing and casting at anything they can see. |
-| Chromaggus | When he starts a breath, non-tanks with cover within a 2-second run duck behind it. **Time Lapse** is the exception: everyone takes it, because it halves the threat of everyone it hits, tank included. **Brood Affliction: Black** (more fire damage taken) comes off before anything else: mages, druids and Cleanse Spirit shamans split the cursed players between them, tanks first, then the lowest on health; healers leave it to the others while a tank is below half health. Bronze is already handled by playerbots (Hourglass Sand). |
-| Nefarian | Ranged and healers stay out of **Bellowing Roar** (35-yard fear), healers only as far as they can still reach the tank. Kill the **Drakonids** and **Bone Constructs** before him. Class calls: priests stop healing while **Corrupted Healing** is on them (their heals would put a shadow DoT on the tanks; shields still go out). Priests still heal a tank below 35%. After the shaman call, the corrupted **Healing Stream** totem dies before anything else, then Stoneskin and Windfury; everyone but the tanks walks 13 yards away from the **Fire Nova** totem before it goes off. The warlock call's **Corrupted Infernals** die with the drakonids. |
+| Chromaggus | He breathes every 30 seconds from the pull, his two breaths taking turns, so non-tanks go behind cover 7 seconds before one is due (healers 3 seconds before) and come back out after it. Hunters take his **Frenzy** off with Tranquilizing Shot. **Time Lapse** is the exception: everyone takes it, because it halves the threat of everyone it hits, tank included. **Brood Affliction: Black** (more fire damage taken) comes off before anything else: mages, druids and Cleanse Spirit shamans split the cursed players between them, tanks first, then the lowest on health; healers leave it to the others while a tank is below half health. Bronze is already handled by playerbots (Hourglass Sand). |
+| Nefarian | No taunt lands on him, and his druid call (cat form) kills a bear in front of him, so a paladin tank holds him if there is one (then a death knight, a warrior, a druid last): the other tanks stay under 80% of that tank's threat and the damage dealers under the tanks'. Everyone but that tank and whoever he is on stays out of the 120 degrees in front of him (**Shadow Flame**, **Cleave**) and behind him (**Tail Lash**), and runs when a Shadow Flame starts. Ranged and healers stay outside **Bellowing Roar** (35 yards from his middle; he is big enough to be hit from 48), healers where they still reach the tank. Shamans keep **Tremor Totem** down, and a priest walks over to put **Fear Ward** on the tank whenever it is ready. The rogue call teleports every rogue to just in front of him and stuns them there for 30 seconds: the tank he is on walks round to his other side, so he turns his back on them. At 20% he raises every drakonid that died in phase one as a **Bone Construct** (some 45 of them), and every heal puts all of them on the healers. They only die to area damage, and that only works on a pile: one spare tank stands still at his side, the casters and healers walk over and stand on it (round behind him if they are on his other side), and the constructs that follow them die there. The pile is inside the roar; a fear every half minute is the price. Kill the **Drakonids** and **Bone Constructs** before him. Class calls: priests stop healing while **Corrupted Healing** is on them (their heals would put a shadow DoT on the tanks; shields still go out). Priests still heal a tank below 35%. After the shaman call, the corrupted **Healing Stream** totem dies before anything else, then Stoneskin and Windfury; everyone but the tanks walks 13 yards away from the **Fire Nova** totem before it goes off. The warlock call's **Corrupted Infernals** die with the drakonids. |
 | Onyxia Scale Cloak | Playerbots gives its bots the cloak's protection in Blackwing Lair, but only re-adds it every few seconds after a rez. A bot revived here gets it back the moment it stands up, so it can't be caught by a **Shadow Flame** in between. |
 | Ebonroc | The off-tank taunts him off a tank with **Shadow of Ebonroc** (he heals on every hit on it), and that tank leaves him alone until it wears off. |
 
@@ -217,6 +248,9 @@ also keep playerbots' own raid strategies.
 | `RaidClear.AggroLeash` | 1 | Bots in combat don't back into packs that aren't in the fight. |
 | `RaidClear.AggroLeash.Buffer` | 6 | Yards kept beyond a mob's aggro radius. |
 | `RaidClear.AggroLeash.Splash` | 1 | No area or chain spell where it would reach a pack that isn't in the fight. |
+| `RaidClear.PullDiscipline` | 1 | Only a tank starts a fight with a pack; no boss pull on top of a fight. |
+| `RaidClear.HealersStayBack` | 1 | Healer paladins don't walk into melee to judge. |
+| `RaidClear.Bots.TeachTranquilizingShot` | 1 | Hunter bots in a raid learn Tranquilizing Shot. |
 | `RaidClear.MoltenCore.Enable` | 1 | Molten Core strategy. |
 | `RaidClear.BlackwingLair.Enable` | 1 | Blackwing Lair strategy. |
 | `RaidClear.ZulGurub.Enable` | 1 | Zul'Gurub strategy. |
@@ -317,6 +351,23 @@ Category: Raids
 - Onyxia (level 60): damage dealers wait for a tank to have her before they open up, at the pull
   and when she lands, and stay under the tanks' threat. She can't be taunted, so before this she
   ran through the casters for the first 20 seconds of every landing.
+- Raids: bots wait for a tank to start the fight. Damage dealers no longer open on a marked
+  pack before anyone has pulled it, and nobody pulls a boss while the raid is still fighting.
+- Raids: healer paladins no longer walk into melee range to cast **Judgement of Light**.
+- Raids: hunter bots now know **Tranquilizing Shot** and use it on Flamegor's and Chromaggus's
+  **Frenzy**.
+- Firemaw, Ebonroc, Flamegor, Nefarian: bots stay out of the dragon's front. **Shadow Flame**
+  was killing a dozen of them at a time.
+- Nefarian: a paladin now tanks him, because his druid call turned the bear tank into a cat in
+  front of him. Casters and healers stand outside **Bellowing Roar**, and shamans keep
+  **Tremor Totem** down.
+- Nefarian: when he calls the rogues in front of him, his tank now turns him away from them.
+- Nefarian: when the **Bone Constructs** rise, casters and healers gather on a tank so the
+  constructs can be killed together.
+- Chromaggus: bots go behind cover before he breathes instead of when the cast starts, which
+  was too late for nearly all of them.
+- Death Talon Wyrmguards: bots that aren't tanking or in melee with one stay out of its
+  **War Stomp**.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.

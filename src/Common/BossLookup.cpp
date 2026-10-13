@@ -23,10 +23,10 @@ namespace RaidClear
         // One that was there a moment ago may be being respawned (a new object, up to 5 s later), so
         // it keeps the short interval for a while.
         constexpr uint32 RESPAWN_WATCH_MS = 15000;
-        constexpr uint32 MISSING_CACHE_MS = 10000;
+        constexpr uint32 MISSING_CACHE_MS = 3000;
         constexpr float SEARCH_RANGE = 250.0f;
 
-        // One slot per creature asked for on this map thread; a raid asks for up to three.
+        // One slot per creature asked for on this map thread; Blackwing Lair asks for seven.
         struct Slot
         {
             bool valid = false;
@@ -36,7 +36,7 @@ namespace RaidClear
             ObjectGuid guid;
             uint32 seenMs = 0;  // when it was last found here; 0 = never
         };
-        thread_local std::array<Slot, 8> tSlots;
+        thread_local std::array<Slot, 16> tSlots;
         thread_local uint8 tNextSlot = 0;
 
         bool Matches(Creature const* creature, std::initializer_list<uint32> entries)

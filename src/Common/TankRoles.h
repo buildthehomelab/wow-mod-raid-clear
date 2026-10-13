@@ -101,6 +101,8 @@ namespace RaidClear::Tanks
     bool IsOffTank(Player* bot, Player* mainTank);
 
     // An add that gets an off-tank of its own (the raid lists them), even off the main tank.
+    // Adds no tank bothers with and that never stop coming (Blackwing Lair's Suppression Room whelps).
+    bool IsEndlessAdd(Unit const* unit);
     bool IsOwnTankAdd(Unit const* unit);
 
     // The own-tank adds the main tank leaves to off-tanks: those an off-tank already holds, plus

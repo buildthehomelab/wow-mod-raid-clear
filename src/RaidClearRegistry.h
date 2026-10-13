@@ -29,6 +29,9 @@ namespace RaidClear
     inline constexpr char const* TANKS_STRATEGY = "rc raid tanks";
     // Keeps bots from backing into packs that aren't in the fight (see Common/AggroLeash.h).
     inline constexpr char const* LEASH_STRATEGY = "rc raid leash";
+    // Who starts a fight and who stays out of melee (see Common/RaidDiscipline.h). On the
+    // non-combat engine too: a pull starts from there.
+    inline constexpr char const* DISCIPLINE_STRATEGY = "rc raid discipline";
 
     inline constexpr std::array<RaidEntry, 4> Raids = {{
         { 409, "rc moltencore", "MoltenCore" },

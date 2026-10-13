@@ -21,6 +21,7 @@
 #include "RaidClearRegistry.h"
 #include "Common/AggroLeash.h"
 #include "Common/DeathLog.h"
+#include "Common/RaidDiscipline.h"
 #include "Common/TankRoles.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/OnyxiasLair/OnyRaidClear.h"
@@ -71,6 +72,9 @@ namespace RaidClear
         sConfig.aggroLeash = sConfigMgr->GetOption<bool>("RaidClear.AggroLeash", true);
         sConfig.aggroLeashBuffer = std::max(0.0f, sConfigMgr->GetOption<float>("RaidClear.AggroLeash.Buffer", 6.0f));
         sConfig.aggroLeashSplash = sConfigMgr->GetOption<bool>("RaidClear.AggroLeash.Splash", true);
+        sConfig.pullDiscipline = sConfigMgr->GetOption<bool>("RaidClear.PullDiscipline", true);
+        sConfig.healersStayBack = sConfigMgr->GetOption<bool>("RaidClear.HealersStayBack", true);
+        sConfig.teachTranquilizingShot = sConfigMgr->GetOption<bool>("RaidClear.Bots.TeachTranquilizingShot", true);
         sConfig.raidEnabled.clear();
         for (RaidEntry const& raid : Raids)
             sConfig.raidEnabled[raid.mapId] =
@@ -105,6 +109,21 @@ namespace RaidClear
             botAI->ChangeStrategy(std::string("+") + LEASH_STRATEGY, BOT_STATE_COMBAT);
         else if (!wantLeash && hasLeash)
             botAI->ChangeStrategy(std::string("-") + LEASH_STRATEGY, BOT_STATE_COMBAT);
+
+        // Pull discipline and healers staying back: every raid too, and in both engines.
+        bool const wantDiscipline =
+            sConfig.enable && (sConfig.pullDiscipline || sConfig.healersStayBack) && map && map->IsRaid();
+        for (BotState const state : { BOT_STATE_COMBAT, BOT_STATE_NON_COMBAT })
+        {
+            bool const hasDiscipline = botAI->HasStrategy(DISCIPLINE_STRATEGY, state);
+            if (wantDiscipline && !hasDiscipline)
+                botAI->ChangeStrategy(std::string("+") + DISCIPLINE_STRATEGY, state);
+            else if (!wantDiscipline && hasDiscipline)
+                botAI->ChangeStrategy(std::string("-") + DISCIPLINE_STRATEGY, state);
+        }
+
+        if (sConfig.enable && map && map->IsRaid())
+            Discipline::TeachRaidSpells(player);
 
         for (RaidEntry const& raid : Raids)
         {

@@ -26,6 +26,9 @@ namespace RaidClear
         bool aggroLeash = true;
         float aggroLeashBuffer = 6.0f;
         bool aggroLeashSplash = true;
+        bool pullDiscipline = true;
+        bool healersStayBack = true;
+        bool teachTranquilizingShot = true;
         std::unordered_map<uint32, bool> raidEnabled;  // mapId -> RaidClear.<Raid>.Enable
 
         bool IsRaidEnabled(uint32 mapId) const

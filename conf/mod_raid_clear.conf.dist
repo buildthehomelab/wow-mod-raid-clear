@@ -148,6 +148,43 @@ RaidClear.AggroLeash.Buffer = 6
 RaidClear.AggroLeash.Splash = 1
 
 #
+#    RaidClear.PullDiscipline
+#        Description: Only a tank starts a fight. Playerbots counts the raid's skull as a target
+#                     for every bot whether it is in combat or not, so a marked pack gets a
+#                     Flamestrike before a tank has moved. With this on, a bot that isn't a tank
+#                     doesn't attack, cast on or walk up to a mob that is standing where it
+#                     spawned and isn't in a fight yet; once a tank (or a patrol, or a player)
+#                     has started it, everyone joins. And no bot, tank or not, opens on a boss
+#                     that isn't in the fight while the raid is still fighting something else.
+#                     Summoned mobs never count, and the rule is off while the raid has no
+#                     living tank.
+#        Default:     1
+#
+
+RaidClear.PullDiscipline = 1
+
+#
+#    RaidClear.HealersStayBack
+#        Description: A healer paladin only casts a Judgement on something already in range
+#                     from where it stands. Playerbots uses Judgement of Light (10 yd) as the
+#                     healer's idle action and walks the bot into melee range for it.
+#        Default:     1
+#
+
+RaidClear.HealersStayBack = 1
+
+#
+#    RaidClear.Bots.TeachTranquilizingShot
+#        Description: Hunter bots of level 60+ that enter a raid are taught Tranquilizing Shot.
+#                     mod-individual-progression moves it to level 61 on the trainers, so a
+#                     level 60 bot never has it and no Frenzy (Magmadar, Flamegor, Chromaggus,
+#                     Death Talon Seethers) is ever removed. The spell stays on the character.
+#        Default:     1
+#
+
+RaidClear.Bots.TeachTranquilizingShot = 1
+
+#
 #    RaidClear.MoltenCore.Enable
 #        Description: Molten Core strategy (map 409): kill order, Tremor Totem on Magmadar
 #                     (and no other earth totem near him), no attacks into Majordomo's
@@ -169,8 +206,14 @@ RaidClear.MoltenCore.Enable = 1
 #                     turn off Suppression Devices within 22 yd (needs the "raid" bot cheat, or a
 #                     rogue), ranged out of Broodlord's Blast Wave, tank swap on Shadow of Ebonroc,
 #                     ranged/healers 6 yd apart while Blackwing Technicians (Bomb) are fighting,
-#                     hide from Firemaw at 5-7 Flame Buffet stacks, duck Chromaggus' breaths (not
-#                     Time Lapse) and remove his Brood Affliction: Black first, Nefarian's class
+#                     hide from Firemaw at 5-7 Flame Buffet stacks, go behind cover before each
+#                     of Chromaggus' breaths (he breathes every 30s; not for Time Lapse) and
+#                     remove his Brood Affliction: Black first, stay out of the front of Firemaw,
+#                     Ebonroc, Flamegor and Nefarian (Shadow Flame, Wing Buffet, Cleave) and out
+#                     of the War Stomp of Wyrmguards, Tranquilizing Shot on Flamegor's and
+#                     Chromaggus' Frenzy, a paladin tank on Nefarian with the other tanks and
+#                     the damage dealers under its threat, Tremor Totem and Fear Ward against
+#                     his Bellowing Roar, Nefarian's class
 #                     calls (priests stop healing under Corrupted Healing unless a tank is below
 #                     35%, corrupted totems and Infernals die first, everyone but the tanks walks
 #                     away from the Fire Nova totem), Onyxia Scale Cloak aura back on revived bots, stay out of Nefarian's Bellowing Roar, Razorgore/Nefarian add
