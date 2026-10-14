@@ -174,11 +174,18 @@ void RaidClearBwlRunnersStrategy::InitTriggers(std::vector<TriggerNode*>& trigge
     // commands and loot rolls), below the ones that keep a bot alive.
     triggers.push_back(
         new TriggerNode("rc bwl fleeing technician", { NextAction("rc bwl catch technician", ACTION_RAID + 6) }));
+
+    // The Wyrmguards' War Stomp (BwlPositions.cpp): here and not in "rc bwl" because a bot
+    // waiting at the camp while the tank brings the pack in is on the non-combat engine, and
+    // the pack stomps 3-4 s after it arrives. With the life-savers.
+    triggers.push_back(new TriggerNode("rc bwl wyrmguard keep away",
+                                       { NextAction("rc bwl wyrmguard keep away", ACTION_EMERGENCY + 4) }));
 }
 
 void RaidClearBwlRunnersStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcBwlCatchTechnicianMultiplier(botAI));
+    multipliers.push_back(new RcBwlWyrmguardHoldMultiplier(botAI));
 }
 
 bool RcBwlFleeingTechnicianTrigger::IsActive()

@@ -19,6 +19,15 @@
  *     main tank's threat, so the off-tank builds threat on the boss instead of standing idle and
  *     catches it (the tank strategies taunt it back). The Suppression Room whelps don't pull the
  *     off-tank away from Broodlord.
+ *   - Firemaw, Ebonroc, Flamegor: two tanks hold the drake, the main tank and the first bot
+ *     off-tank in group order that isn't holding an add, and both stand in front of it. Only
+ *     those two taunt it, only from in front (or next to whoever it is on) and never while
+ *     Shadow Flame is being cast; the other tanks stay under 80% of their threat. A taunt from
+ *     a tank at its flank turned the drake, and the breath with it, onto the raid: five tanks
+ *     taunted Flamegor within 0.3 s after a Wing Buffet and the next Shadow Flame killed 18.
+ *   - Chromaggus: no taunt lands on him, and in one kill he spent most of the fight on rogues,
+ *     warlocks and a death knight. The off-tanks build threat on him and the damage dealers stay
+ *     under the tanks (the threat cap in Common/TankRoles.h), as on Nefarian.
  *   - Broodlord: ranged and healers stay out of Blast Wave (20 yd around him).
  *   - Ebonroc: the off-tank taunts him off a tank with Shadow of Ebonroc (he heals on every hit on
  *     it), and that tank doesn't taunt him back while it lasts.
@@ -57,10 +66,17 @@
  *     to put Fear Ward on his tank whenever it is ready. His rogue call teleports every rogue
  *     to 5 yd in front of his middle and stuns them there for 30s, two or three Shadow Flames:
  *     the tank he is on walks round him so he turns his back on them. At 20% he raises the
- *     dead drakonids as Bone Constructs: a spare tank stands still at his side, the casters
- *     and healers stand on it, and the pile dies to everyone's area damage.
- *   - Death Talon Wyrmguards: War Stomp hits everything within 15 yd. Non-tanks stay 17.5 yd
- *     from every Wyrmguard they aren't in melee with.
+ *     dead drakonids as Bone Constructs: a spare tank stands still at his side, outside the
+ *     roar where the healers stand, the casters and healers stand on it, and the pile dies to
+ *     everyone's area damage. (Inside the roar a fear scattered the pile into his front: one
+ *     Shadow Flame killed nine of it.)
+ *   - Death Talon Wyrmguards: War Stomp hits everything within 15 yd, and all three of a pack
+ *     stomp exactly 8 s after the pull (their SmartAI), by which time the tank has brought them
+ *     to the raid: two or three stomps at once killed 6 to 16 bots in one second, four times
+ *     in one evening. Non-tanks stay 17.5 yd from every Wyrmguard and from whoever a Wyrmguard
+ *     is still running to, from the moment the pack is pulled. Melee only stand by the one
+ *     they hit, and only once no other Wyrmguard is within 20 yd of it. These rules run on both
+ *     engines ("rc bwl runners"): a bot waiting at the camp isn't in combat yet.
  *   - Hunters Tranquilizing Shot Flamegor's and Chromaggus' Frenzy, like the Seethers' Enrage.
  *     Class calls: priests stop healing while Corrupted Healing is on them (every heal would put
  *     a shadow DoT on its target; shields still go out, and a tank below 35% still gets healed);
@@ -105,6 +121,9 @@
 #include "Trigger.h"
 
 #include <vector>
+
+class Creature;
+class Player;
 
 namespace RaidClear::BlackwingLair
 {
@@ -289,20 +308,21 @@ namespace RaidClear::BlackwingLair
     // them, about 6,000 health each, and every heal puts all of them on the healers. They only
     // die to area damage, and that only works on a pile. So while this many are up (he is under
     // CONSTRUCT_PHASE_PCT), one spare tank stands still at his side and the casters and healers
-    // stand on it: further than GATHER_FAR they walk to within GATHER_SPOT. That is inside the
-    // roar; a fear every half minute is the price. The tank the pile is made on stands in the
-    // middle of his flank (85 to 105 degrees off his facing, so the pile round it is clear of
-    // his front and tail), within ANCHOR_REACH of whoever he is on, and only steps toward
-    // something within GATHER_NEAR. A bot on his other side walks round behind him in steps
-    // of RING_STEP radians.
+    // stand on it: further than GATHER_FAR they walk to within GATHER_SPOT. The pile is where
+    // the healers stand anyway: outside the roar (a feared pile ran into his front, and one
+    // Shadow Flame killed nine of it), at least 75 degrees off his facing and 105 off his tail,
+    // and within ANCHOR_REACH (a heal) of whoever he is on: about 38 to 42 yd from his middle at
+    // 75 degrees off his facing. The tank the pile is made on only steps toward something
+    // within GATHER_NEAR. A bot on his other side walks round behind him, outside the roar, in
+    // steps of RING_STEP radians.
     constexpr float CONSTRUCT_PHASE_PCT = 21.0f;
     constexpr uint32 CONSTRUCTS_TO_GATHER = 4;
     constexpr float CONSTRUCT_GATHER_SPOT = 3.0f;
     constexpr float CONSTRUCT_GATHER_FAR = 7.0f;
     constexpr float CONSTRUCT_GATHER_NEAR = 9.0f;
-    constexpr float CONSTRUCT_ANCHOR_FRONT = 1.4835f;  // 85 degrees
+    constexpr float CONSTRUCT_ANCHOR_FRONT = 1.3090f;  // 75 degrees
     constexpr float CONSTRUCT_ANCHOR_TAIL = 1.3090f;   // 75 degrees
-    constexpr float CONSTRUCT_ANCHOR_REACH = 30.0f;
+    constexpr float CONSTRUCT_ANCHOR_REACH = ROAR_HEALER_REACH;
     constexpr float CONSTRUCT_RING_STEP = 0.35f;
     // Fear Ward reaches 30 yd; a priest this far from the tank or nearer walks over to cast it.
     constexpr float FEAR_WARD_RANGE = 30.0f;
@@ -335,6 +355,24 @@ namespace RaidClear::BlackwingLair
     constexpr float CORRUPTED_HEALING_TANK_PCT = 35.0f;
     // Tranquilizing Shot's range.
     constexpr float TRANQUILIZING_SHOT_RANGE = 35.0f;
+    // Wyrmguards fighting the group count within this of the bot (which ones they are is looked
+    // up once per instance every WYRMGUARD_CACHE_MS). One further than WYRMGUARD_RUNNING from
+    // whoever it is on is still running there, and that spot counts too.
+    constexpr float WYRMGUARD_SEARCH = 60.0f;
+    constexpr uint32 WYRMGUARD_CACHE_MS = 250;
+    constexpr float WYRMGUARD_RUNNING = 6.0f;
+
+    // The drakes' two tanks. The one the drake isn't on walks to within DRAKE_SECOND_SPOT of
+    // the one it is on when further than DRAKE_SECOND_NEAR from it, or more than
+    // DRAKE_FRONT_ARC off the drake's facing. A taunt is only cast from within DRAKE_TAUNT_ARC
+    // of the facing or DRAKE_TAUNT_NEAR of the tank it is on: from there it doesn't turn him.
+    // Every other tank stays under DRAKE_OFFTANK_SHARE of the threat of the two.
+    constexpr float DRAKE_SECOND_SPOT = 2.5f;
+    constexpr float DRAKE_SECOND_NEAR = 6.0f;
+    constexpr float DRAKE_FRONT_ARC = 0.7854f;  // 45 degrees
+    constexpr float DRAKE_TAUNT_ARC = 0.8727f;  // 50 degrees
+    constexpr float DRAKE_TAUNT_NEAR = 8.0f;
+    constexpr float DRAKE_OFFTANK_SHARE = 0.8f;
 
     std::vector<KillOrderEntry> const& KillOrder();
 
@@ -359,9 +397,13 @@ namespace RaidClear::BlackwingLair
     // Packs where every tank takes one (the Death Talon Wyrmguards).
     std::vector<uint32> const& TankSplitSpreadAdds();
 
-    // Nefarian: no taunt lands on him, so the tanks share threat and the damage dealers stay
-    // under them (see Common/TankRoles.h).
+    // Nefarian and Chromaggus: no taunt lands on them, so the tanks share threat and the
+    // damage dealers stay under them (see Common/TankRoles.h).
     std::vector<uint32> const& TankSplitThreatShareBosses();
+
+    // Firemaw, Ebonroc and Flamegor: whether this tank is one of the two that hold the drake (the
+    // main tank, the first spare bot off-tank in group order, or whoever it is on now).
+    bool HoldsDrake(Player* tank, Creature* drake);
 
     // Chromaggus has started casting something: kept for the breath clock.
     void NoteChromaggusBreath(Creature* boss, uint32 spellId);
@@ -815,9 +857,37 @@ public:
     float GetValue(Action* action) override;
 };
 
+// --- The drakes: who holds them (BwlPositions.cpp) -------------------------
+
+// The drake's second tank is away from the one it is on, or not in front of the drake.
+class RcBwlDrakeFrontTrigger : public Trigger
+{
+public:
+    RcBwlDrakeFrontTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl drake front") {}
+    bool IsActive() override;
+};
+
+// Walks next to the tank the drake is on.
+class RcBwlDrakeFrontAction : public MovementAction
+{
+public:
+    RcBwlDrakeFrontAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl drake front") {}
+    bool Execute(Event event) override;
+};
+
+// Only the drake's two tanks taunt it, from in front, not during Shadow Flame; every other tank
+// stays under their threat.
+class RcBwlDrakeTauntMultiplier : public Multiplier
+{
+public:
+    RcBwlDrakeTauntMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl drake taunt") {}
+    float GetValue(Action* action) override;
+};
+
 // --- Death Talon Wyrmguards: War Stomp -------------------------------------
 
-// A bot that isn't a tank stands in the War Stomp of a Wyrmguard it isn't in melee with.
+// A bot that isn't a tank stands in the War Stomp of a Wyrmguard (or where one is running to)
+// that it has no business next to. On both engines, in "rc bwl runners".
 class RcBwlWyrmguardKeepAwayTrigger : public Trigger
 {
 public:

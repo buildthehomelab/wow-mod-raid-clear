@@ -904,6 +904,7 @@ void RaidClearTanksStrategy::InitMultipliers(std::vector<Multiplier*>& multiplie
 {
     multipliers.push_back(new RcOffTankMultiplier(botAI));
     multipliers.push_back(new RcTankThreatCapMultiplier(botAI));
+    multipliers.push_back(new RcImmuneTauntMultiplier(botAI));
 }
 
 bool RcOffTankTargetTrigger::IsActive()
@@ -1113,7 +1114,8 @@ bool RcTankShareThreatTrigger::IsActive()
 bool RcTankShareThreatAction::isUseful()
 {
     Unit* boss = ThreatShareBoss(botAI, bot, AI_VALUE(GuidVector, "attackers"));
-    if (!boss)
+    // Where no taunt lands, the threat order alone decides (see RcTankThreatCapMultiplier).
+    if (!boss || CantBeTaunted(boss))
         return false;
 
     switch (NeedsThreatShare(bot, boss))
@@ -1239,4 +1241,35 @@ float RcTankThreatCapMultiplier::GetValue(Action* action)
     if (limit <= 0.0f)
         return 1.0f;
     return boss->GetThreatMgr().GetThreat(bot) >= limit * DAMAGE_SHARE ? 0.0f : 1.0f;
+}
+
+float RcImmuneTauntMultiplier::GetValue(Action* action)
+{
+    if (!action || !bot->IsInCombat() || !PlayerbotAI::IsTank(bot))
+        return 1.0f;
+
+    // The taunts that do nothing else. Hand of Reckoning and Mocking Blow still hit.
+    static constexpr std::array<char const*, 4> PURE_TAUNTS = { "taunt", "growl", "dark command", "righteous defense" };
+    std::string const name = action->getName();
+    if (std::none_of(PURE_TAUNTS.begin(), PURE_TAUNTS.end(), [&name](char const* taunt) { return name == taunt; }))
+        return 1.0f;
+
+    Unit* target = action->GetTarget();
+    if (!target)
+        return 1.0f;
+    if (Creature* creature = target->ToCreature())
+        return CantBeTaunted(creature) ? 0.0f : 1.0f;
+
+    // Righteous Defense is cast on a friend and taunts what is attacking it: worth it while one
+    // of those can be taunted.
+    bool immuneOnly = false;
+    for (Unit* attacker : target->getAttackers())
+    {
+        if (!attacker->IsAlive())
+            continue;
+        if (!CantBeTaunted(attacker))
+            return 1.0f;
+        immuneOnly = true;
+    }
+    return immuneOnly ? 0.0f : 1.0f;
 }

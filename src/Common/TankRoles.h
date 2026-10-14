@@ -39,6 +39,10 @@
  *       - A player in the raid has nothing holding its damage back. One who is within 10% of
  *         that same tank's threat gets a paladin's Hand of Salvation (20% of its threat gone
  *         over 10 s), and the next paladin's when that one has run out.
+ *   - No tank spends a global cooldown on a taunt that can't land: Taunt, Growl, Dark Command
+ *     and Righteous Defense are not cast at a boss immune to taunts (Chromaggus, Nefarian,
+ *     Broodlord and Hakkar on this core; one Chromaggus kill had 120 Righteous Defenses, all
+ *     IMMUNE). Hand of Reckoning and Mocking Blow still go out for their damage.
  *   - Endless respawning adds a raid lists (BWL's Suppression Room whelps) are never picked up.
  *   - Among the loose mobs an off-tank picks from, one that evades every attack (it is running
  *     home, or can't find a way to its victim) is skipped: a taunt on it does nothing.
@@ -274,6 +278,14 @@ class RcTankThreatCapMultiplier : public Multiplier
 {
 public:
     RcTankThreatCapMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc tank threat cap") {}
+    float GetValue(Action* action) override;
+};
+
+// No taunt that does nothing else at a boss immune to taunts.
+class RcImmuneTauntMultiplier : public Multiplier
+{
+public:
+    RcImmuneTauntMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc immune taunt") {}
     float GetValue(Action* action) override;
 };
 
