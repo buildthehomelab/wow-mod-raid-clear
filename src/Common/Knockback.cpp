@@ -51,12 +51,19 @@ namespace
         Catches who;
         float radius;    // Around, Front, Behind: yards from the mob's middle
         float distance;  // yards thrown over level ground
+        bool listed;     // by its raid, not picked up from a cast
     };
 
     // A throw shorter than this doesn't take anyone anywhere.
     constexpr float MIN_THROW = 3.0f;
     // A bot this far outside a throw's radius still counts as in it: the mob shifts about.
     constexpr float REACH_SLACK = 2.0f;
+    // An area throw whose spell names no radius is taken to reach as far as the spell's range,
+    // but no further than this.
+    constexpr float MAX_RADIUS = 40.0f;
+    // A single-target throw is only believed to go to whoever the mob is on after it has been
+    // seen to that often, and never once it has been seen going to anybody else.
+    constexpr uint8 VICTIM_SIGHTINGS = 3;
     // How far from its middle a mob's single-target throw can start: its victim stands at its
     // edge, a few yards out.
     constexpr float VICTIM_REACH = 6.0f;
@@ -80,6 +87,15 @@ namespace
     std::shared_mutex sThrowsMutex;
     std::unordered_map<uint32, std::vector<Throw>> sThrows;
     std::once_flag sListed;
+
+    // Single-target throws seen cast, per entry and spell: at whoever the mob was on, or not.
+    struct Aimed
+    {
+        uint8 atVictim = 0;
+        bool atOthers = false;
+    };
+    std::mutex sAimedMutex;
+    std::unordered_map<uint64, Aimed> sAimed;
 
     bool HasThrow(SpellInfo const* info)
     {
@@ -118,16 +134,18 @@ namespace
                 radius = effect.CalcRadius(caster);
                 if (radius <= 0.0f)
                     radius = info->GetMaxRange(false, caster);
+                radius = std::min(radius, MAX_RADIUS);
             }
 
-            out = { info->Id, who, radius, distance };
+            out = { info->Id, who, radius, distance, false };
             found = true;
         }
         return found;
     }
 
-    void Learn(uint32 entry, Throw const& thrown, bool seen)
+    void Learn(uint32 entry, Throw thrown, bool seen)
     {
+        thrown.listed = !seen;
         {
             std::shared_lock<std::shared_mutex> lock(sThrowsMutex);
             auto const it = sThrows.find(entry);
@@ -146,6 +164,44 @@ namespace
         if (seen)
             LOG_INFO("module", "mod-raid-clear: creature {} throws players {:.0f} yd with spell {}.", entry,
                      thrown.distance, thrown.spell);
+    }
+
+    void Forget(uint32 entry, uint32 spell)
+    {
+        std::unique_lock<std::shared_mutex> lock(sThrowsMutex);
+        auto const it = sThrows.find(entry);
+        if (it == sThrows.end())
+            return;
+        std::erase_if(it->second, [spell](Throw const& known) { return known.spell == spell && !known.listed; });
+        if (it->second.empty())
+            sThrows.erase(it);
+    }
+
+    // A single-target throw was cast. Whether it is one to stand right for: aimed at whoever the
+    // mob is on every time so far, and often enough to believe it. One that has ever gone to
+    // somebody else (a random player, the furthest one) is forgotten: nobody can stand out of
+    // the way of that.
+    bool AimedAtVictim(uint32 entry, uint32 spell, bool atVictim)
+    {
+        bool forget = false;
+        {
+            std::lock_guard<std::mutex> lock(sAimedMutex);
+            Aimed& aimed = sAimed[(uint64(entry) << 32) | spell];
+            if (!atVictim)
+            {
+                forget = !aimed.atOthers;
+                aimed.atOthers = true;
+            }
+            else if (!aimed.atOthers)
+            {
+                if (aimed.atVictim < VICTIM_SIGHTINGS)
+                    ++aimed.atVictim;
+                return aimed.atVictim >= VICTIM_SIGHTINGS;
+            }
+        }
+        if (forget)
+            Forget(entry, spell);
+        return false;
     }
 
     // The throwers each raid lists. On first use: the spell data has to be loaded.
@@ -260,6 +316,12 @@ namespace
             dirY /= out;
         }
 
+        // Nothing idle within the throw's length of the spot, seen or not: wherever the flight
+        // ends, it is at least this clear. (Most spots end here, and the rest costs a raycast.)
+        float const around = leash.Gap(x, y, z, false) - threat.thrown.distance;
+        if (around >= WANT_GAP)
+            return around;
+
         float toX = x + dirX * threat.thrown.distance;
         float toY = y + dirY * threat.thrown.distance;
         float toZ = z;
@@ -368,6 +430,12 @@ bool RcKnockbackFootingAction::Execute(Event /*event*/)
         return false;
     }
 
+    // Whoever it is on turns it by going round it, and its front with it. Not while it is casting:
+    // that would sweep a breath across the raid.
+    bool const victim = held->GetVictim() == bot;
+    if (victim && held->HasUnitState(UNIT_STATE_CASTING))
+        return false;
+
     Map* map = bot->GetMap();
     float const dist = std::max(bot->GetExactDist2d(held), 1.0f);
     float const base = held->GetAngle(bot);
@@ -383,7 +451,12 @@ bool RcKnockbackFootingAction::Execute(Event /*event*/)
         float const x = held->GetPositionX() + std::cos(angle) * dist;
         float const y = held->GetPositionY() + std::sin(angle) * dist;
         float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + WAY_OUT_UP);
-        if (z <= INVALID_HEIGHT || z < botZ - WAY_OUT_DOWN || gapAt(x, y, z) <= bestGap)
+        if (z <= INVALID_HEIGHT || z < botZ - WAY_OUT_DOWN)
+            continue;
+        // Only its victim belongs in front of it: anyone else stays in the half behind, where
+        // playerbots' own "behind target" and the raids' rules for a dragon's front want it too.
+        Position const at(x, y, z);
+        if ((!victim && held->HasInArc(float(M_PI), &at)) || gapAt(x, y, z) <= bestGap)
             continue;
 
         // A whole path over the floor that ends at the spot, round the mob and not round the room.
@@ -408,7 +481,10 @@ bool RcKnockbackFootingAction::Execute(Event /*event*/)
     // Whatever the bot was told last would make this walk wait its turn. Straight to the spot the
     // path was checked for: playerbots' own planning could settle for another.
     if (found)
+    {
         AI_VALUE(LastMovement&, "last movement").clear();
+        bot->CastStop();
+    }
     if (!found || !MoveTo(bot->GetMapId(), spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), false,
                           false, false, true, MovementPriority::MOVEMENT_FORCED))
     {
@@ -460,9 +536,9 @@ public:
         Throw thrown;
         if (!ReadThrow(spellInfo, mob, thrown))
             return;
-        // Aimed at somebody other than whoever it is on (a random player, the furthest one):
-        // nobody can stand out of the way of that.
-        if (thrown.who == Catches::Victim && (!mob->GetVictim() || spell->m_targets.GetUnitTarget() != mob->GetVictim()))
+        if (thrown.who == Catches::Victim &&
+            !AimedAtVictim(mob->GetEntry(), thrown.spell,
+                           mob->GetVictim() && spell->m_targets.GetUnitTarget() == mob->GetVictim()))
             return;
         Learn(mob->GetEntry(), thrown, true);
     }

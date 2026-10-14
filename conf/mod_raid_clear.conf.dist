@@ -154,10 +154,10 @@ RaidClear.AggroLeash.Splash = 1
 #                     it is on, everyone around it, only those in front of it) is read from the
 #                     server's spell data: Blackwing Lair's drakes (Wing Buffet, 39 yd),
 #                     Broodlord, Molten Core's giants, Lava Surgers and Sulfuron are known from
-#                     the start, and any other mob the first time it throws someone on a raid
-#                     map (one line in the server log). A tank or melee bot goes round the mob
-#                     to the nearest side from which the throw ends in clear ground or against
-#                     a wall; anyone else steps out of the throw's reach. Playerbots' "tank
+#                     the start, and any other mob once it has been seen to throw someone on
+#                     a raid map (one line in the server log). A tank or melee bot goes round
+#                     the mob to the nearest side from which the throw ends in clear ground or
+#                     against a wall; anyone else steps out of the throw's reach. Playerbots' "tank
 #                     face" is off for a tank while this has a say in where it stands. Does
 #                     nothing in a fight with no idle mob near it.
 #        Default:     1
@@ -178,9 +178,10 @@ RaidClear.AggroLeash.PatrolAhead = 15
 
 #
 #    RaidClear.AggroLeash.BossBuffer
-#        Description: Yards added to the aggro radius of a boss that isn't in the fight, on top
-#                     of RaidClear.AggroLeash.Buffer, for everything the leash does. 0 = bosses
-#                     are treated like any other mob.
+#        Description: Yards kept from a boss that isn't in the fight, on top of its aggro radius
+#                     and RaidClear.AggroLeash.Buffer, by every walk that isn't toward the bot's
+#                     own target and by every spot a bot picks to stand on. 0 = bosses are
+#                     treated like any other mob.
 #        Default:     8
 #
 

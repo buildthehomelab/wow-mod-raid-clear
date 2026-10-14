@@ -13,17 +13,20 @@
  *     knockback effect gives the speeds, and the distance follows the way the core works it out
  *     for a bot (twice the upward speed over gravity, times the speed along the ground). Each
  *     raid lists the throwers it knows (BWL's drakes and Broodlord, Molten Core's giants, Lava
- *     Surgers and Sulfuron). Any other is picked up the first time it is seen to throw someone
- *     on a raid map, and known from then until the server restarts.
+ *     Surgers and Sulfuron). Any other is picked up when it is seen to throw someone on a raid
+ *     map, and known from then until the server restarts.
  *   - Who it catches comes from the spell too: only whoever the mob is on, everyone within the
  *     spell's radius of it, or only those of them in front of it (a cone) or behind it (a tail).
- *     A single-target throw aimed at somebody else (a Death Talon Flamescale's Berserker Charge
- *     picks a random player) can't be stood out of the way of, and is left alone.
+ *     A single-target throw is only picked up once it has gone to whoever the mob was on three
+ *     times, and dropped for good the first time it goes to anyone else: one aimed at a random
+ *     player (a Death Talon Flamescale's Berserker Charge) can't be stood out of the way of.
  *   - A bot standing where such a throw would catch it and carry it into an idle mob's aggro
  *     radius (the flight there included, and stopping at walls the way the core stops a thrown
  *     bot) moves. One in melee with the thrower goes round it, to the nearest side from which
- *     the throw ends in clear ground or against a wall. Anyone else walks to the nearest spot
- *     out of the throw's reach, or with a clear landing.
+ *     the throw ends in clear ground or against a wall: whoever it is on anywhere round it (not
+ *     while it is casting, which would sweep a breath across the raid), anyone else within the
+ *     half behind it. Anyone not in melee with it walks to the nearest spot out of the throw's
+ *     reach, or with a clear landing.
  *   - While such a mob is on a tank and there is an idle pack near enough to be thrown into,
  *     "tank face" is off for that tank: which side it stands on is decided by where it lands.
  *   - With no idle mob anywhere near a thrower none of this does anything.

@@ -36,10 +36,9 @@
  *     out" action looks at: a bot doesn't walk to where a patrol is about to arrive. Not for the
  *     step back out: a bot doesn't leave its spot for a patrol that may yet turn off.
  *   - A boss that isn't in the fight is given a wider berth than a pack: extra yards on top of
- *     its aggro radius, for everything above.
- *   - A bot whose walks keep being stopped (whatever sends it keeps sending it, and each try
- *     gets it a step further before it is caught) is held longer each time: 0.7 s, then 1.4,
- *     then 2.8, until it has gone a few seconds without being stopped.
+ *     its aggro radius and the buffer, for every walk that isn't toward the bot's target and
+ *     every spot a "move out" action looks at. Not for a walk to the target, not for a boss the
+ *     target stands next to (the fight is where it is), and not for the step back out.
  *   - A mob that throws players about (Common/Knockback.h) is not fought from a spot where the
  *     throw ends in one of those idle packs.
  *

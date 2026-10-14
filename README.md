@@ -95,13 +95,12 @@ fight but would join it: hostile, aggressive, alive, in line of sight and on the
   it will be over the next 15 yards of its way (`RaidClear.AggroLeash.PatrolAhead`): a bot
   doesn't walk to where a patrol is about to arrive. The server only knows the leg a mob is on,
   up to its next waypoint, so that is as far ahead as this sees.
-- A boss that isn't in the fight gets 8 yards on top of its aggro radius
-  (`RaidClear.AggroLeash.BossBuffer`). A second pack is a harder fight; a second boss is a wipe.
+- A boss that isn't in the fight gets 8 more yards (`RaidClear.AggroLeash.BossBuffer`) for
+  every walk that isn't toward the bot's target and every spot a bot picks to stand on. A second
+  pack is a harder fight; a second boss is a wipe.
 - An off-tank dragging its mob away from the main tank's doesn't pick a spot inside any of
   that. (Before, it could: the walk was stopped a step in, sent again two seconds later, and
   stopped a step further on.)
-- A bot whose walks keep being stopped is held longer each time (0.7 seconds, then 1.4, then
-  2.8), so nothing that keeps sending it can creep it into a pack a step at a time.
 
 The aggro radius is the core's own: the mob's detection range (20 yards unless its template says
 otherwise) plus a yard for every level the mob is above the bot.
@@ -116,14 +115,17 @@ choose is where it stands when the knockback comes (`RaidClear.AggroLeash.Knockb
   pulled yet, and that is where it lands.
 - How far a mob throws, and whom (whoever it is on, everyone within a radius, only those in
   front of it or behind it), is read from the server's spell data. Each raid lists the throwers
-  it knows; any other is picked up the first time it throws someone on a raid map (one line in
-  the server log) and known until the server restarts. A throw aimed at a random player (a Death
-  Talon Flamescale's **Berserker Charge**) can't be stood out of the way of and is left alone.
+  it knows; any other is picked up when it throws someone on a raid map (one line in the server
+  log) and known until the server restarts. A single-target throw has to go to whoever the mob
+  is on three times first, and is dropped the first time it goes to anyone else: one aimed at a
+  random player (a Death Talon Flamescale's **Berserker Charge**) can't be stood out of the way
+  of.
 - A bot standing where a throw would catch it and carry it into an idle mob's aggro radius
   moves. The flight counts as well as the landing, and it ends at walls the way the server ends
-  it for a bot, so a tank with its back to a wall is fine where it is. A tank or a melee bot goes
-  round the mob to the nearest side with a clear landing; anyone else walks to the nearest spot
-  out of the throw's reach, or with a clear landing.
+  it for a bot, so a tank with its back to a wall is fine where it is. The tank the mob is on
+  goes round it to the nearest side with a clear landing (not while the mob is casting); a melee
+  bot does the same within the half behind the mob; anyone else walks to the nearest spot out of
+  the throw's reach, or with a clear landing.
 - While such a mob is on a tank and an idle pack is near enough to be thrown into, playerbots'
   "tank face" is off for that tank.
 - With no idle mob anywhere near the thrower, none of this does anything.
@@ -282,7 +284,7 @@ also keep playerbots' own raid strategies.
 | `RaidClear.AggroLeash.Splash` | 1 | No area or chain spell where it would reach a pack that isn't in the fight. |
 | `RaidClear.AggroLeash.Knockback` | 1 | Bots don't stand where a knockback would throw them into a pack that isn't in the fight. |
 | `RaidClear.AggroLeash.PatrolAhead` | 15 | Yards of a walking mob's way ahead that count as taken (0 = only where it is). |
-| `RaidClear.AggroLeash.BossBuffer` | 8 | Extra yards kept from a boss that isn't in the fight. |
+| `RaidClear.AggroLeash.BossBuffer` | 8 | Extra yards kept from a boss that isn't in the fight (not on the way to the bot's own target). |
 | `RaidClear.PullDiscipline` | 1 | Only a tank starts a fight with a pack; no boss pull on top of a fight. |
 | `RaidClear.HealersStayBack` | 1 | Healer paladins don't walk into melee to judge. |
 | `RaidClear.Bots.TeachTranquilizingShot` | 1 | Hunter bots in a raid learn Tranquilizing Shot. |
