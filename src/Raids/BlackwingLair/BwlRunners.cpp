@@ -179,7 +179,7 @@ void RaidClearBwlRunnersStrategy::InitTriggers(std::vector<TriggerNode*>& trigge
     // waiting at the camp while the tank brings the pack in is on the non-combat engine, and
     // the pack stomps 3-4 s after it arrives. With the life-savers.
     triggers.push_back(new TriggerNode("rc bwl wyrmguard keep away",
-                                       { NextAction("rc bwl wyrmguard keep away", ACTION_EMERGENCY + 4) }));
+                                       { NextAction("rc bwl wyrmguard stay clear", ACTION_EMERGENCY + 4) }));
 }
 
 void RaidClearBwlRunnersStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)

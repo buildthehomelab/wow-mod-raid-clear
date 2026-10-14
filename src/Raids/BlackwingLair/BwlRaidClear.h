@@ -895,10 +895,13 @@ public:
     bool IsActive() override;
 };
 
+// Named with "stay" on purpose: playerbots' "passive" strategy (mod-dungeon-clear puts it on the
+// bots waiting at the camp during a pull) lets through only actions whose names contain "stay",
+// "follow" or "move from group".
 class RcBwlWyrmguardKeepAwayAction : public Action
 {
 public:
-    RcBwlWyrmguardKeepAwayAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl wyrmguard keep away"), _walk(botAI) {}
+    RcBwlWyrmguardKeepAwayAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl wyrmguard stay clear"), _walk(botAI) {}
     bool Execute(Event event) override;
 
 private:

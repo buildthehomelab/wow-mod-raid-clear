@@ -78,7 +78,7 @@ public:
         creators["rc bwl chromaggus hide"] = &RaidClearActionContext::bwl_chromaggus_hide;
         creators["rc bwl dragon move"] = &RaidClearActionContext::bwl_dragon_move;
         creators["rc bwl nefarian fear ward"] = &RaidClearActionContext::bwl_nefarian_fear_ward;
-        creators["rc bwl wyrmguard keep away"] = &RaidClearActionContext::bwl_wyrmguard_keep_away;
+        creators["rc bwl wyrmguard stay clear"] = &RaidClearActionContext::bwl_wyrmguard_keep_away;
         creators["rc bwl drake front"] = &RaidClearActionContext::bwl_drake_front;
         creators["rc bwl nefarian turn"] = &RaidClearActionContext::bwl_nefarian_turn;
         creators["rc bwl construct gather"] = &RaidClearActionContext::bwl_construct_gather;

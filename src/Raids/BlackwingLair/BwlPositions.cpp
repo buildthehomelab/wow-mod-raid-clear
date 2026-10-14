@@ -236,6 +236,7 @@ namespace
         float y = 0.0f;
         float facing = 0.0f;
         float frontHalf = BREATH_KEEP_HALF_ANGLE;  // how far off his facing the front is kept clear
+        float frontRange = BREATH_RANGE;           // ...and how far out
         bool tail = false;                         // Nefarian's Tail Lash
         float tailHalf = TAIL_HALF_ANGLE;
         bool roar = false;                         // Bellowing Roar, for a bot that keeps back
@@ -287,7 +288,7 @@ namespace
             return -BREATH_RANGE;
         float const off = OffFacing(zone, x, y);
 
-        float gap = ConeGap(r, off, zone.frontHalf, BREATH_RANGE);
+        float gap = ConeGap(r, off, zone.frontHalf, zone.frontRange);
         if (zone.tail)
             gap = std::min(gap, ConeGap(r, float(M_PI) - off, zone.tailHalf, TAIL_RANGE));
         if (zone.roar)
@@ -326,6 +327,8 @@ namespace
     {
         Zone zone = PlaceOf(boss);
         zone.frontHalf = CONSTRUCT_ANCHOR_FRONT;
+        // Past the breath's reach is no place for it either: the bots round the tank would be in it.
+        zone.frontRange = 1000.0f;
         zone.tailHalf = CONSTRUCT_ANCHOR_TAIL;
         zone.roar = true;
         zone.reach = CONSTRUCT_ANCHOR_REACH;
@@ -402,9 +405,9 @@ namespace
     // --- The drakes: who taunts them -----------------------------------------
 
     // Playerbots' taunts (by action name), and ours.
-    constexpr std::array<char const*, 9> DRAKE_TAUNTS = {
-        "taunt", "growl", "hand of reckoning", "dark command", "mocking blow", "righteous defense",
-        "challenging shout", "challenging roar", "rc bwl ebonroc taunt",
+    constexpr std::array<char const*, 10> DRAKE_TAUNTS = {
+        "taunt", "growl", "hand of reckoning", "dark command", "death grip", "mocking blow",
+        "righteous defense", "challenging shout", "challenging roar", "rc bwl ebonroc taunt",
     };
 
     bool IsTaunt(std::string const& name)
@@ -685,6 +688,13 @@ float RcBwlDragonHoldMultiplier::GetValue(Action* action)
         Creature* drake = PlayerbotAI::IsTank(bot) ? FightingDrake(bot) : nullptr;
         return drake && HoldsDrake(bot, drake) ? 0.0f : 1.0f;
     }
+    // The knockback footing sends a tank in front of a thrower to the side with clear ground
+    // behind it. The drake's second tank stands by the one he is on and is thrown with it.
+    if (action->getName() == "rc knockback footing" && PlayerbotAI::IsTank(bot))
+    {
+        Creature* drake = FightingDrake(bot);
+        return drake && drake->GetVictim() != bot && HoldsDrake(bot, drake) ? 0.0f : 1.0f;
+    }
     if (!KeepsBack(bot))
         return 1.0f;
 
@@ -893,8 +903,10 @@ bool RcBwlConstructGatherAction::Execute(Event /*event*/)
     if (!anchor || anchor == bot || bot->GetExactDist(anchor) <= CONSTRUCT_GATHER_FAR)
         return false;
 
-    // Straight there when that doesn't cross his front or his tail.
-    Zone const zone = ZoneOf(bot, boss);
+    // Straight there when that doesn't cross his front or his tail. A healer may be out of reach
+    // of the tank on the way (round his back): it is walking to where it will be in reach.
+    Zone zone = ZoneOf(bot, boss);
+    zone.reach = 0.0f;
     float const botX = bot->GetPositionX();
     float const botY = bot->GetPositionY();
     if (WalkClear(zone, botX, botY, anchor->GetPositionX(), anchor->GetPositionY()))
@@ -969,14 +981,27 @@ float RcBwlWyrmguardHoldMultiplier::GetValue(Action* action)
     // Wyrmguards apart.
     if (!action || !Walks(action) || PlayerbotAI::IsTank(bot))
         return 1.0f;
+
+    // Walks back to a spot, not to a target: mod-dungeon-clear's camp hold, assist and follow
+    // (their target is the bot itself) and playerbots' "stay". The camp is where the pack is
+    // dragged to, and the way out stops sending for 700 ms after each send, long enough for one
+    // of these to walk the bot back in.
+    static constexpr std::array<char const*, 6> WALKS_BACK = {
+        "dungeon clear hold at camp", "dungeon clear stay at camp", "dungeon clear assist camp",
+        "dungeon clear assist camp combat", "dungeon clear follow tank", "return to stay position",
+    };
+    std::string const name = action->getName();
+    bool const walksBack =
+        std::any_of(WALKS_BACK.begin(), WALKS_BACK.end(), [&name](char const* walk) { return name == walk; });
     Unit* target = action->GetTarget();
-    if (!target || target == bot)
+    if (!walksBack && (!target || target == bot))
         return 1.0f;
 
     std::vector<Position> stomps;
     WyrmguardStomps(botAI, bot, stomps);
     for (Position const& stomp : stomps)
-        if (bot->GetExactDist(stomp) < WYRMGUARD_HOLD && target->GetExactDist(stomp) < WYRMGUARD_KEEP_AWAY)
+        if (bot->GetExactDist(stomp) < WYRMGUARD_HOLD &&
+            (walksBack || target->GetExactDist(stomp) < WYRMGUARD_KEEP_AWAY))
             return 0.0f;
     return 1.0f;
 }
@@ -1018,27 +1043,74 @@ bool RcBwlDrakeFrontAction::Execute(Event /*event*/)
     return MoveNear(victim, DRAKE_SECOND_SPOT, MovementPriority::MOVEMENT_COMBAT);
 }
 
+namespace
+{
+    // One of the drake's two tanks is in range of him with a taunt ready.
+    bool HolderCanTakeBack(Player* bot, Creature* drake)
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return false;
+        Player* mainTank = RaidClear::Tanks::ActingMainTank(group);
+        for (Player* tank : { mainTank, SecondDrakeTank(group, mainTank, drake) })
+        {
+            PlayerbotAI* tankAI = tank && tank->IsAlive() ? GET_PLAYERBOT_AI(tank) : nullptr;
+            if (tankAI && RaidClear::Tanks::CanTaunt(tankAI, drake))
+                return true;
+        }
+        return false;
+    }
+
+    // The threat the drake's other tanks stay under: that of the one of his two that would take
+    // him next. With him on one of them, the other; otherwise the lower of the two.
+    float DrakeThreatCap(Player* bot, Creature* drake)
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return 0.0f;
+        Player* mainTank = RaidClear::Tanks::ActingMainTank(group);
+        Player* second = SecondDrakeTank(group, mainTank, drake);
+        ThreatManager const& threat = drake->GetThreatMgr();
+        Unit* victim = drake->GetVictim();
+        float cap = -1.0f;
+        for (Player* tank : { mainTank, second })
+        {
+            if (!tank || !tank->IsAlive() || tank == victim)
+                continue;
+            float const theirs = threat.GetThreat(tank);
+            cap = cap < 0.0f ? theirs : std::min(cap, theirs);
+        }
+        if (cap < 0.0f && victim && (victim == mainTank || victim == second))
+            cap = threat.GetThreat(victim);
+        return std::max(cap, 0.0f);
+    }
+}
+
 float RcBwlDrakeTauntMultiplier::GetValue(Action* action)
 {
     if (!action || !PlayerbotAI::IsTank(bot))
+        return 1.0f;
+    std::string const name = action->getName();
+    bool const taunt = IsTaunt(name);
+    if (!taunt && action->getThreatType() == Action::ActionThreatType::None)
         return 1.0f;
     Creature* drake = FightingDrake(bot);
     if (!drake)
         return 1.0f;
 
-    bool const holds = HoldsDrake(bot, drake);
-    std::string const name = action->getName();
-    if (IsTaunt(name))
+    if (taunt)
     {
         if (!TauntsDrake(bot, action, name, drake))
             return 1.0f;
-        // He turns to whoever takes him. Only his two tanks do, from in front.
-        if (!holds)
-            return 0.0f;
-        // Loose on someone who isn't a tank: take him back at once, from wherever.
         Unit* victim = drake->GetVictim();
         Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
-        if (!victimPlayer || !PlayerbotAI::IsTank(victimPlayer))
+        bool const onTank = victimPlayer && PlayerbotAI::IsTank(victimPlayer);
+        // He turns to whoever takes him: only his two tanks do, unless he is loose on someone
+        // who isn't a tank and neither of them can take him back right now (both thrown out of
+        // range by the Wing Buffet, taunts on cooldown).
+        if (!HoldsDrake(bot, drake))
+            return !onTank && !HolderCanTakeBack(bot, drake) ? 1.0f : 0.0f;
+        if (!onTank)
             return 1.0f;
         // A breath goes where he faces when it ends.
         if (ConeCast(drake) == SPELL_SHADOW_FLAME)
@@ -1046,23 +1118,23 @@ float RcBwlDrakeTauntMultiplier::GetValue(Action* action)
         return TauntsFromFront(bot, drake) ? 1.0f : 0.0f;
     }
 
-    // Every other tank stays under the two, so a Wing Buffet on one hands him to the other and
-    // not to whichever tank happens to be next on his threat. Swings carry on.
-    if (holds || action->getThreatType() == Action::ActionThreatType::None || action->GetTarget() != drake)
+    // Every other tank stays under the one of his two that takes him next, so a Wing Buffet on
+    // one hands him to the other and not to whichever tank happens to be next on his threat.
+    // Swings carry on. Area threat (Consecration, Thunder Clap, Swipe) counts once the bot is at
+    // his feet, unless it is holding an add there.
+    if (action->getThreatType() == Action::ActionThreatType::Aoe)
+    {
+        if (!bot->IsWithinCombatRange(drake, 10.0f) || HoldsAnAdd(bot, drake))
+            return 1.0f;
+    }
+    else if (action->GetTarget() != drake)
         return 1.0f;
-    Group* group = bot->GetGroup();
-    if (!group)
+    if (HoldsDrake(bot, drake))
         return 1.0f;
-    Player* mainTank = RaidClear::Tanks::ActingMainTank(group);
-    Player* second = SecondDrakeTank(group, mainTank, drake);
-    ThreatManager const& threat = drake->GetThreatMgr();
-    float most = 0.0f;
-    for (Player* tank : { mainTank, second })
-        if (tank && tank->IsAlive())
-            most = std::max(most, threat.GetThreat(tank));
-    if (most <= 0.0f)
+    float const cap = DrakeThreatCap(bot, drake);
+    if (cap <= 0.0f)
         return 1.0f;
-    return threat.GetThreat(bot) >= most * DRAKE_OFFTANK_SHARE ? 0.0f : 1.0f;
+    return drake->GetThreatMgr().GetThreat(bot) >= cap * DRAKE_OFFTANK_SHARE ? 0.0f : 1.0f;
 }
 
 // --- Spell hooks ------------------------------------------------------------
