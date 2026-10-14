@@ -31,6 +31,17 @@
  *     Avenger's Shield) jumps to whatever stands near enough. How far each one reaches is read
  *     from the server's spell data. Not judged on a target that isn't in combat itself: that is
  *     the pull, and its pack comes along whatever it is hit with.
+ *   - A mob that is walking (a patrol, or one wandering round its spot) counts where it is and
+ *     where it will be over the next yards of its way, for every walk and every spot a "move
+ *     out" action looks at: a bot doesn't walk to where a patrol is about to arrive. Not for the
+ *     step back out: a bot doesn't leave its spot for a patrol that may yet turn off.
+ *   - A boss that isn't in the fight is given a wider berth than a pack: extra yards on top of
+ *     its aggro radius, for everything above.
+ *   - A bot whose walks keep being stopped (whatever sends it keeps sending it, and each try
+ *     gets it a step further before it is caught) is held longer each time: 0.7 s, then 1.4,
+ *     then 2.8, until it has gone a few seconds without being stopped.
+ *   - A mob that throws players about (Common/Knockback.h) is not fought from a spot where the
+ *     throw ends in one of those idle packs.
  *
  * The aggro radius is the core's own (Creature::GetAggroRange: the mob's detection range, 20 yd
  * by default, plus a yard per level the mob is above the bot).
@@ -71,6 +82,13 @@ namespace RaidClear::Leash
 
         bool Pulls(float x, float y, float z) const;
         bool Pulls(std::vector<G3D::Vector3> const& path) const;
+
+        // Yards between a spot and the edge of the nearest idle mob's aggro radius; negative
+        // inside it. Mobs on another level, and mobs that are close but can't see the spot,
+        // don't count. NO_MOBS with none around (or with the leash off).
+        // Without `sight`, every mob on the level counts, seen or not.
+        static constexpr float NO_MOBS = 1000.0f;
+        float Gap(float x, float y, float z, bool sight = true) const;
 
     private:
         struct Mobs;

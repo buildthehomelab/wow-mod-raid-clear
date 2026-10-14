@@ -21,6 +21,7 @@
 #include "RaidClearRegistry.h"
 #include "Common/AggroLeash.h"
 #include "Common/DeathLog.h"
+#include "Common/Knockback.h"
 #include "Common/RaidDiscipline.h"
 #include "Common/TankRoles.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
@@ -72,6 +73,11 @@ namespace RaidClear
         sConfig.aggroLeash = sConfigMgr->GetOption<bool>("RaidClear.AggroLeash", true);
         sConfig.aggroLeashBuffer = std::max(0.0f, sConfigMgr->GetOption<float>("RaidClear.AggroLeash.Buffer", 6.0f));
         sConfig.aggroLeashSplash = sConfigMgr->GetOption<bool>("RaidClear.AggroLeash.Splash", true);
+        sConfig.aggroLeashKnockback = sConfigMgr->GetOption<bool>("RaidClear.AggroLeash.Knockback", true);
+        sConfig.aggroLeashPatrolAhead =
+            std::clamp(sConfigMgr->GetOption<float>("RaidClear.AggroLeash.PatrolAhead", 15.0f), 0.0f, 40.0f);
+        sConfig.aggroLeashBossBuffer =
+            std::clamp(sConfigMgr->GetOption<float>("RaidClear.AggroLeash.BossBuffer", 8.0f), 0.0f, 30.0f);
         sConfig.pullDiscipline = sConfigMgr->GetOption<bool>("RaidClear.PullDiscipline", true);
         sConfig.healersStayBack = sConfigMgr->GetOption<bool>("RaidClear.HealersStayBack", true);
         sConfig.teachTranquilizingShot = sConfigMgr->GetOption<bool>("RaidClear.Bots.TeachTranquilizingShot", true);
@@ -239,6 +245,7 @@ void AddRaidClearScripts()
     new RaidClearPlayerScript();
     DeathLog::AddScripts();
     Leash::AddScripts();
+    Knockback::AddScripts();
     BlackwingLair::AddScripts();
     MoltenCore::AddScripts();
     OnyxiasLair::AddScripts();

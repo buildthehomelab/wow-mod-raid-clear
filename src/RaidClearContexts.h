@@ -9,6 +9,7 @@
 
 #include "Common/AggroLeash.h"
 #include "Common/KillOrder.h"
+#include "Common/Knockback.h"
 #include "Common/RaidDiscipline.h"
 #include "Common/TankRoles.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
@@ -56,6 +57,7 @@ public:
         creators["rc protect boss victim"] = &RaidClearActionContext::protect_boss_victim;
         creators["rc salvation on player"] = &RaidClearActionContext::salvation_on_player;
         creators["rc aggro leash"] = &RaidClearActionContext::aggro_leash;
+        creators["rc knockback footing"] = &RaidClearActionContext::knockback_footing;
         creators["rc leave unpulled target"] = &RaidClearActionContext::leave_unpulled_target;
 
         creators["rc mc tremor totem"] = &RaidClearActionContext::mc_tremor_totem;
@@ -109,6 +111,7 @@ private:
     static Action* protect_boss_victim(PlayerbotAI* botAI) { return new RcProtectBossVictimAction(botAI); }
     static Action* salvation_on_player(PlayerbotAI* botAI) { return new RcSalvationOnPlayerAction(botAI); }
     static Action* aggro_leash(PlayerbotAI* botAI) { return new RcAggroLeashAction(botAI); }
+    static Action* knockback_footing(PlayerbotAI* botAI) { return new RcKnockbackFootingAction(botAI); }
     static Action* leave_unpulled_target(PlayerbotAI* botAI) { return new RcLeaveUnpulledTargetAction(botAI); }
 
     static Action* mc_tremor_totem(PlayerbotAI* botAI) { return new RcMcTremorTotemAction(botAI); }
@@ -170,6 +173,8 @@ public:
         creators["rc boss on non tank"] = &RaidClearTriggerContext::boss_on_non_tank;
         creators["rc player over threat"] = &RaidClearTriggerContext::player_over_threat;
         creators["rc aggro leash"] = &RaidClearTriggerContext::aggro_leash;
+        creators["rc knockback footing"] = &RaidClearTriggerContext::knockback_footing;
+        creators["rc knockback footing tank"] = &RaidClearTriggerContext::knockback_footing_tank;
         creators["rc unpulled target"] = &RaidClearTriggerContext::unpulled_target;
 
         creators["rc mc magmadar tremor"] = &RaidClearTriggerContext::mc_magmadar_tremor;
@@ -224,6 +229,14 @@ private:
     static Trigger* boss_on_non_tank(PlayerbotAI* botAI) { return new RcBossOnNonTankTrigger(botAI); }
     static Trigger* player_over_threat(PlayerbotAI* botAI) { return new RcPlayerOverThreatTrigger(botAI); }
     static Trigger* aggro_leash(PlayerbotAI* botAI) { return new RcAggroLeashTrigger(botAI); }
+    static Trigger* knockback_footing(PlayerbotAI* botAI)
+    {
+        return new RcKnockbackFootingTrigger(botAI, "rc knockback footing", false);
+    }
+    static Trigger* knockback_footing_tank(PlayerbotAI* botAI)
+    {
+        return new RcKnockbackFootingTrigger(botAI, "rc knockback footing tank", true);
+    }
     static Trigger* unpulled_target(PlayerbotAI* botAI) { return new RcUnpulledTargetTrigger(botAI); }
 
     static Trigger* mc_magmadar_tremor(PlayerbotAI* botAI) { return new RcMcMagmadarTremorTrigger(botAI); }

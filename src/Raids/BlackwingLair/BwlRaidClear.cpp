@@ -120,6 +120,18 @@ std::vector<RaidClear::Tanks::SplashRadius> const& RaidClear::BlackwingLair::Tan
     return radii;
 }
 
+std::vector<RaidClear::Knockback::Thrower> const& RaidClear::BlackwingLair::Throwers()
+{
+    static std::vector<Knockback::Thrower> const throwers = {
+        { NPC_FIREMAW, SPELL_WING_BUFFET },
+        { NPC_EBONROC, SPELL_WING_BUFFET },
+        { NPC_FLAMEGOR, SPELL_WING_BUFFET },
+        { NPC_BROODLORD, SPELL_BROODLORD_KNOCK_AWAY },
+        { NPC_BROODLORD, SPELL_BROODLORD_BLAST_WAVE },
+    };
+    return throwers;
+}
+
 std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitOwnTankAdds()
 {
     static std::vector<uint32> const adds = { NPC_DEATH_TALON_CAPTAIN };

@@ -26,6 +26,9 @@ namespace RaidClear
         bool aggroLeash = true;
         float aggroLeashBuffer = 6.0f;
         bool aggroLeashSplash = true;
+        bool aggroLeashKnockback = true;
+        float aggroLeashPatrolAhead = 15.0f;
+        float aggroLeashBossBuffer = 8.0f;
         bool pullDiscipline = true;
         bool healersStayBack = true;
         bool teachTranquilizingShot = true;

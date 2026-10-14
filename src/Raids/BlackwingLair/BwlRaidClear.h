@@ -93,6 +93,7 @@
 #define MOD_RAID_CLEAR_BLACKWING_LAIR_H
 
 #include "Common/KillOrder.h"
+#include "Common/Knockback.h"
 #include "Common/TankRoles.h"
 #include "Common/WayOut.h"
 
@@ -168,7 +169,9 @@ namespace RaidClear::BlackwingLair
         SPELL_FLAMEGOR_FRENZY   = 23342,   // "Enrage" in the client: Fire Nova on the whole raid while it lasts
         SPELL_CHROMAGGUS_FRENZY = 23128,   // "Enrage" in the client; the one below 20% can't be removed
         SPELL_SHADOW_FLAME      = 22539,   // Firemaw, Ebonroc, Flamegor, Nefarian: 120 degrees, 45 yd
-        SPELL_WING_BUFFET       = 23339,   // the three drakes: 120 degrees, 20 yd
+        SPELL_WING_BUFFET       = 23339,   // the three drakes: 120 degrees, 20 yd; throws 39 yd
+        SPELL_BROODLORD_KNOCK_AWAY = 18670,  // whoever he is on, 17 yd
+        SPELL_BROODLORD_BLAST_WAVE = 23331,  // everyone within 20 yd of him, 18 yd
         SPELL_FEAR_WARD         = 6346,
         SPELL_ROGUE_PARALYZE    = 23414,   // Nefarian's rogue call
         SPELL_BROOD_AFFLICTION_BLACK = 23154,  // Chromaggus: curse, more fire damage taken
@@ -346,6 +349,9 @@ namespace RaidClear::BlackwingLair
 
     // Trash whose AoE needs more room than the default tank separation.
     std::vector<Tanks::SplashRadius> const& TankSplitSplashRadii();
+
+    // The mobs that throw players about, with the spell they do it with (Common/Knockback.h).
+    std::vector<Knockback::Thrower> const& Throwers();
 
     // Adds that get an off-tank of their own (the Death Talon Captain).
     std::vector<uint32> const& TankSplitOwnTankAdds();

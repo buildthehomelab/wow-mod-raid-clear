@@ -8,6 +8,7 @@
 
 #include "RaidClearConfig.h"
 #include "RaidClearRegistry.h"
+#include "Common/Knockback.h"
 #include "Common/SplashSpells.h"
 #include "Common/TankRoles.h"
 
@@ -35,11 +36,20 @@ void RaidClearLeashStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // Above every "move out" there is (the raid mechanics sit at ACTION_RAID, the life-savers
     // at ACTION_EMERGENCY + 5 or 6): a second pack costs more than whatever the bot was dodging.
     triggers.push_back(new TriggerNode("rc aggro leash", { NextAction("rc aggro leash", ACTION_EMERGENCY + 8) }));
+    // Standing where a throw ends in an idle pack (Common/Knockback.h). A tank after its own
+    // split and separation (ACTION_RAID - 4 and - 5: what it holds, and where) and after
+    // mod-dungeon-clear's pull, which is still dragging the pack to the raid (60); everyone else
+    // with the raid mechanics.
+    triggers.push_back(
+        new TriggerNode("rc knockback footing tank", { NextAction("rc knockback footing", ACTION_RAID - 6) }));
+    triggers.push_back(
+        new TriggerNode("rc knockback footing", { NextAction("rc knockback footing", ACTION_RAID + 1) }));
 }
 
 void RaidClearLeashStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcLeashSplashMultiplier(botAI));
+    multipliers.push_back(new RcKnockbackFootingMultiplier(botAI));
 }
 
 namespace
@@ -56,6 +66,10 @@ namespace
     // sent it doesn't send it again on its next update (ten times a second for a bot led by a
     // player). Short enough that a dodge in a safe direction is only late, not missed.
     constexpr float HOLD_MS = 700.0f;
+    // A bot stopped again this soon after the last time is being sent over and over: each stop
+    // doubles the hold, up to four times HOLD_MS.
+    constexpr uint32 STOPPED_AGAIN_MS = 4000;
+    constexpr uint8 MAX_STRIKES = 2;
     // A spot more than this above or below the bot is a ledge or a pit.
     constexpr float SPOT_HEIGHT = 5.0f;
     constexpr uint32 STEP_BACK_CHECK_MS = 300;
@@ -68,6 +82,11 @@ namespace
     // ...and with this much room for where they have walked to since, and for the spell landing
     // a little off its mark.
     constexpr float SPLASH_SLACK = 3.0f;
+    // A walking mob's way ahead is marked this often along it.
+    constexpr float AHEAD_STEP = 5.0f;
+    // Whether a mob can see a spot is only asked when the spot is closer than this to the edge of
+    // its aggro radius: further out the answer changes nothing.
+    constexpr float GAP_SIGHT = 10.0f;
 
     // Per instance. Only ever touched from that instance's map update (the hook below and the
     // bots' own AI, which runs inside Player::Update), so it needs no lock of its own.
@@ -77,6 +96,12 @@ namespace
         uint32 scanMs = 0;
         GuidVector idle;  // creatures that would aggro, whoever walks up
         std::unordered_map<ObjectGuid, uint32> lastWalk;  // per bot: the last spline that was looked at
+        struct Stop
+        {
+            uint32 atMs = 0;
+            uint8 strikes = 0;
+        };
+        std::unordered_map<ObjectGuid, Stop> stops;  // per bot: when the leash last stopped it
     };
 
     std::mutex sStatesMutex;
@@ -123,10 +148,13 @@ namespace
         float x;
         float y;
         float z;
-        float aggro;  // its aggro radius for this bot, centre to centre
+        float aggro;  // its aggro radius for this bot, centre to centre (a boss's with its extra room)
         // Its aggro radius plus the buffer already covers one of the bot's targets: there is no
         // getting at that target without coming this close.
         bool tied;
+        // Not where the mob is but where it is walking to (a patrol, a mob wandering round its
+        // spot): it will be standing there by the time a bot's walk is over.
+        bool ahead = false;
     };
 
     // What the bot is attacking and what it is about to attack. They differ during a pull:
@@ -152,12 +180,62 @@ namespace
         return targets;
     }
 
-    // The idle mobs around this bot. Its own targets are left out: attacking a mob that isn't in
-    // combat yet is a pull.
+    bool Tied(BotTargets const& targets, float x, float y, float reach)
+    {
+        return (targets.victim && targets.victim->GetExactDist2d(x, y) < reach) ||
+               (targets.current && targets.current->GetExactDist2d(x, y) < reach);
+    }
+
+    // The next `ahead` yards of a walking mob's way, as spots of their own: one every few yards
+    // and one where the look ends. The core only knows the leg the mob is on (to its next
+    // waypoint), so that is as far as this sees.
+    void AddWayAhead(std::vector<IdleMob>& mobs, IdleMob const& mob, BotTargets const& targets, float tieReach,
+                     float ahead)
+    {
+        Movement::MoveSpline const* walk = mob.creature->movespline;
+        if (ahead <= 0.0f || !mob.creature->isMoving() || !walk->Initialized() || walk->Finalized())
+            return;
+
+        auto const add = [&](G3D::Vector3 const& at)
+        {
+            mobs.push_back({ mob.creature, at.x, at.y, at.z, mob.aggro, Tied(targets, at.x, at.y, tieReach), true });
+        };
+
+        Movement::MoveSpline::MySpline const& spline = walk->_Spline();
+        G3D::Vector3 from(mob.x, mob.y, mob.z);
+        G3D::Vector3 end = from;
+        float gone = 0.0f;      // yards of its way looked at so far
+        float lastSpot = 0.0f;  // how far along the last spot was put
+        for (int32 i = walk->_currentSplineIdx() + 1; i <= spline.last() && gone < ahead; ++i)
+        {
+            G3D::Vector3 const to = spline.getPoint(i);
+            float const leg = std::hypot(to.x - from.x, to.y - from.y);
+            if (leg > 0.01f)
+            {
+                float const upTo = std::min(gone + leg, ahead);
+                for (float at = lastSpot + AHEAD_STEP; at <= upTo; at += AHEAD_STEP)
+                {
+                    add(from + (to - from) * ((at - gone) / leg));
+                    lastSpot = at;
+                }
+                end = from + (to - from) * ((upTo - gone) / leg);
+                gone = upTo;
+            }
+            from = to;
+        }
+        // Where the look ends, or the walk if that ends first.
+        if (gone - lastSpot > 1.0f)
+            add(end);
+    }
+
+    // The idle mobs around this bot, and where the walking ones among them are headed. Its own
+    // targets are left out: attacking a mob that isn't in combat yet is a pull.
     std::vector<IdleMob> IdleMobsNear(Player* bot, InstanceState& state, BotTargets const& targets, float buffer)
     {
         Map* map = bot->GetMap();
         RefreshIdle(map, state);
+        float const ahead = GetConfig().aggroLeashPatrolAhead;
+        float const bossBuffer = GetConfig().aggroLeashBossBuffer;
 
         std::vector<IdleMob> mobs;
         for (ObjectGuid const& guid : state.idle)
@@ -168,13 +246,28 @@ namespace
             if (bot->GetExactDist2d(creature) > SCAN_RANGE || !creature->IsHostileTo(bot))
                 continue;
 
-            float const aggro = creature->GetAggroRange(bot);
-            bool const tied = (targets.victim && targets.victim->GetExactDist2d(creature) < aggro + buffer) ||
-                              (targets.current && targets.current->GetExactDist2d(creature) < aggro + buffer);
-            mobs.push_back({ creature, creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
-                             aggro, tied });
+            // A second pack is a harder fight; a second boss is a wipe, so a boss is given more
+            // room. Not when asking what the target stands next to: that is about what would
+            // really come.
+            float const reach = creature->GetAggroRange(bot);
+            float const aggro = reach + (creature->IsDungeonBoss() || creature->isWorldBoss() ? bossBuffer : 0.0f);
+            IdleMob const mob = { creature, creature->GetPositionX(), creature->GetPositionY(),
+                                  creature->GetPositionZ(), aggro,
+                                  Tied(targets, creature->GetPositionX(), creature->GetPositionY(), reach + buffer) };
+            mobs.push_back(mob);
+            AddWayAhead(mobs, mob, targets, reach + buffer, ahead);
         }
         return mobs;
+    }
+
+    // Whether the mob sees a spot from where it stands, or would from the spot it is walking to.
+    bool Sees(IdleMob const& mob, float x, float y, float z)
+    {
+        if (!mob.ahead)
+            return mob.creature->IsWithinLOS(x, y, z + 2.0f);
+        return mob.creature->GetMap()->isInLineOfSight(mob.x, mob.y, mob.z + mob.creature->GetCollisionHeight(), x, y,
+                                                       z + 2.0f, mob.creature->GetPhaseMask(), LINEOFSIGHT_ALL_CHECKS,
+                                                       VMAP::ModelIgnoreFlags::Nothing);
     }
 
     // Yards between a spot and the edge of the nearest mob's aggro radius; negative inside it.
@@ -229,7 +322,7 @@ namespace
                 float const there = std::hypot(x - mob.x, y - mob.y);
                 // Only a walk that takes the bot closer to the mob than it already is.
                 if (there < mob.aggro + margin && there < std::hypot(botX - mob.x, botY - mob.y) - 0.5f &&
-                    mob.creature->IsWithinLOS(x, y, z + 2.0f))
+                    Sees(mob, x, y, z))
                     return true;
             }
         }
@@ -279,10 +372,12 @@ namespace
                 return false;
         }
 
+        // Where the mobs are, not where they are headed: a bot doesn't leave its spot for a patrol
+        // that may yet turn off.
         float const line = std::max(0.0f, buffer * 0.5f - 1.0f);
         for (IdleMob const& mob : mobs)
         {
-            if (mob.tied || std::fabs(mob.z - bot->GetPositionZ()) > AGGRO_HEIGHT)
+            if (mob.ahead || mob.tied || std::fabs(mob.z - bot->GetPositionZ()) > AGGRO_HEIGHT)
                 continue;
             if (bot->GetExactDist2d(mob.x, mob.y) - mob.aggro < line && mob.creature->IsWithinLOSInMap(bot))
                 return true;
@@ -335,6 +430,23 @@ bool RaidClear::Leash::WalkCheck::Pulls(std::vector<G3D::Vector3> const& path) c
         from = to;
     }
     return false;
+}
+
+float RaidClear::Leash::WalkCheck::Gap(float x, float y, float z, bool sight) const
+{
+    float gap = NO_MOBS;
+    if (!_mobs)
+        return gap;
+    for (IdleMob const& mob : _mobs->list)
+    {
+        if (std::fabs(mob.z - z) > AGGRO_HEIGHT)
+            continue;
+        float const here = std::hypot(x - mob.x, y - mob.y) - mob.aggro;
+        if (here >= gap || (sight && here < GAP_SIGHT && !Sees(mob, x, y, z)))
+            continue;
+        gap = here;
+    }
+    return gap;
 }
 
 namespace
@@ -591,11 +703,19 @@ public:
                 continue;
 
             player->StopMoving();
+            // Each stop lets the bot get a step further before it is caught. One that is sent
+            // again and again would creep into the pack that way, so it is held longer each time.
+            InstanceState::Stop& stop = state->stops[player->GetGUID()];
+            uint32 const now = getMSTime();
+            stop.strikes = stop.atMs && getMSTimeDiff(stop.atMs, now) < STOPPED_AGAIN_MS
+                               ? std::min<uint8>(stop.strikes + 1, MAX_STRIKES)
+                               : 0;
+            stop.atMs = now ? now : 1;
             // Playerbots now believes the bot is standing here for a moment: the action that sent
             // it would otherwise send it again on its next update, ten times a second.
             botAI->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get().Set(
                 player->GetMapId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(),
-                player->GetOrientation(), HOLD_MS, MovementPriority::MOVEMENT_FORCED);
+                player->GetOrientation(), HOLD_MS * float(1u << stop.strikes), MovementPriority::MOVEMENT_FORCED);
         }
     }
 
