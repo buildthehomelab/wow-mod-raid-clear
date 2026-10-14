@@ -69,6 +69,16 @@ std::vector<RaidClear::Tanks::SplashRadius> const& RaidClear::MoltenCore::TankSp
     return radii;
 }
 
+std::vector<RaidClear::Knockback::Thrower> const& RaidClear::MoltenCore::Throwers()
+{
+    static std::vector<Knockback::Thrower> const throwers = {
+        { NPC_MOLTEN_GIANT, SPELL_GIANT_KNOCK_AWAY },
+        { NPC_LAVA_SURGER, SPELL_SURGE },
+        { NPC_SULFURON, SPELL_HAND_OF_RAGNAROS },
+    };
+    return throwers;
+}
+
 void RaidClearMoltenCoreStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("rc kill order", { NextAction("rc mark kill order", ACTION_RAID + 2) }));

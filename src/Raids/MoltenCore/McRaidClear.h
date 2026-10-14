@@ -61,6 +61,7 @@
 #define MOD_RAID_CLEAR_MOLTEN_CORE_H
 
 #include "Common/KillOrder.h"
+#include "Common/Knockback.h"
 #include "Common/TankRoles.h"
 #include "Common/WayOut.h"
 
@@ -96,6 +97,8 @@ namespace RaidClear::MoltenCore
         NPC_FLAMEWALKER_PROTECTOR = 12119, // Lucifron
         NPC_SON_OF_FLAME         = 12143,  // Ragnaros, submerge phase
         NPC_LAVA_SPAWN           = 12265,  // Firelord trash, splits every 15s
+        NPC_LAVA_SURGER          = 12101,  // patrols; Surge
+        NPC_SULFURON             = 12098,
     };
 
     enum Spells : uint32
@@ -105,6 +108,9 @@ namespace RaidClear::MoltenCore
         SPELL_SEPARATION_ANXIETY = 23492,  // on a Firesworn more than 40 yd from Garr
         SPELL_INFERNO            = 19695,  // on Baron Geddon; each pulse is 19698, 20 yd around him
         SPELL_LIVING_BOMB        = 20475,  // on a player; explodes as 20476, 18 yd around it
+        SPELL_GIANT_KNOCK_AWAY   = 18945,  // Molten Giant: the nearest player, 9 yd
+        SPELL_SURGE              = 19196,  // Lava Surger: a charge, then everyone within 10 yd of it, 5 yd
+        SPELL_HAND_OF_RAGNAROS   = 19780,  // Sulfuron: everyone within 10 yd, 6 yd
     };
 
     // The Living Bomb's explosion reaches 18 yd, centre to centre. Its carrier walks to the
@@ -166,6 +172,9 @@ namespace RaidClear::MoltenCore
 
     // Trash whose AoE needs more room than the default tank separation.
     std::vector<Tanks::SplashRadius> const& TankSplitSplashRadii();
+
+    // The mobs that throw players about, with the spell they do it with (Common/Knockback.h).
+    std::vector<Knockback::Thrower> const& Throwers();
 
     void AddScripts();
 }

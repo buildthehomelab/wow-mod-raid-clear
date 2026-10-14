@@ -148,6 +148,46 @@ RaidClear.AggroLeash.Buffer = 6
 RaidClear.AggroLeash.Splash = 1
 
 #
+#    RaidClear.AggroLeash.Knockback
+#        Description: With the leash on, a bot doesn't stand where a knockback would throw it
+#                     into a mob that isn't in the fight. How far a mob throws and whom (whoever
+#                     it is on, everyone around it, only those in front of it) is read from the
+#                     server's spell data: Blackwing Lair's drakes (Wing Buffet, 39 yd),
+#                     Broodlord, Molten Core's giants, Lava Surgers and Sulfuron are known from
+#                     the start, and any other mob once it has been seen to throw someone on
+#                     a raid map (one line in the server log). A tank or melee bot goes round
+#                     the mob to the nearest side from which the throw ends in clear ground or
+#                     against a wall; anyone else steps out of the throw's reach. Playerbots' "tank
+#                     face" is off for a tank while this has a say in where it stands. Does
+#                     nothing in a fight with no idle mob near it.
+#        Default:     1
+#
+
+RaidClear.AggroLeash.Knockback = 1
+
+#
+#    RaidClear.AggroLeash.PatrolAhead
+#        Description: Yards of a walking mob's way ahead (a patrol, or a mob wandering round its
+#                     spot) that the leash treats as if the mob stood there already, so a bot
+#                     doesn't walk to where a patrol is about to arrive. The server only knows
+#                     the leg a mob is on, up to its next waypoint. 0 = only where the mob is.
+#        Default:     15
+#
+
+RaidClear.AggroLeash.PatrolAhead = 15
+
+#
+#    RaidClear.AggroLeash.BossBuffer
+#        Description: Yards kept from a boss that isn't in the fight, on top of its aggro radius
+#                     and RaidClear.AggroLeash.Buffer, by every walk that isn't toward the bot's
+#                     own target and by every spot a bot picks to stand on. 0 = bosses are
+#                     treated like any other mob.
+#        Default:     8
+#
+
+RaidClear.AggroLeash.BossBuffer = 8
+
+#
 #    RaidClear.PullDiscipline
 #        Description: Only a tank starts a fight. Playerbots counts the raid's skull as a target
 #                     for every bot whether it is in combat or not, so a marked pack gets a

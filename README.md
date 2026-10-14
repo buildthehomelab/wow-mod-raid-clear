@@ -91,11 +91,44 @@ fight but would join it: hostile, aggressive, alive, in line of sight and on the
   pack doesn't make that pack safe to back into.
 - A bot standing within 2 yards of an idle mob's aggro radius (a patrol walking up) steps back
   out, toward the main tank where it can. A bot in melee with its target is never moved off it.
+- A mob that is walking (a patrol, or one wandering round its spot) counts where it is and where
+  it will be over the next 15 yards of its way (`RaidClear.AggroLeash.PatrolAhead`): a bot
+  doesn't walk to where a patrol is about to arrive. The server only knows the leg a mob is on,
+  up to its next waypoint, so that is as far ahead as this sees.
+- A boss that isn't in the fight gets 8 more yards (`RaidClear.AggroLeash.BossBuffer`) for
+  every walk that isn't toward the bot's target and every spot a bot picks to stand on. A second
+  pack is a harder fight; a second boss is a wipe.
+- An off-tank dragging its mob away from the main tank's doesn't pick a spot inside any of
+  that. (Before, it could: the walk was stopped a step in, sent again two seconds later, and
+  stopped a step further on.)
 
 The aggro radius is the core's own: the mob's detection range (20 yards unless its template says
 otherwise) plus a yard for every level the mob is above the bot.
 
-Knockbacks, charges and fears are not walks the bot chose and are left alone.
+Knockbacks, charges and fears are not walks the bot chose and can't be stopped. What a bot can
+choose is where it stands when the knockback comes (`RaidClear.AggroLeash.Knockback`):
+
+- Some mobs throw players about. A Molten Giant's **Knock Away** sends its tank 9 yards,
+  Broodlord's 17, his **Blast Wave** everyone within 20 yards of him 18, and the **Wing Buffet**
+  of Firemaw, Ebonroc and Flamegor everyone in front of them 39. Playerbots' tank walks round
+  its mob to turn it away from the raid, so it stands with its back to whatever hasn't been
+  pulled yet, and that is where it lands.
+- How far a mob throws, and whom (whoever it is on, everyone within a radius, only those in
+  front of it or behind it), is read from the server's spell data. Each raid lists the throwers
+  it knows; any other is picked up when it throws someone on a raid map (one line in the server
+  log) and known until the server restarts. A single-target throw has to go to whoever the mob
+  is on three times first, and is dropped the first time it goes to anyone else: one aimed at a
+  random player (a Death Talon Flamescale's **Berserker Charge**) can't be stood out of the way
+  of.
+- A bot standing where a throw would catch it and carry it into an idle mob's aggro radius
+  moves. The flight counts as well as the landing, and it ends at walls the way the server ends
+  it for a bot, so a tank with its back to a wall is fine where it is. The tank the mob is on
+  goes round it to the nearest side with a clear landing (not while the mob is casting); a melee
+  bot does the same within the half behind the mob; anyone else walks to the nearest spot out of
+  the throw's reach, or with a clear landing.
+- While such a mob is on a tank and an idle pack is near enough to be thrown into, playerbots'
+  "tank face" is off for that tank.
+- With no idle mob anywhere near the thrower, none of this does anything.
 
 The same idle mobs are kept out of the bots' area damage (`RaidClear.AggroLeash.Splash`). An area
 spell hits everything hostile in its radius, in the fight or not, and a chain jumps to whatever
@@ -249,6 +282,9 @@ also keep playerbots' own raid strategies.
 | `RaidClear.AggroLeash` | 1 | Bots in combat don't back into packs that aren't in the fight. |
 | `RaidClear.AggroLeash.Buffer` | 6 | Yards kept beyond a mob's aggro radius. |
 | `RaidClear.AggroLeash.Splash` | 1 | No area or chain spell where it would reach a pack that isn't in the fight. |
+| `RaidClear.AggroLeash.Knockback` | 1 | Bots don't stand where a knockback would throw them into a pack that isn't in the fight. |
+| `RaidClear.AggroLeash.PatrolAhead` | 15 | Yards of a walking mob's way ahead that count as taken (0 = only where it is). |
+| `RaidClear.AggroLeash.BossBuffer` | 8 | Extra yards kept from a boss that isn't in the fight (not on the way to the bot's own target). |
 | `RaidClear.PullDiscipline` | 1 | Only a tank starts a fight with a pack; no boss pull on top of a fight. |
 | `RaidClear.HealersStayBack` | 1 | Healer paladins don't walk into melee to judge. |
 | `RaidClear.Bots.TeachTranquilizingShot` | 1 | Hunter bots in a raid learn Tranquilizing Shot. |
@@ -371,6 +407,13 @@ Category: Raids
   **War Stomp**.
 - Blackwing Lair, Vaelastrasz's room: bots now stop and kill the **Blackwing Technicians** that
   run for the door when you walk in. They used to let all but one get away, loot included.
+- Raids: tanks no longer stand where a knockback throws them into the next pack. Against
+  **Wing Buffet**, **Knock Away** and **Blast Wave** they pick the side with clear ground or a
+  wall behind them.
+- Raids: off-tanks no longer drag their mob into a pack or a boss that isn't in the fight, as
+  happened with a Wyrmguard and Ebonroc.
+- Raids: bots in a fight keep out of the way of a patrol that is walking toward them, and give
+  bosses that aren't in the fight more room.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.

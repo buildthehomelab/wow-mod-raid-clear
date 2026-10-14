@@ -55,7 +55,8 @@
  *     configured separation, or more for mobs with a big AoE (each raid lists those with their
  *     radius).
  *     The spot is on dry ground (no lava or water), at about the same height and in line of
- *     sight of the main tank.
+ *     sight of the main tank, and clear of every pack and boss that isn't in the fight (by the
+ *     aggro leash's buffer, see Common/AggroLeash.h), as is the walk to it.
  *
  * Released under the MIT License.
  */

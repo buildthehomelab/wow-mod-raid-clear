@@ -7,6 +7,7 @@
 #include "TankRoles.h"
 
 #include "RaidClearConfig.h"
+#include "Common/AggroLeash.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/MoltenCore/McRaidClear.h"
 #include "Raids/ZulGurub/ZgRaidClear.h"
@@ -997,6 +998,11 @@ bool RcOffTankSeparateAction::Execute(Event /*event*/)
     Unit* anchor = mainTank->GetVictim() ? mainTank->GetVictim() : mainTank;
     std::vector<Unit*> const others = MobsToClear(botAI, bot, mainTank, mine, AI_VALUE(GuidVector, "attackers"));
     Map* map = bot->GetMap();
+    // The spot is where the off-tank ends up with its mob beside it: it has to be clear of every
+    // pack and boss that isn't in the fight, and so does the walk there. (The leash would stop
+    // the walk anyway, a step in, and this would send it again: a yard nearer each time.)
+    RaidClear::Leash::WalkCheck const leash(botAI, bot);
+    float const clear = GetConfig().aggroLeashBuffer;
 
     // Stand far enough out that my mob, following me, ends up at the wanted distance from the
     // others even if it stops between us.
@@ -1039,6 +1045,8 @@ bool RcOffTankSeparateAction::Execute(Event /*event*/)
                 continue;
             // Healers stay near the main tank; keep the off-tank where they can see it.
             if (!mainTank->IsWithinLOS(x, y, z + 2.0f))
+                continue;
+            if (leash.Gap(x, y, z) < clear || leash.Pulls(x, y, z))
                 continue;
 
             if ((rest.empty() || Shortfall(mine, rest, x, y, extra) <= 0.0f) &&

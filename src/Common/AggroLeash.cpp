@@ -8,6 +8,7 @@
 
 #include "RaidClearConfig.h"
 #include "RaidClearRegistry.h"
+#include "Common/Knockback.h"
 #include "Common/SplashSpells.h"
 #include "Common/TankRoles.h"
 
@@ -35,11 +36,20 @@ void RaidClearLeashStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // Above every "move out" there is (the raid mechanics sit at ACTION_RAID, the life-savers
     // at ACTION_EMERGENCY + 5 or 6): a second pack costs more than whatever the bot was dodging.
     triggers.push_back(new TriggerNode("rc aggro leash", { NextAction("rc aggro leash", ACTION_EMERGENCY + 8) }));
+    // Standing where a throw ends in an idle pack (Common/Knockback.h). A tank after its own
+    // split and separation (ACTION_RAID - 4 and - 5: what it holds, and where) and after
+    // mod-dungeon-clear's pull, which is still dragging the pack to the raid (60); everyone else
+    // with the raid mechanics.
+    triggers.push_back(
+        new TriggerNode("rc knockback footing tank", { NextAction("rc knockback footing", ACTION_RAID - 6) }));
+    triggers.push_back(
+        new TriggerNode("rc knockback footing", { NextAction("rc knockback footing", ACTION_RAID + 1) }));
 }
 
 void RaidClearLeashStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcLeashSplashMultiplier(botAI));
+    multipliers.push_back(new RcKnockbackFootingMultiplier(botAI));
 }
 
 namespace
@@ -68,6 +78,11 @@ namespace
     // ...and with this much room for where they have walked to since, and for the spell landing
     // a little off its mark.
     constexpr float SPLASH_SLACK = 3.0f;
+    // A walking mob's way ahead is marked this often along it.
+    constexpr float AHEAD_STEP = 5.0f;
+    // Whether a mob can see a spot is only asked when the spot is closer than this to the edge of
+    // its aggro radius: further out the answer changes nothing.
+    constexpr float GAP_SIGHT = 10.0f;
 
     // Per instance. Only ever touched from that instance's map update (the hook below and the
     // bots' own AI, which runs inside Player::Update), so it needs no lock of its own.
@@ -127,6 +142,12 @@ namespace
         // Its aggro radius plus the buffer already covers one of the bot's targets: there is no
         // getting at that target without coming this close.
         bool tied;
+        // Not where the mob is but where it is walking to (a patrol, a mob wandering round its
+        // spot): it will be standing there by the time a bot's walk is over.
+        bool ahead = false;
+        // A boss: yards of room on top of its aggro radius and the buffer. Not for a walk to the
+        // bot's target, not for a boss the target stands next to, not for the step back out.
+        float room = 0.0f;
     };
 
     // What the bot is attacking and what it is about to attack. They differ during a pull:
@@ -152,12 +173,63 @@ namespace
         return targets;
     }
 
-    // The idle mobs around this bot. Its own targets are left out: attacking a mob that isn't in
-    // combat yet is a pull.
+    bool Tied(BotTargets const& targets, float x, float y, float reach)
+    {
+        return (targets.victim && targets.victim->GetExactDist2d(x, y) < reach) ||
+               (targets.current && targets.current->GetExactDist2d(x, y) < reach);
+    }
+
+    // The next `ahead` yards of a walking mob's way, as spots of their own: one every few yards
+    // and one where the look ends. The core only knows the leg the mob is on (to its next
+    // waypoint), so that is as far as this sees.
+    void AddWayAhead(std::vector<IdleMob>& mobs, IdleMob const& mob, BotTargets const& targets, float tieReach,
+                     float ahead)
+    {
+        Movement::MoveSpline const* walk = mob.creature->movespline;
+        if (ahead <= 0.0f || !mob.creature->isMoving() || !walk->Initialized() || walk->Finalized())
+            return;
+
+        auto const add = [&](G3D::Vector3 const& at)
+        {
+            mobs.push_back({ mob.creature, at.x, at.y, at.z, mob.aggro, Tied(targets, at.x, at.y, tieReach), true,
+                             mob.room });
+        };
+
+        Movement::MoveSpline::MySpline const& spline = walk->_Spline();
+        G3D::Vector3 from(mob.x, mob.y, mob.z);
+        G3D::Vector3 end = from;
+        float gone = 0.0f;      // yards of its way looked at so far
+        float lastSpot = 0.0f;  // how far along the last spot was put
+        for (int32 i = walk->_currentSplineIdx() + 1; i <= spline.last() && gone < ahead; ++i)
+        {
+            G3D::Vector3 const to = spline.getPoint(i);
+            float const leg = std::hypot(to.x - from.x, to.y - from.y);
+            if (leg > 0.01f)
+            {
+                float const upTo = std::min(gone + leg, ahead);
+                for (float at = lastSpot + AHEAD_STEP; at <= upTo; at += AHEAD_STEP)
+                {
+                    add(from + (to - from) * ((at - gone) / leg));
+                    lastSpot = at;
+                }
+                end = from + (to - from) * ((upTo - gone) / leg);
+                gone = upTo;
+            }
+            from = to;
+        }
+        // Where the look ends, or the walk if that ends first.
+        if (gone - lastSpot > 1.0f)
+            add(end);
+    }
+
+    // The idle mobs around this bot, and where the walking ones among them are headed. Its own
+    // targets are left out: attacking a mob that isn't in combat yet is a pull.
     std::vector<IdleMob> IdleMobsNear(Player* bot, InstanceState& state, BotTargets const& targets, float buffer)
     {
         Map* map = bot->GetMap();
         RefreshIdle(map, state);
+        float const ahead = GetConfig().aggroLeashPatrolAhead;
+        float const bossBuffer = GetConfig().aggroLeashBossBuffer;
 
         std::vector<IdleMob> mobs;
         for (ObjectGuid const& guid : state.idle)
@@ -168,13 +240,26 @@ namespace
             if (bot->GetExactDist2d(creature) > SCAN_RANGE || !creature->IsHostileTo(bot))
                 continue;
 
+            // A second pack is a harder fight; a second boss is a wipe, so a boss is given more room.
             float const aggro = creature->GetAggroRange(bot);
-            bool const tied = (targets.victim && targets.victim->GetExactDist2d(creature) < aggro + buffer) ||
-                              (targets.current && targets.current->GetExactDist2d(creature) < aggro + buffer);
-            mobs.push_back({ creature, creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
-                             aggro, tied });
+            IdleMob const mob = { creature, creature->GetPositionX(), creature->GetPositionY(),
+                                  creature->GetPositionZ(), aggro,
+                                  Tied(targets, creature->GetPositionX(), creature->GetPositionY(), aggro + buffer),
+                                  false, creature->IsDungeonBoss() || creature->isWorldBoss() ? bossBuffer : 0.0f };
+            mobs.push_back(mob);
+            AddWayAhead(mobs, mob, targets, aggro + buffer, ahead);
         }
         return mobs;
+    }
+
+    // Whether the mob sees a spot from where it stands, or would from the spot it is walking to.
+    bool Sees(IdleMob const& mob, float x, float y, float z)
+    {
+        if (!mob.ahead)
+            return mob.creature->IsWithinLOS(x, y, z + 2.0f);
+        return mob.creature->GetMap()->isInLineOfSight(mob.x, mob.y, mob.z + mob.creature->GetCollisionHeight(), x, y,
+                                                       z + 2.0f, mob.creature->GetPhaseMask(), LINEOFSIGHT_ALL_CHECKS,
+                                                       VMAP::ModelIgnoreFlags::Nothing);
     }
 
     // Yards between a spot and the edge of the nearest mob's aggro radius; negative inside it.
@@ -187,7 +272,8 @@ namespace
         for (IdleMob const& mob : mobs)
             if (std::fabs(mob.z - z) <= AGGRO_HEIGHT)
                 clearance = std::min(clearance,
-                                     std::hypot(x - mob.x, y - mob.y) - mob.aggro + (mob.tied ? tiedSlack : 0.0f));
+                                     std::hypot(x - mob.x, y - mob.y) - mob.aggro +
+                                         (mob.tied ? tiedSlack : -mob.room));
         return clearance;
     }
 
@@ -225,11 +311,13 @@ namespace
             {
                 if ((approach && mob.tied) || std::fabs(mob.z - z) > AGGRO_HEIGHT)
                     continue;
-                float const margin = approach || mob.tied ? buffer * 0.5f : buffer;
+                // A boss's extra room is not for a walk to the target, nor for a boss the target
+                // stands next to: the fight is where it is.
+                float const margin = approach || mob.tied ? buffer * 0.5f : buffer + mob.room;
                 float const there = std::hypot(x - mob.x, y - mob.y);
                 // Only a walk that takes the bot closer to the mob than it already is.
                 if (there < mob.aggro + margin && there < std::hypot(botX - mob.x, botY - mob.y) - 0.5f &&
-                    mob.creature->IsWithinLOS(x, y, z + 2.0f))
+                    Sees(mob, x, y, z))
                     return true;
             }
         }
@@ -279,10 +367,12 @@ namespace
                 return false;
         }
 
+        // Where the mobs are, not where they are headed: a bot doesn't leave its spot for a patrol
+        // that may yet turn off.
         float const line = std::max(0.0f, buffer * 0.5f - 1.0f);
         for (IdleMob const& mob : mobs)
         {
-            if (mob.tied || std::fabs(mob.z - bot->GetPositionZ()) > AGGRO_HEIGHT)
+            if (mob.ahead || mob.tied || std::fabs(mob.z - bot->GetPositionZ()) > AGGRO_HEIGHT)
                 continue;
             if (bot->GetExactDist2d(mob.x, mob.y) - mob.aggro < line && mob.creature->IsWithinLOSInMap(bot))
                 return true;
@@ -335,6 +425,23 @@ bool RaidClear::Leash::WalkCheck::Pulls(std::vector<G3D::Vector3> const& path) c
         from = to;
     }
     return false;
+}
+
+float RaidClear::Leash::WalkCheck::Gap(float x, float y, float z, bool sight) const
+{
+    float gap = NO_MOBS;
+    if (!_mobs)
+        return gap;
+    for (IdleMob const& mob : _mobs->list)
+    {
+        if (std::fabs(mob.z - z) > AGGRO_HEIGHT)
+            continue;
+        float const here = std::hypot(x - mob.x, y - mob.y) - mob.aggro - mob.room;
+        if (here >= gap || (sight && here < GAP_SIGHT && !Sees(mob, x, y, z)))
+            continue;
+        gap = here;
+    }
+    return gap;
 }
 
 namespace
