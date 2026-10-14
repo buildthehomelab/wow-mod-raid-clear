@@ -1,6 +1,7 @@
 /*
  * mod-raid-clear: Blackwing Lair, where a bot stands: the dragons' breath, Nefarian's roar and
- * tail and who tanks him, and the Wyrmguards' War Stomp. See BwlRaidClear.h.
+ * tail and who tanks him, who holds the drakes, and the Wyrmguards' War Stomp. See
+ * BwlRaidClear.h.
  *
  * Released under the MIT License.
  */
@@ -9,6 +10,7 @@
 
 #include "RaidClearConfig.h"
 #include "Common/BossLookup.h"
+#include "Common/TankRoles.h"
 
 #include "AllSpellScript.h"
 #include "AttackAction.h"
@@ -16,6 +18,7 @@
 #include "GenericSpellActions.h"
 #include "Group.h"
 #include "Map.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
@@ -161,6 +164,47 @@ namespace
 
     constexpr float DRAGON_NEAR = 90.0f;
 
+    // Firemaw, Ebonroc or Flamegor fighting near the bot, if any.
+    Creature* FightingDrake(Player* bot)
+    {
+        if (bot->GetMapId() != MAP_ID)
+            return nullptr;
+        for (uint32 const entry : { NPC_FIREMAW, NPC_EBONROC, NPC_FLAMEGOR })
+            if (Creature* boss = RaidClear::FightingCreature(bot, { entry }))
+                return bot->GetExactDist(boss) <= DRAGON_NEAR ? boss : nullptr;
+        return nullptr;
+    }
+
+    bool IsDrake(Creature const* boss)
+    {
+        uint32 const entry = boss->GetEntry();
+        return entry == NPC_FIREMAW || entry == NPC_EBONROC || entry == NPC_FLAMEGOR;
+    }
+
+    // A mob other than the drake is on this tank: an add it holds.
+    bool HoldsAnAdd(Player* tank, Unit const* drake)
+    {
+        for (Unit* attacker : tank->getAttackers())
+            if (attacker != drake && attacker->IsAlive() && attacker->GetVictim() == tank)
+                return true;
+        return false;
+    }
+
+    // The drake's second tank: the first living bot tank in group order after the main tank
+    // that isn't holding an add (a Wyrmguard that came along stays with whoever has it).
+    Player* SecondDrakeTank(Group* group, Player* mainTank, Creature* drake)
+    {
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || member == mainTank || !member->IsAlive() || !member->IsInMap(drake) ||
+                !PlayerbotAI::IsTank(member) || !GET_PLAYERBOT_AI(member) || HoldsAnAdd(member, drake))
+                continue;
+            return member;
+        }
+        return nullptr;
+    }
+
     // The dragon with a frontal breath that is fighting near the bot, if any.
     Creature* BreathingDragon(Player* bot)
     {
@@ -182,8 +226,7 @@ namespace
             return false;
         if (boss->GetEntry() == NPC_NEFARIAN)
             return NefarianTank(bot) == bot;
-        Group* group = bot->GetGroup();
-        return group && RaidClear::Tanks::ActingMainTank(group) == bot;
+        return HoldsDrake(bot, boss);
     }
 
     // What a bot keeps out of around one dragon, as seen from that bot.
@@ -193,6 +236,7 @@ namespace
         float y = 0.0f;
         float facing = 0.0f;
         float frontHalf = BREATH_KEEP_HALF_ANGLE;  // how far off his facing the front is kept clear
+        float frontRange = BREATH_RANGE;           // ...and how far out
         bool tail = false;                         // Nefarian's Tail Lash
         float tailHalf = TAIL_HALF_ANGLE;
         bool roar = false;                         // Bellowing Roar, for a bot that keeps back
@@ -244,7 +288,7 @@ namespace
             return -BREATH_RANGE;
         float const off = OffFacing(zone, x, y);
 
-        float gap = ConeGap(r, off, zone.frontHalf, BREATH_RANGE);
+        float gap = ConeGap(r, off, zone.frontHalf, zone.frontRange);
         if (zone.tail)
             gap = std::min(gap, ConeGap(r, float(M_PI) - off, zone.tailHalf, TAIL_RANGE));
         if (zone.roar)
@@ -276,13 +320,17 @@ namespace
     }
 
     // The Bone Constructs' pile is made at Nefarian's side: the middle of the flank, so the bots
-    // standing round the tank it is made on are clear of his front and tail too, and near enough
-    // to whoever he is on for the healers in it.
+    // standing round the tank it is made on are clear of his front and tail too, outside his
+    // roar (a feared pile runs into his front), and near enough to whoever he is on for the
+    // healers in it: where the healers stand anyway.
     Zone AnchorZone(Creature* boss)
     {
         Zone zone = PlaceOf(boss);
         zone.frontHalf = CONSTRUCT_ANCHOR_FRONT;
+        // Past the breath's reach is no place for it either: the bots round the tank would be in it.
+        zone.frontRange = 1000.0f;
         zone.tailHalf = CONSTRUCT_ANCHOR_TAIL;
+        zone.roar = true;
         zone.reach = CONSTRUCT_ANCHOR_REACH;
         return zone;
     }
@@ -309,17 +357,11 @@ namespace
         if (boss->GetHealthPct() > CONSTRUCT_PHASE_PCT)
             return zone;
 
-        // The Bone Constructs' pile is inside the roar: with some 45 of them up, standing
-        // together is worth a fear every half minute.
+        // The tank the Bone Constructs' pile is made on keeps to the pile's place. The pile is
+        // outside the roar, so everyone else keeps the usual rules on the way to it.
         PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-        Player* anchor = botAI ? ConstructAnchor(botAI, bot, boss) : nullptr;
-        if (anchor == bot)
+        if (botAI && ConstructAnchor(botAI, bot, boss) == bot)
             return AnchorZone(boss);
-        if (anchor && zone.roar && ConstructPile(botAI, bot, boss))
-        {
-            zone.roar = false;
-            zone.reach = 0.0f;
-        }
         return zone;
     }
 
@@ -358,6 +400,58 @@ namespace
         Spell* spell = boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
         uint32 const id = spell && spell->GetSpellInfo() ? spell->GetSpellInfo()->Id : 0;
         return id == SPELL_SHADOW_FLAME || id == SPELL_WING_BUFFET ? id : 0;
+    }
+
+    // --- The drakes: who taunts them -----------------------------------------
+
+    // Playerbots' taunts (by action name), and ours.
+    constexpr std::array<char const*, 10> DRAKE_TAUNTS = {
+        "taunt", "growl", "hand of reckoning", "dark command", "death grip", "mocking blow",
+        "righteous defense", "challenging shout", "challenging roar", "rc bwl ebonroc taunt",
+    };
+
+    bool IsTaunt(std::string const& name)
+    {
+        return std::find(DRAKE_TAUNTS.begin(), DRAKE_TAUNTS.end(), name) != DRAKE_TAUNTS.end();
+    }
+
+    // Whether this taunt would take the drake. Righteous Defense is cast on the friend it is
+    // hitting; the shouts take everything round the tank (10 yd).
+    bool TauntsDrake(Player* bot, Action* action, std::string const& name, Creature* drake)
+    {
+        if (name == "rc bwl ebonroc taunt")
+            return drake->GetEntry() == NPC_EBONROC;
+        if (name == "challenging shout" || name == "challenging roar")
+            return bot->IsWithinCombatRange(drake, 10.0f);
+        Unit* target = action->GetTarget();
+        if (!target)
+            return false;
+        return target == drake || (name == "righteous defense" && drake->GetVictim() == target);
+    }
+
+    // From here a taunt doesn't turn the drake: in front of him, or next to whoever he is on.
+    bool TauntsFromFront(Player* bot, Creature* drake)
+    {
+        Unit* victim = drake->GetVictim();
+        if (victim && bot->GetExactDist(victim) <= DRAKE_TAUNT_NEAR)
+            return true;
+        return OffFacing(PlaceOf(drake), bot->GetPositionX(), bot->GetPositionY()) <= DRAKE_TAUNT_ARC;
+    }
+
+    // The tank the second one stands next to: a tank the drake is on, unless that is this bot.
+    Player* DrakeVictimToJoin(Player* bot, Creature* drake)
+    {
+        Unit* victim = drake->GetVictim();
+        Player* player = victim ? victim->ToPlayer() : nullptr;
+        if (!player || player == bot || !player->IsAlive() || !PlayerbotAI::IsTank(player))
+            return nullptr;
+        return player;
+    }
+
+    bool AwayFromFront(Player* bot, Creature* drake, Player* victim)
+    {
+        return bot->GetExactDist(victim) > DRAKE_SECOND_NEAR ||
+               OffFacing(PlaceOf(drake), bot->GetPositionX(), bot->GetPositionY()) > DRAKE_FRONT_ARC;
     }
 
     // --- Nefarian's rogue call ----------------------------------------------
@@ -399,29 +493,96 @@ namespace
 
     // --- Death Talon Wyrmguards -------------------------------------------
 
-    // The Wyrmguards in the fight whose War Stomp this bot has no reason to stand in.
-    void WyrmguardsToAvoid(PlayerbotAI* botAI, Player* bot, std::vector<Unit*>& out)
+    // The Wyrmguards fighting the group, read from the instance's spawns: a bot still waiting at
+    // the camp has none of them among its "attackers" yet, and that is when it has to get out of
+    // the way. One answer per instance for WYRMGUARD_CACHE_MS, kept by GUID, and the same
+    // wherever the bot that looked stands.
+    struct WyrmguardCache
     {
-        AiObjectContext* context = botAI->GetAiObjectContext();
-        // A melee bot is in reach of the one it is hitting, and of any other standing next to
-        // that one: nothing to do about either until the tanks have them apart.
-        Unit* mine = KeepsBack(bot) ? nullptr : context->GetValue<Unit*>("current target")->Get();
-        for (ObjectGuid const& guid : context->GetValue<GuidVector>("attackers")->Get())
+        uint32 ms = 0;
+        GuidVector guards;
+    };
+    std::mutex sWyrmguardLock;
+    std::unordered_map<uint32, WyrmguardCache> sWyrmguards;  // by instance id
+
+    bool FightsGroup(Unit const* unit, Group const* group)
+    {
+        Unit const* victim = unit->GetVictim();
+        Player const* player = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+        return player && player->GetGroup() == group;
+    }
+
+    void FightingWyrmguards(Player* bot, std::vector<Creature*>& out)
+    {
+        Group* group = bot->GetGroup();
+        if (!group || bot->GetMapId() != MAP_ID)
+            return;
+
+        uint32 const now = getMSTime();
+        GuidVector guids;
+        bool cached = false;
         {
-            Unit* unit = botAI->GetUnit(guid);
-            if (!unit || unit->GetEntry() != NPC_DEATH_TALON_WYRMGUARD || !unit->IsAlive() || !unit->IsInCombat())
+            std::lock_guard<std::mutex> guard(sWyrmguardLock);
+            auto it = sWyrmguards.find(bot->GetInstanceId());
+            if (it != sWyrmguards.end() && getMSTimeDiff(it->second.ms, now) < WYRMGUARD_CACHE_MS)
+            {
+                guids = it->second.guards;
+                cached = true;
+            }
+        }
+        if (!cached)
+        {
+            for (auto const& [spawnId, creature] : bot->GetMap()->GetCreatureBySpawnIdStore())
+                if (creature && creature->GetEntry() == NPC_DEATH_TALON_WYRMGUARD && creature->IsAlive() &&
+                    creature->IsInCombat() && FightsGroup(creature, group))
+                    guids.push_back(creature->GetGUID());
+            std::lock_guard<std::mutex> guard(sWyrmguardLock);
+            WyrmguardCache& cache = sWyrmguards[bot->GetInstanceId()];
+            cache.ms = now;
+            cache.guards = guids;
+        }
+        for (ObjectGuid const& guid : guids)
+            if (Creature* creature = ObjectAccessor::GetCreature(*bot, guid))
+                if (creature->IsAlive() && creature->IsInCombat() && bot->GetExactDist(creature) <= WYRMGUARD_SEARCH)
+                    out.push_back(creature);
+    }
+
+    // Every spot whose War Stomp this bot has no reason to stand in: each Wyrmguard, and while
+    // one is still running in, whoever it is running to (the tank that pulled the pack, which is
+    // where the raid waits). A melee bot may stand by the one it is hitting once no other is
+    // within WYRMGUARD_APART of that one: a single stomp is something to heal, two at once are
+    // a death.
+    void WyrmguardStomps(PlayerbotAI* botAI, Player* bot, std::vector<Position>& out)
+    {
+        std::vector<Creature*> guards;
+        FightingWyrmguards(bot, guards);
+        if (guards.empty())
+            return;
+
+        Unit* mine = KeepsBack(bot) ? nullptr : botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        if (mine && std::find(guards.begin(), guards.end(), mine) == guards.end())
+            mine = nullptr;
+        if (mine)
+            for (Creature const* other : guards)
+                if (other != mine && other->GetExactDist(mine) < WYRMGUARD_APART)
+                    mine = nullptr;
+
+        for (Creature* guard : guards)
+        {
+            if (guard == mine)
                 continue;
-            if (mine && (unit == mine || unit->GetExactDist(mine) < WYRMGUARD_APART))
-                continue;
-            out.push_back(unit);
+            out.push_back(guard->GetPosition());
+            Unit* victim = guard->GetVictim();
+            if (victim && victim != bot && guard->GetExactDist(victim) > WYRMGUARD_RUNNING)
+                out.push_back(victim->GetPosition());
         }
     }
 
-    float WyrmguardGap(std::vector<Unit*> const& guards, float x, float y, float z)
+    float StompGap(std::vector<Position> const& stomps, float x, float y, float z)
     {
         float gap = 1000.0f;
-        for (Unit const* guard : guards)
-            gap = std::min(gap, guard->GetExactDist(x, y, z));
+        for (Position const& stomp : stomps)
+            gap = std::min(gap, stomp.GetExactDist(x, y, z));
         return gap;
     }
 
@@ -512,16 +673,30 @@ bool RcBwlDragonMoveAction::Execute(Event /*event*/)
 
 float RcBwlDragonHoldMultiplier::GetValue(Action* action)
 {
-    if (!action || !KeepsBack(bot))
+    if (!action)
         return 1.0f;
 
     // Playerbots sends every bot that isn't the dragon's victim to its flank at melee range,
     // above almost everything else the bot does. Right for melee; for a caster or a healer it is
-    // a walk into Cleave, Tail Lash and the roar.
+    // a walk into Cleave, Tail Lash and the roar, and a drake's second tank belongs in front.
     // (By class: the actions are named after the boss, "nefarian rear flank", not after the
     // names the strategy asks for them by.)
     if (dynamic_cast<BossRearFlankAction*>(action))
-        return 0.0f;
+    {
+        if (KeepsBack(bot))
+            return 0.0f;
+        Creature* drake = PlayerbotAI::IsTank(bot) ? FightingDrake(bot) : nullptr;
+        return drake && HoldsDrake(bot, drake) ? 0.0f : 1.0f;
+    }
+    // The knockback footing sends a tank in front of a thrower to the side with clear ground
+    // behind it. The drake's second tank stands by the one he is on and is thrown with it.
+    if (action->getName() == "rc knockback footing" && PlayerbotAI::IsTank(bot))
+    {
+        Creature* drake = FightingDrake(bot);
+        return drake && drake->GetVictim() != bot && HoldsDrake(bot, drake) ? 0.0f : 1.0f;
+    }
+    if (!KeepsBack(bot))
+        return 1.0f;
 
     // Nefarian: nothing walks a bot that keeps back in under the roar. Everything on him and at
     // his feet is in spell range from outside it; the walk to the tank for a Fear Ward is the
@@ -534,8 +709,7 @@ float RcBwlDragonHoldMultiplier::GetValue(Action* action)
     Creature* boss = FightingBoss(bot, NPC_NEFARIAN);
     if (!boss || bot->GetExactDist(boss) > ROAR_HOLD || target->GetExactDist(boss) >= ROAR_KEEP_AWAY)
         return 1.0f;
-    // Not while the Bone Constructs' pile is on: that is inside the roar.
-    return ConstructPile(botAI, bot, boss) ? 1.0f : 0.0f;
+    return 0.0f;
 }
 
 // --- Who holds Nefarian -----------------------------------------------------
@@ -729,8 +903,10 @@ bool RcBwlConstructGatherAction::Execute(Event /*event*/)
     if (!anchor || anchor == bot || bot->GetExactDist(anchor) <= CONSTRUCT_GATHER_FAR)
         return false;
 
-    // Straight there when that doesn't cross his front or his tail.
-    Zone const zone = ZoneOf(bot, boss);
+    // Straight there when that doesn't cross his front or his tail. A healer may be out of reach
+    // of the tank on the way (round his back): it is walking to where it will be in reach.
+    Zone zone = ZoneOf(bot, boss);
+    zone.reach = 0.0f;
     float const botX = bot->GetPositionX();
     float const botY = bot->GetPositionY();
     if (WalkClear(zone, botX, botY, anchor->GetPositionX(), anchor->GetPositionY()))
@@ -746,7 +922,7 @@ bool RcBwlConstructGatherAction::Execute(Event /*event*/)
     else
         next += mine >= 0.0f ? CONSTRUCT_RING_STEP : -CONSTRUCT_RING_STEP;
 
-    float const r = std::max(std::hypot(botX - zone.x, botY - zone.y), TAIL_RANGE + 3.0f);
+    float const r = std::max(std::hypot(botX - zone.x, botY - zone.y), (zone.roar ? ROAR_KEEP_AWAY : TAIL_RANGE) + 3.0f);
     float const angle = Position::NormalizeOrientation(zone.facing + next);
     float const x = zone.x + std::cos(angle) * r;
     float const y = zone.y + std::sin(angle) * r;
@@ -773,24 +949,26 @@ float RcBwlConstructAnchorMultiplier::GetValue(Action* action)
 
 bool RcBwlWyrmguardKeepAwayTrigger::IsActive()
 {
-    if (!bot->IsAlive() || !bot->IsInCombat() || PlayerbotAI::IsTank(bot) || !botAI->CanMove())
+    // Not only in combat: the bots waiting at the camp while the tank brings the pack in are
+    // out of it until the pack arrives, and the pack stomps 3-4 s after that.
+    if (!bot->IsAlive() || PlayerbotAI::IsTank(bot) || !botAI->CanMove())
         return false;
-    std::vector<Unit*> guards;
-    WyrmguardsToAvoid(botAI, bot, guards);
-    return !guards.empty() &&
-           WyrmguardGap(guards, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) < WYRMGUARD_KEEP_AWAY;
+    std::vector<Position> stomps;
+    WyrmguardStomps(botAI, bot, stomps);
+    return !stomps.empty() &&
+           StompGap(stomps, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) < WYRMGUARD_KEEP_AWAY;
 }
 
 bool RcBwlWyrmguardKeepAwayAction::Execute(Event /*event*/)
 {
     if (PlayerbotAI::IsTank(bot))
         return false;
-    std::vector<Unit*> guards;
-    WyrmguardsToAvoid(botAI, bot, guards);
-    if (guards.empty())
+    std::vector<Position> stomps;
+    WyrmguardStomps(botAI, bot, stomps);
+    if (stomps.empty())
         return false;
 
-    auto const gapAt = [&guards](float x, float y, float z) { return WyrmguardGap(guards, x, y, z); };
+    auto const gapAt = [&stomps](float x, float y, float z) { return StompGap(stomps, x, y, z); };
     if (gapAt(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) >= WYRMGUARD_KEEP_AWAY)
         return false;
     return _walk.Go(gapAt, WYRMGUARD_KEEP_AWAY, WYRMGUARD_SPOT, WYRMGUARD_WORTH_IT);
@@ -798,20 +976,165 @@ bool RcBwlWyrmguardKeepAwayAction::Execute(Event /*event*/)
 
 float RcBwlWyrmguardHoldMultiplier::GetValue(Action* action)
 {
-    // Casters and healers reach everything round a Wyrmguard from outside its stomp, so nothing
-    // walks them in. Melee go to their own target and are sent out from the others.
-    if (!action || !Walks(action) || !KeepsBack(bot) || !bot->IsInCombat())
-        return 1.0f;
-    Unit* target = action->GetTarget();
-    if (!target || target == bot)
+    // Nothing walks a bot that isn't a tank toward something in a stomp it should be out of:
+    // casters and healers reach it from outside, melee wait until the tanks have the
+    // Wyrmguards apart.
+    if (!action || !Walks(action) || PlayerbotAI::IsTank(bot))
         return 1.0f;
 
-    std::vector<Unit*> guards;
-    WyrmguardsToAvoid(botAI, bot, guards);
-    for (Unit const* guard : guards)
-        if (bot->GetExactDist(guard) < WYRMGUARD_HOLD && target->GetExactDist(guard) < WYRMGUARD_KEEP_AWAY)
+    // Walks back to a spot, not to a target: mod-dungeon-clear's camp hold, assist and follow
+    // (their target is the bot itself) and playerbots' "stay". The camp is where the pack is
+    // dragged to, and the way out stops sending for 700 ms after each send, long enough for one
+    // of these to walk the bot back in.
+    static constexpr std::array<char const*, 6> WALKS_BACK = {
+        "dungeon clear hold at camp", "dungeon clear stay at camp", "dungeon clear assist camp",
+        "dungeon clear assist camp combat", "dungeon clear follow tank", "return to stay position",
+    };
+    std::string const name = action->getName();
+    bool const walksBack =
+        std::any_of(WALKS_BACK.begin(), WALKS_BACK.end(), [&name](char const* walk) { return name == walk; });
+    Unit* target = action->GetTarget();
+    if (!walksBack && (!target || target == bot))
+        return 1.0f;
+
+    std::vector<Position> stomps;
+    WyrmguardStomps(botAI, bot, stomps);
+    for (Position const& stomp : stomps)
+        if (bot->GetExactDist(stomp) < WYRMGUARD_HOLD &&
+            (walksBack || target->GetExactDist(stomp) < WYRMGUARD_KEEP_AWAY))
             return 0.0f;
     return 1.0f;
+}
+
+// --- The drakes: who holds them ---------------------------------------------
+
+bool RaidClear::BlackwingLair::HoldsDrake(Player* tank, Creature* drake)
+{
+    if (!tank || !drake || !IsDrake(drake) || !PlayerbotAI::IsTank(tank))
+        return false;
+    if (drake->GetVictim() == tank)
+        return true;
+    Group* group = tank->GetGroup();
+    if (!group)
+        return false;
+    Player* mainTank = RaidClear::Tanks::ActingMainTank(group);
+    return tank == mainTank || tank == SecondDrakeTank(group, mainTank, drake);
+}
+
+bool RcBwlDrakeFrontTrigger::IsActive()
+{
+    if (!bot->IsAlive() || !botAI->CanMove() || !PlayerbotAI::IsTank(bot))
+        return false;
+    Creature* drake = FightingDrake(bot);
+    if (!drake || !HoldsDrake(bot, drake))
+        return false;
+    Player* victim = DrakeVictimToJoin(bot, drake);
+    return victim && AwayFromFront(bot, drake, victim);
+}
+
+bool RcBwlDrakeFrontAction::Execute(Event /*event*/)
+{
+    Creature* drake = FightingDrake(bot);
+    if (!drake || !HoldsDrake(bot, drake))
+        return false;
+    Player* victim = DrakeVictimToJoin(bot, drake);
+    if (!victim || !AwayFromFront(bot, drake, victim))
+        return false;
+    return MoveNear(victim, DRAKE_SECOND_SPOT, MovementPriority::MOVEMENT_COMBAT);
+}
+
+namespace
+{
+    // One of the drake's two tanks is in range of him with a taunt ready.
+    bool HolderCanTakeBack(Player* bot, Creature* drake)
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return false;
+        Player* mainTank = RaidClear::Tanks::ActingMainTank(group);
+        for (Player* tank : { mainTank, SecondDrakeTank(group, mainTank, drake) })
+        {
+            PlayerbotAI* tankAI = tank && tank->IsAlive() ? GET_PLAYERBOT_AI(tank) : nullptr;
+            if (tankAI && RaidClear::Tanks::CanTaunt(tankAI, drake))
+                return true;
+        }
+        return false;
+    }
+
+    // The threat the drake's other tanks stay under: that of the one of his two that would take
+    // him next. With him on one of them, the other; otherwise the lower of the two.
+    float DrakeThreatCap(Player* bot, Creature* drake)
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return 0.0f;
+        Player* mainTank = RaidClear::Tanks::ActingMainTank(group);
+        Player* second = SecondDrakeTank(group, mainTank, drake);
+        ThreatManager const& threat = drake->GetThreatMgr();
+        Unit* victim = drake->GetVictim();
+        float cap = -1.0f;
+        for (Player* tank : { mainTank, second })
+        {
+            if (!tank || !tank->IsAlive() || tank == victim)
+                continue;
+            float const theirs = threat.GetThreat(tank);
+            cap = cap < 0.0f ? theirs : std::min(cap, theirs);
+        }
+        if (cap < 0.0f && victim && (victim == mainTank || victim == second))
+            cap = threat.GetThreat(victim);
+        return std::max(cap, 0.0f);
+    }
+}
+
+float RcBwlDrakeTauntMultiplier::GetValue(Action* action)
+{
+    if (!action || !PlayerbotAI::IsTank(bot))
+        return 1.0f;
+    std::string const name = action->getName();
+    bool const taunt = IsTaunt(name);
+    if (!taunt && action->getThreatType() == Action::ActionThreatType::None)
+        return 1.0f;
+    Creature* drake = FightingDrake(bot);
+    if (!drake)
+        return 1.0f;
+
+    if (taunt)
+    {
+        if (!TauntsDrake(bot, action, name, drake))
+            return 1.0f;
+        Unit* victim = drake->GetVictim();
+        Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
+        bool const onTank = victimPlayer && PlayerbotAI::IsTank(victimPlayer);
+        // He turns to whoever takes him: only his two tanks do, unless he is loose on someone
+        // who isn't a tank and neither of them can take him back right now (both thrown out of
+        // range by the Wing Buffet, taunts on cooldown).
+        if (!HoldsDrake(bot, drake))
+            return !onTank && !HolderCanTakeBack(bot, drake) ? 1.0f : 0.0f;
+        if (!onTank)
+            return 1.0f;
+        // A breath goes where he faces when it ends.
+        if (ConeCast(drake) == SPELL_SHADOW_FLAME)
+            return 0.0f;
+        return TauntsFromFront(bot, drake) ? 1.0f : 0.0f;
+    }
+
+    // Every other tank stays under the one of his two that takes him next, so a Wing Buffet on
+    // one hands him to the other and not to whichever tank happens to be next on his threat.
+    // Swings carry on. Area threat (Consecration, Thunder Clap, Swipe) counts once the bot is at
+    // his feet, unless it is holding an add there.
+    if (action->getThreatType() == Action::ActionThreatType::Aoe)
+    {
+        if (!bot->IsWithinCombatRange(drake, 10.0f) || HoldsAnAdd(bot, drake))
+            return 1.0f;
+    }
+    else if (action->GetTarget() != drake)
+        return 1.0f;
+    if (HoldsDrake(bot, drake))
+        return 1.0f;
+    float const cap = DrakeThreatCap(bot, drake);
+    if (cap <= 0.0f)
+        return 1.0f;
+    return drake->GetThreatMgr().GetThreat(bot) >= cap * DRAKE_OFFTANK_SHARE ? 0.0f : 1.0f;
 }
 
 // --- Spell hooks ------------------------------------------------------------

@@ -88,18 +88,21 @@ std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitCoTankBosses()
 {
     // Broodlord: Knock Away (25778) halves his victim's threat. The drakes: Wing Buffet takes 75%.
     // Ebonroc also needs a second tank for Shadow of Ebonroc. Vaelastrasz can't be taunted, so
-    // whoever is next on threat when Burning Adrenaline kills his tank gets him.
+    // whoever is next on threat when Burning Adrenaline kills his tank gets him. Chromaggus can't
+    // be taunted either, and Time Lapse stuns and halves the threat of whoever it hits.
     static std::vector<uint32> const bosses = {
-        NPC_BROODLORD, NPC_FIREMAW, NPC_EBONROC, NPC_FLAMEGOR, NPC_VAELASTRASZ, NPC_NEFARIAN,
+        NPC_BROODLORD, NPC_FIREMAW, NPC_EBONROC, NPC_FLAMEGOR, NPC_VAELASTRASZ, NPC_CHROMAGGUS, NPC_NEFARIAN,
     };
     return bosses;
 }
 
 std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitThreatShareBosses()
 {
-    // No taunt lands on Nefarian (417 Growls in one evening's log, none took), so the tanks'
-    // threat order is all that puts him back on a tank, and the damage dealers stay under it.
-    static std::vector<uint32> const bosses = { NPC_NEFARIAN };
+    // No taunt lands on Nefarian (417 Growls in one evening's log, none took) or Chromaggus (all
+    // of 120 Righteous Defenses in one kill IMMUNE, while he spent most of it on rogues, warlocks
+    // and a death knight), so the tanks' threat order is all that puts them back on a tank, and
+    // the damage dealers stay under it.
+    static std::vector<uint32> const bosses = { NPC_CHROMAGGUS, NPC_NEFARIAN };
     return bosses;
 }
 
@@ -179,6 +182,10 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
 
     triggers.push_back(
         new TriggerNode("rc bwl ebonroc taunt", { NextAction("rc bwl ebonroc taunt", ACTION_RAID + 3) }));
+    // The drake's second tank in front, next to the one he is on: above playerbots' walk to his
+    // flank (34) and the knockback footing, under the raid mechanics that keep bots alive.
+    triggers.push_back(
+        new TriggerNode("rc bwl drake front", { NextAction("rc bwl drake front", ACTION_RAID + 1) }));
 
     triggers.push_back(
         new TriggerNode("rc bwl technician spread", { NextAction("rc bwl technician spread", ACTION_RAID) }));
@@ -207,8 +214,6 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
         new TriggerNode("rc bwl construct gather", { NextAction("rc bwl construct gather", ACTION_MOVE + 5) }));
 
     // Above the heals, like the other blasts a bot can simply walk out of.
-    triggers.push_back(new TriggerNode("rc bwl wyrmguard keep away",
-                                       { NextAction("rc bwl wyrmguard keep away", ACTION_EMERGENCY + 4) }));
 
     triggers.push_back(
         new TriggerNode("rc bwl detonation keep away", { NextAction("rc bwl detonation keep away", ACTION_RAID + 1) }));
@@ -235,7 +240,7 @@ void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& m
     multipliers.push_back(new RcBwlNefarianTankMultiplier(botAI));
     multipliers.push_back(new RcBwlNefarianTremorMultiplier(botAI));
     multipliers.push_back(new RcBwlConstructAnchorMultiplier(botAI));
-    multipliers.push_back(new RcBwlWyrmguardHoldMultiplier(botAI));
+    multipliers.push_back(new RcBwlDrakeTauntMultiplier(botAI));
 }
 
 // --- Suppression Room -----------------------------------------------------
@@ -774,8 +779,10 @@ bool RcBwlEbonrocTauntTrigger::IsActive()
     if (!PlayerbotAI::IsTank(bot) || bot->HasAura(SPELL_SHADOW_OF_EBONROC))
         return false;
 
+    // His other tank, not every tank: four taunts at once handed him to one at his flank, and
+    // the next Shadow Flame went through the raid.
     Creature* boss = FightingBoss(bot, NPC_EBONROC);
-    if (!boss)
+    if (!boss || !HoldsDrake(bot, boss))
         return false;
 
     Unit* victim = boss->GetVictim();

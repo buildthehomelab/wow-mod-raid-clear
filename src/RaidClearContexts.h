@@ -78,7 +78,8 @@ public:
         creators["rc bwl chromaggus hide"] = &RaidClearActionContext::bwl_chromaggus_hide;
         creators["rc bwl dragon move"] = &RaidClearActionContext::bwl_dragon_move;
         creators["rc bwl nefarian fear ward"] = &RaidClearActionContext::bwl_nefarian_fear_ward;
-        creators["rc bwl wyrmguard keep away"] = &RaidClearActionContext::bwl_wyrmguard_keep_away;
+        creators["rc bwl wyrmguard stay clear"] = &RaidClearActionContext::bwl_wyrmguard_keep_away;
+        creators["rc bwl drake front"] = &RaidClearActionContext::bwl_drake_front;
         creators["rc bwl nefarian turn"] = &RaidClearActionContext::bwl_nefarian_turn;
         creators["rc bwl construct gather"] = &RaidClearActionContext::bwl_construct_gather;
         creators["rc bwl detonation keep away"] = &RaidClearActionContext::bwl_detonation_keep_away;
@@ -137,6 +138,7 @@ private:
     static Action* bwl_dragon_move(PlayerbotAI* botAI) { return new RcBwlDragonMoveAction(botAI); }
     static Action* bwl_nefarian_fear_ward(PlayerbotAI* botAI) { return new RcBwlFearWardAction(botAI); }
     static Action* bwl_wyrmguard_keep_away(PlayerbotAI* botAI) { return new RcBwlWyrmguardKeepAwayAction(botAI); }
+    static Action* bwl_drake_front(PlayerbotAI* botAI) { return new RcBwlDrakeFrontAction(botAI); }
     static Action* bwl_nefarian_turn(PlayerbotAI* botAI) { return new RcBwlNefarianTurnAction(botAI); }
     static Action* bwl_construct_gather(PlayerbotAI* botAI) { return new RcBwlConstructGatherAction(botAI); }
     static Action* bwl_detonation_keep_away(PlayerbotAI* botAI) { return new RcBwlDetonationKeepAwayAction(botAI); }
@@ -198,6 +200,7 @@ public:
         creators["rc bwl nefarian tremor"] = &RaidClearTriggerContext::bwl_nefarian_tremor;
         creators["rc bwl nefarian fear ward"] = &RaidClearTriggerContext::bwl_nefarian_fear_ward;
         creators["rc bwl wyrmguard keep away"] = &RaidClearTriggerContext::bwl_wyrmguard_keep_away;
+        creators["rc bwl drake front"] = &RaidClearTriggerContext::bwl_drake_front;
         creators["rc bwl nefarian rogue call"] = &RaidClearTriggerContext::bwl_nefarian_rogue_call;
         creators["rc bwl construct gather"] = &RaidClearTriggerContext::bwl_construct_gather;
         creators["rc bwl detonation keep away"] = &RaidClearTriggerContext::bwl_detonation_keep_away;
@@ -265,6 +268,7 @@ private:
     static Trigger* bwl_nefarian_tremor(PlayerbotAI* botAI) { return new RcBwlNefarianTremorTrigger(botAI); }
     static Trigger* bwl_nefarian_fear_ward(PlayerbotAI* botAI) { return new RcBwlFearWardTrigger(botAI); }
     static Trigger* bwl_wyrmguard_keep_away(PlayerbotAI* botAI) { return new RcBwlWyrmguardKeepAwayTrigger(botAI); }
+    static Trigger* bwl_drake_front(PlayerbotAI* botAI) { return new RcBwlDrakeFrontTrigger(botAI); }
     static Trigger* bwl_nefarian_rogue_call(PlayerbotAI* botAI) { return new RcBwlNefarianRogueCallTrigger(botAI); }
     static Trigger* bwl_construct_gather(PlayerbotAI* botAI) { return new RcBwlConstructGatherTrigger(botAI); }
     static Trigger* bwl_detonation_keep_away(PlayerbotAI* botAI) { return new RcBwlDetonationKeepAwayTrigger(botAI); }
