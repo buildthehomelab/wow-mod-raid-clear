@@ -605,7 +605,7 @@ bool RcBwlHideAction::Execute(Event /*event*/)
 namespace
 {
     // Hidden from Firemaw while Flame Buffet wears off, or from Chromaggus mid-breath.
-    bool HoldingCover(PlayerbotAI* botAI, Player* bot)
+    bool HoldingCover(Player* bot)
     {
         if (bot->HasAura(SPELL_FLAME_BUFFET))
             if (Creature* boss = FightingBoss(bot, NPC_FIREMAW))
@@ -651,7 +651,7 @@ float RcBwlHoldCoverMultiplier::GetValue(Action* action)
     if (!action || dynamic_cast<RcBwlHideAction*>(action) || !dynamic_cast<MovementAction*>(action) ||
         PlayerbotAI::IsTank(bot))
         return 1.0f;
-    return HoldingCover(botAI, bot) ? 0.0f : 1.0f;
+    return HoldingCover(bot) ? 0.0f : 1.0f;
 }
 
 bool RcBwlFiremawHideTrigger::IsActive()
