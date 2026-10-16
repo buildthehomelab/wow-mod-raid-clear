@@ -317,8 +317,9 @@ RaidClear.OnyxiasLair.Enable = 1
 #    RaidClear.RuinsOfAhnQiraj.Enable
 #        Description: Ruins of Ahn'Qiraj strategy (map 509). Ossirian: the tank he is on takes
 #                     him to the next crystal before his weakness wears off, and one bot (the
-#                     nearest that isn't a tank) waits at the crystal and uses it once he is in
-#                     reach. Replaces playerbots' crystal walk, which sent every bot.
+#                     nearest damage dealer, else a healer) waits at the crystal and uses it
+#                     once he is in reach and has Strength or less than 15 s of weakness left.
+#                     Replaces playerbots' crystal walk, which sent every bot.
 #                     Kurinnaxx: bots walk out of a Sand Trap (8 yd) before it goes off. Moam:
 #                     hunters (Viper Sting), priests that aren't healing (Mana Burn) and warlocks
 #                     (Drain Mana) keep his mana down; skull goes on the Mana Fiends first.
@@ -343,7 +344,8 @@ RaidClear.RuinsOfAhnQiraj.Enable = 1
 #                     of Fankriss gets an off-tank and skull first. Bug Trio: skull on the broods,
 #                     then Yauj, Kri, Vem; Yauj's Great Heal is interrupted, shamans keep Tremor
 #                     Totem down, bots leave Kri's Poison Cloud; Vekniss Guardians one at a time.
-#                     Also: bots walk out of an Anubisath Explode.
+#                     Also: bots walk out of an Anubisath Defender's Explode (20 yd) before it
+#                     goes off.
 #        Default:     1
 #
 

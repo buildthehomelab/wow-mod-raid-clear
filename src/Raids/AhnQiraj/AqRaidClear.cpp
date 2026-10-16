@@ -221,8 +221,9 @@ Unit* RaidClear::AhnQiraj::WalkTarget(Action* action, Player* bot)
         return nullptr;
     if (!bot->IsInCombat())
         return nullptr;
+    // Only walks toward an enemy: a healer still walks to whoever it has to heal.
     Unit* target = action->GetTarget();
-    return target && target != bot ? target : nullptr;
+    return target && target != bot && bot->IsValidAttackTarget(target) ? target : nullptr;
 }
 
 namespace

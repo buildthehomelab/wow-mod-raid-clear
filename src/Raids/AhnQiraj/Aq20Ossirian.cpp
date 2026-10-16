@@ -144,6 +144,7 @@ namespace
 
     // The bot (not a tank, not his victim, not one that couldn't get there before) nearest to the
     // crystal; the bot asking if it has no group.
+    // A damage dealer before a healer: the bot is away from the fight while it waits there.
     Player* PickClicker(Player* bot, Unit const* boss, GameObject const* crystal, CrystalPlan const& plan)
     {
         uint32 const instanceId = bot->GetInstanceId();
@@ -152,16 +153,22 @@ namespace
             return CanUseCrystal(bot, boss, instanceId, plan) ? bot : nullptr;
 
         Player* best = nullptr;
+        bool bestHeals = false;
         float bestDist = 0.0f;
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->GetSource();
             if (!CanUseCrystal(member, boss, instanceId, plan))
                 continue;
+            bool const heals = PlayerbotAI::IsHeal(member);
             float const dist = member->GetExactDist2d(crystal);
-            if (!best || dist < bestDist || (dist == bestDist && member->GetGUID() < best->GetGUID()))
+            bool better = !best || (bestHeals && !heals);
+            if (!better && heals == bestHeals)
+                better = dist < bestDist || (dist == bestDist && member->GetGUID() < best->GetGUID());
+            if (better)
             {
                 best = member;
+                bestHeals = heals;
                 bestDist = dist;
             }
         }
@@ -342,11 +349,14 @@ namespace
 
     // The leading tank is close enough: on the crystal, or where he, following it to melee reach,
     // ends up in the crystal's reach whichever side he comes from.
+    float TankArriveDistance(Player* bot, Unit const* boss)
+    {
+        return std::max(LEAD_ARRIVED, WeaknessReach() - CRYSTAL_REACH_MARGIN - boss->GetMeleeRange(bot) - LEAD_ARRIVED);
+    }
+
     bool TankArrived(Player* bot, Unit const* boss, GameObject const* crystal)
     {
-        float const dist = bot->GetExactDist2d(crystal);
-        float const close = WeaknessReach() - CRYSTAL_REACH_MARGIN - boss->GetMeleeRange(bot) - LEAD_ARRIVED;
-        return dist <= std::max(LEAD_ARRIVED, close);
+        return bot->GetExactDist2d(crystal) <= TankArriveDistance(bot, boss);
     }
 
     // The bot is the tank he is on.
@@ -398,7 +408,8 @@ bool RcAq20LeadToCrystalAction::Execute(Event /*event*/)
     ObjectGuid clicker;
     if (!CurrentPlan(bot, boss, crystal, clicker))
         return false;
-    if (TankArrived(bot, boss, crystal))
+    // A queued action can run after its trigger has gone quiet: only while it is time.
+    if (TankArrived(bot, boss, crystal) || !LeadDue(boss, crystal))
     {
         _walk = CrystalWalk();
         return false;
@@ -417,11 +428,18 @@ bool RcAq20LeadToCrystalAction::Execute(Event /*event*/)
             break;
     }
 
+    // To the spot on its own side of the crystal where it counts as there, not onto the crystal:
+    // he follows it, and the bot at the crystal stays out of his War Stomp.
+    float const dist = bot->GetExactDist2d(crystal);
+    float const stopAt = std::max(LEAD_ARRIVED, TankArriveDistance(bot, boss) - LEAD_ARRIVED);
+    float const x = crystal->GetPositionX() + (bot->GetPositionX() - crystal->GetPositionX()) / dist * stopAt;
+    float const y = crystal->GetPositionY() + (bot->GetPositionY() - crystal->GetPositionY()) / dist * stopAt;
+
     // Whatever the bot was told last (a step to face him away from the raid) would make this walk
     // wait its turn.
     AI_VALUE(LastMovement&, "last movement").clear();
-    if (!MoveTo(bot->GetMapId(), crystal->GetPositionX(), crystal->GetPositionY(), crystal->GetPositionZ(), false,
-                false, false, true, MovementPriority::MOVEMENT_FORCED))
+    if (!MoveTo(bot->GetMapId(), x, y, crystal->GetPositionZ(), false, false, false, true,
+                MovementPriority::MOVEMENT_FORCED))
     {
         BlockCrystal(bot, crystal->GetGUID());
         _walk = CrystalWalk();
@@ -456,6 +474,9 @@ bool RcAq20UseCrystalAction::Execute(Event /*event*/)
     ObjectGuid clicker;
     bool pending = false;
     if (!CurrentPlan(bot, boss, crystal, clicker, &pending) || clicker != bot->GetGUID())
+        return false;
+    // A queued action can run after its trigger has gone quiet: only while it is time.
+    if (!pending && !ClickerDue(bot, boss, crystal))
         return false;
 
     if (bot->GetExactDist2d(crystal) > CLICK_STAND)
