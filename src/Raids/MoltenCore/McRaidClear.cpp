@@ -8,6 +8,7 @@
 
 #include "RaidClearConfig.h"
 #include "Common/BossLookup.h"
+#include "Common/SpellReflect.h"
 
 #include "AllSpellScript.h"
 #include "AttackAction.h"
@@ -81,6 +82,11 @@ std::vector<RaidClear::Knockback::Thrower> const& RaidClear::MoltenCore::Thrower
 
 void RaidClearMoltenCoreStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // Under a reflect: the spell of the other school that playerbots ranks below the wand (a
+    // frost mage's Fireball), just above it. "rc spell reflect" zeroes whichever is reflected.
+    triggers.push_back(new TriggerNode("rc mage target reflects", { NextAction("fireball", 5.15f) }));
+    triggers.push_back(new TriggerNode("rc warlock target reflects", { NextAction("immolate", 5.15f) }));
+
     triggers.push_back(new TriggerNode("rc kill order", { NextAction("rc mark kill order", ACTION_RAID + 2) }));
 
     triggers.push_back(
@@ -112,6 +118,7 @@ void RaidClearMoltenCoreStrategy::InitMultipliers(std::vector<Multiplier*>& mult
     multipliers.push_back(new RcMcRagnarosHoldMultiplier(botAI));
     multipliers.push_back(new RcMcReflectionMultiplier(botAI));
     multipliers.push_back(new RcMcAnxiousFireswornMultiplier(botAI));
+    multipliers.push_back(new RcSpellReflectMultiplier(botAI));
 }
 
 // --- Magmadar -------------------------------------------------------------

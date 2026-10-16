@@ -8,6 +8,7 @@
 
 #include "RaidClearConfig.h"
 #include "Common/BossLookup.h"
+#include "Common/SpellReflect.h"
 
 #include "GameObject.h"
 #include "GameTime.h"
@@ -172,6 +173,11 @@ namespace
 
 void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // Under a reflect: the spell of the other school that playerbots ranks below the wand (a
+    // frost mage's Fireball), just above it. "rc spell reflect" zeroes whichever is reflected.
+    triggers.push_back(new TriggerNode("rc mage target reflects", { NextAction("fireball", 5.15f) }));
+    triggers.push_back(new TriggerNode("rc warlock target reflects", { NextAction("immolate", 5.15f) }));
+
     triggers.push_back(new TriggerNode("rc kill order", { NextAction("rc mark kill order", ACTION_RAID + 2) }));
 
     triggers.push_back(
@@ -241,6 +247,7 @@ void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& m
     multipliers.push_back(new RcBwlNefarianTremorMultiplier(botAI));
     multipliers.push_back(new RcBwlConstructAnchorMultiplier(botAI));
     multipliers.push_back(new RcBwlDrakeTauntMultiplier(botAI));
+    multipliers.push_back(new RcSpellReflectMultiplier(botAI));
 }
 
 // --- Suppression Room -----------------------------------------------------

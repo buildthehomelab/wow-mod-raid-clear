@@ -171,6 +171,22 @@ Shot** to level 61 on the hunter trainers (it was a book from Molten Core), so a
 bot never has it and no Frenzy is ever removed. Hunter bots that enter a raid are taught it.
 The spell stays on the character.
 
+### Reflected spells (all raids)
+
+Some enemies send spells back at whoever casts them: the **Anubisath Guardians** of Ruins of
+Ahn'Qiraj and the **Anubisath Sentinels** and **Defenders** of the Temple have either **Fire and
+Arcane Reflect** or **Shadow and Frost Reflect**, and Majordomo's adds get **Magic Reflection**.
+Playerbots used to cast its rotation anyway, so an arcane mage hit itself with every Arcane
+Missile. Now a bot doesn't cast a spell at an enemy that would reflect it, Arcane Missiles
+included. It goes on to the next spell it has: an arcane or fire mage to Frostbolt, a frost mage
+to Fireball, a warlock to Shadow Bolt or Immolate. Only when nothing else gets through does it use
+its wand (not Searing Pain, which would pull the mob off the tank). Chain spells and the few area
+spells that can be reflected (Chain Lightning under Magic Reflection, Seed of Corruption, Living
+Bomb) aren't cast where they would land on a reflecting enemy in the fight. Most area spells
+(Arcane Explosion, Blizzard, Consecration) can't be reflected at all. The check reads the enemy's
+auras the way the server does, so any reflect in any raid is covered. Pets aren't covered: an
+Imp's Firebolt still bounces.
+
 ### Death log (all raids)
 
 Every death in a raid gets one line in the server log, so a bad night can be read back and the
@@ -471,6 +487,9 @@ Category: Raids
 - Fankriss: bot tanks swap at 4 stacks of **Mortal Wound**.
 - Zul'Gurub: a mind-controlled bot (Cause Insanity, Will of Hakkar, Brain Wash) no longer casts
   its area spells on the raid.
+- Bots no longer cast spells into a reflect: against an Anubisath's **Fire and Arcane Reflect**
+  or **Shadow and Frost Reflect**, mages switch to the school that gets through instead of hitting
+  themselves.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.

@@ -10,6 +10,7 @@
 #include "Common/BossLookup.h"
 #include "Common/Charmed.h"
 #include "Common/Interrupts.h"
+#include "Common/SpellReflect.h"
 #include "Common/SplashSpells.h"
 #include "Common/WayOut.h"
 #include "RaidClearConfig.h"
@@ -80,6 +81,11 @@ std::vector<uint32> const& RaidClear::ZulGurub::TankSplitThreatShareBosses()
 
 void RaidClearZulGurubStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // Under a reflect: the spell of the other school that playerbots ranks below the wand (a
+    // frost mage's Fireball), just above it. "rc spell reflect" zeroes whichever is reflected.
+    triggers.push_back(new TriggerNode("rc mage target reflects", { NextAction("fireball", 5.15f) }));
+    triggers.push_back(new TriggerNode("rc warlock target reflects", { NextAction("immolate", 5.15f) }));
+
     triggers.push_back(new TriggerNode("rc kill order", { NextAction("rc mark kill order", ACTION_RAID + 2) }));
 
     triggers.push_back(new TriggerNode("rc zg holy wrath keep away",
@@ -110,6 +116,7 @@ void RaidClearZulGurubStrategy::InitMultipliers(std::vector<Multiplier*>& multip
     multipliers.push_back(new RcZgLiquidFireHoldMultiplier(botAI));
     multipliers.push_back(new RcCharmedSplashMultiplier(botAI));
     multipliers.push_back(new RcCharmedSelfMultiplier(botAI));
+    multipliers.push_back(new RcSpellReflectMultiplier(botAI));
 }
 
 // --- Trash ----------------------------------------------------------------
