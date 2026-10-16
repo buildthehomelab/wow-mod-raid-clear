@@ -7,6 +7,7 @@
 #include "KillOrder.h"
 
 #include "RaidClearConfig.h"
+#include "Raids/AhnQiraj/AqRaidClear.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/MoltenCore/McRaidClear.h"
 #include "Raids/ZulGurub/ZgRaidClear.h"
@@ -39,10 +40,11 @@ namespace RaidClear
         static std::vector<KillOrderEntry> const none;
         switch (mapId)
         {
-            case MoltenCore::MAP_ID:    return MoltenCore::KillOrder();
-            case BlackwingLair::MAP_ID: return BlackwingLair::KillOrder();
-            case ZulGurub::MAP_ID:      return ZulGurub::KillOrder();
-            default:                    return none;
+            case MoltenCore::MAP_ID:       return MoltenCore::KillOrder();
+            case BlackwingLair::MAP_ID:    return BlackwingLair::KillOrder();
+            case ZulGurub::MAP_ID:         return ZulGurub::KillOrder();
+            case TempleOfAhnQiraj::MAP_ID: return TempleOfAhnQiraj::KillOrder();
+            default:                       return none;
         }
     }
 
