@@ -8,6 +8,7 @@
 
 #include "RaidClearConfig.h"
 #include "Common/BossLookup.h"
+#include "Common/SpellReflect.h"
 
 #include "AllSpellScript.h"
 #include "AttackAction.h"
@@ -112,6 +113,7 @@ void RaidClearMoltenCoreStrategy::InitMultipliers(std::vector<Multiplier*>& mult
     multipliers.push_back(new RcMcRagnarosHoldMultiplier(botAI));
     multipliers.push_back(new RcMcReflectionMultiplier(botAI));
     multipliers.push_back(new RcMcAnxiousFireswornMultiplier(botAI));
+    multipliers.push_back(new RcSpellReflectMultiplier(botAI));
 }
 
 // --- Magmadar -------------------------------------------------------------

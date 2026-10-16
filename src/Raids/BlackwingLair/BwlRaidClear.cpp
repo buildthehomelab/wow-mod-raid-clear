@@ -8,6 +8,7 @@
 
 #include "RaidClearConfig.h"
 #include "Common/BossLookup.h"
+#include "Common/SpellReflect.h"
 
 #include "GameObject.h"
 #include "GameTime.h"
@@ -241,6 +242,7 @@ void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& m
     multipliers.push_back(new RcBwlNefarianTremorMultiplier(botAI));
     multipliers.push_back(new RcBwlConstructAnchorMultiplier(botAI));
     multipliers.push_back(new RcBwlDrakeTauntMultiplier(botAI));
+    multipliers.push_back(new RcSpellReflectMultiplier(botAI));
 }
 
 // --- Suppression Room -----------------------------------------------------

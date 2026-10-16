@@ -8,6 +8,7 @@
 
 #include "RaidClearConfig.h"
 #include "Common/BossLookup.h"
+#include "Common/SpellReflect.h"
 #include "Common/TankRoles.h"
 
 #include "AllSpellScript.h"
@@ -61,6 +62,7 @@ void RaidClearOnyxiasLairStrategy::InitMultipliers(std::vector<Multiplier*>& mul
     multipliers.push_back(new RcOnyDeepBreathMultiplier(botAI));
     multipliers.push_back(new RcOnyTargetMultiplier(botAI));
     multipliers.push_back(new RcOnyTankThreatMultiplier(botAI));
+    multipliers.push_back(new RcSpellReflectMultiplier(botAI));
 }
 
 // --- Deep Breath ----------------------------------------------------------

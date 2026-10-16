@@ -10,6 +10,7 @@
 #include "AqRaidClear.h"
 
 #include "Common/Charmed.h"
+#include "Common/SpellReflect.h"
 #include "RaidClearConfig.h"
 
 #include "AllSpellScript.h"
@@ -59,6 +60,7 @@ void RaidClearAq20Strategy::InitMultipliers(std::vector<Multiplier*>& multiplier
     multipliers.push_back(new RcAq20CrystalMultiplier(botAI));
     multipliers.push_back(new RcAq20SandTrapHoldMultiplier(botAI));
     multipliers.push_back(new RcAq20LarvaMultiplier(botAI));
+    multipliers.push_back(new RcSpellReflectMultiplier(botAI));
 }
 
 void RaidClearAq40Strategy::InitTriggers(std::vector<TriggerNode*>& triggers)
@@ -101,6 +103,7 @@ void RaidClearAq40Strategy::InitMultipliers(std::vector<Multiplier*>& multiplier
     multipliers.push_back(new RcAq40MortalWoundMultiplier(botAI));
     multipliers.push_back(new RcCharmedSplashMultiplier(botAI));
     multipliers.push_back(new RcCharmedSelfMultiplier(botAI));
+    multipliers.push_back(new RcSpellReflectMultiplier(botAI));
 }
 
 // --- Tables ---------------------------------------------------------------

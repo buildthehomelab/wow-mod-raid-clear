@@ -10,6 +10,7 @@
 #include "Common/BossLookup.h"
 #include "Common/Charmed.h"
 #include "Common/Interrupts.h"
+#include "Common/SpellReflect.h"
 #include "Common/SplashSpells.h"
 #include "Common/WayOut.h"
 #include "RaidClearConfig.h"
@@ -110,6 +111,7 @@ void RaidClearZulGurubStrategy::InitMultipliers(std::vector<Multiplier*>& multip
     multipliers.push_back(new RcZgLiquidFireHoldMultiplier(botAI));
     multipliers.push_back(new RcCharmedSplashMultiplier(botAI));
     multipliers.push_back(new RcCharmedSelfMultiplier(botAI));
+    multipliers.push_back(new RcSpellReflectMultiplier(botAI));
 }
 
 // --- Trash ----------------------------------------------------------------

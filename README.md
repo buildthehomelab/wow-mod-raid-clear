@@ -171,6 +171,18 @@ Shot** to level 61 on the hunter trainers (it was a book from Molten Core), so a
 bot never has it and no Frenzy is ever removed. Hunter bots that enter a raid are taught it.
 The spell stays on the character.
 
+### Reflected spells (all raids)
+
+Some enemies send spells back at whoever casts them: the **Anubisath Guardians** of Ruins of
+Ahn'Qiraj and the **Anubisath Sentinels** and **Defenders** of the Temple have either **Fire and
+Arcane Reflect** or **Shadow and Frost Reflect**, and Majordomo's adds get **Magic Reflection**.
+Playerbots used to cast its rotation anyway, so an arcane mage hit itself with every Arcane
+Missile. Now a bot doesn't cast a spell at an enemy that would reflect it: it goes on to the next
+spell it has (an arcane or fire mage to Frostbolt, a frost mage to Fireball), and to its wand when
+nothing else gets through. Area spells and chains aren't cast where they would land on a
+reflecting enemy in the fight either (Arcane Explosion in a pack of Sentinels). The check reads
+the enemy's auras the way the server does, so any reflect in any raid is covered.
+
 ### Death log (all raids)
 
 Every death in a raid gets one line in the server log, so a bad night can be read back and the
@@ -471,6 +483,9 @@ Category: Raids
 - Fankriss: bot tanks swap at 4 stacks of **Mortal Wound**.
 - Zul'Gurub: a mind-controlled bot (Cause Insanity, Will of Hakkar, Brain Wash) no longer casts
   its area spells on the raid.
+- Bots no longer cast spells into a reflect: against an Anubisath's **Fire and Arcane Reflect**
+  or **Shadow and Frost Reflect**, mages switch to the school that gets through instead of hitting
+  themselves.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.
