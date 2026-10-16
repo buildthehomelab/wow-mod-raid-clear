@@ -536,6 +536,12 @@ namespace RaidClear::Tanks
 
     Unit* PickOffTankTarget(PlayerbotAI* botAI, Player* bot, Player* mainTank, GuidVector const& attackers)
     {
+        // A boss that sheds threat and is on this off-tank: keep it. Turning to the adds would hand
+        // it back to the main tank on threat alone (after a Mortal Wound swap, with its stacks).
+        Unit* coBoss = CoTankBoss(botAI, bot, attackers);
+        if (coBoss && coBoss->GetVictim() == bot)
+            return coBoss;
+
         // An add that wants a tank of its own comes first, wherever it is, unless another off-tank
         // already holds it. The main tank leaves it alone (see the raid's target exclusions).
         Unit* ownTankAdd = nullptr;
@@ -572,7 +578,6 @@ namespace RaidClear::Tanks
                         return unit;
 
         Unit* mainTarget = mainTank->GetVictim();
-        Unit* coBoss = CoTankBoss(botAI, bot, attackers);
 
         // 0 = already on me, 1 = loose on a non-tank, 2 = extra mob on the main tank,
         // 3 = attacking nobody. Mobs held by another off-tank are left alone.

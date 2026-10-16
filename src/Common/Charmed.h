@@ -3,7 +3,7 @@
  * Skeram's True Fulfillment and the like). A raid adds these to its strategy:
  *
  *   - The member itself. The core gives a player an enemy controls an AI of its own (melee, and
- *     now and then one of its class's single-target spells), but playerbots goes on running the
+ *     now and then one of its class's damage spells), but playerbots goes on running the
  *     bot as well: with its faction now the enemy's, the raid is what it fights, and its area
  *     spells (Blizzard, Consecration, Whirlwind) land on everyone around it, with whatever
  *     damage the mind control adds (True Fulfillment: +300%). So a bot an enemy controls does

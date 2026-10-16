@@ -14,8 +14,9 @@
  *     leaves mobs another off-tank already holds.
  *   - On bosses that cut their tank's threat (Broodlord's Knock Away, the BWL drakes' Wing
  *     Buffet), or that two tanks take in turns (Fankriss), the off-tank attacks the boss whenever
- *     no add needs it, so it sits second on threat and catches the boss. Playerbots' "lose aggro" never makes a non-main tank taunt
- *     off another tank, and makes the main tank taunt back.
+ *     no add needs it, so it sits second on threat and catches the boss, and an off-tank the
+ *     boss is on keeps it rather than turning to adds. Playerbots' "lose aggro" never makes a
+ *     non-main tank taunt off another tank, and makes the main tank taunt back.
  *   - On bosses that keep taking their tank away (each raid lists them: Hakkar's mind control and
  *     threat wipes) the tanks share the boss's threat and the damage dealers stay under it, so
  *     whoever the boss turns to next is a tank:

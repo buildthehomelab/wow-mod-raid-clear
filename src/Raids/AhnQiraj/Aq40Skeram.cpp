@@ -127,14 +127,18 @@ bool RcAq40SkeramInterruptAction::Execute(Event /*event*/)
     Unit* skeram = SkeramToInterrupt(botAI, bot, with);
     if (!skeram)
         return false;
+    // Claimed once it has gone out: a cast that fails leaves the next bot free to try.
+    if (!botAI->CastSpell(with, skeram))
+        return false;
     InterruptSent(skeram);
-    return botAI->CastSpell(with, skeram);
+    return true;
 }
 
 // A bot doesn't run its engine while it casts, and Arcane Explosion is cast in a second: the
 // moment he or an image starts one of the two, the bots that could stop it look at once. Those
 // that aren't casting anything just think now; if none of them can, the nearest one that is
-// casting drops its own cast for it.
+// casting drops its own cast for it. (A channelling bot never qualifies: playerbots reports none
+// of its spells as ready until the channel ends.)
 class RaidClearSkeramWakeSpellScript : public AllSpellScript
 {
 public:
