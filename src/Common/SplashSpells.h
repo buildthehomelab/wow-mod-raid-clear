@@ -9,10 +9,13 @@
 
 #include "Define.h"
 
+#include <functional>
 #include <string>
+#include <vector>
 
 class Player;
 class PlayerbotAI;
+class Unit;
 
 namespace RaidClear::Splash
 {
@@ -37,6 +40,13 @@ namespace RaidClear::Splash
         bool Any() const { return aroundCaster > 0.0f || aroundTarget > 0.0f || chainHops > 0; }
     };
     Reach ReachOf(PlayerbotAI* botAI, Player* bot, std::string const& name);
+
+    // Whether a spell with this reach, cast at `target` (nullptr for one cast on the bot or the
+    // ground under it), lands on one of `fighting` for which `pick` says yes: within its reach of
+    // the bot or of the target, or a chain's jumps on from the target. `fighting` is the enemies in
+    // the fight other than the target; the target itself is not judged.
+    bool LandsOn(Player* bot, Reach const& reach, Unit* target, std::vector<Unit*> const& fighting,
+                 std::function<bool(Unit*)> const& pick);
 }
 
 #endif

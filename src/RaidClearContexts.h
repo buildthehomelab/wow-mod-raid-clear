@@ -72,6 +72,9 @@ public:
         creators["rc mc ragnaros move out"] = &RaidClearActionContext::mc_ragnaros_move_out;
         creators["rc mc garr gather"] = &RaidClearActionContext::mc_garr_gather;
         creators["rc mc leave firesworn"] = &RaidClearActionContext::mc_leave_firesworn;
+        creators["rc mc leave splash trash"] = &RaidClearActionContext::mc_leave_splash_trash;
+        creators["rc mc leave play dead"] = &RaidClearActionContext::mc_leave_play_dead;
+        creators["rc mc mark hound"] = &RaidClearActionContext::mc_mark_hound;
         creators["rc mc leave inferno"] = &RaidClearActionContext::mc_leave_inferno;
         creators["rc mc leave hot coal"] = &RaidClearActionContext::mc_leave_hot_coal;
         creators["rc mc carry living bomb"] = &RaidClearActionContext::mc_carry_living_bomb;
@@ -143,6 +146,9 @@ private:
     static Action* mc_ragnaros_move_out(PlayerbotAI* botAI) { return new RcMcRagnarosMoveOutAction(botAI); }
     static Action* mc_garr_gather(PlayerbotAI* botAI) { return new RcMcGarrGatherAction(botAI); }
     static Action* mc_leave_firesworn(PlayerbotAI* botAI) { return new RcMcLeaveFireswornAction(botAI); }
+    static Action* mc_leave_splash_trash(PlayerbotAI* botAI) { return new RcMcLeaveSplashTrashAction(botAI); }
+    static Action* mc_leave_play_dead(PlayerbotAI* botAI) { return new RcMcLeavePlayDeadAction(botAI); }
+    static Action* mc_mark_hound(PlayerbotAI* botAI) { return new RcMcMarkHoundAction(botAI); }
     static Action* mc_leave_inferno(PlayerbotAI* botAI) { return new RcMcLeaveInfernoAction(botAI); }
     static Action* mc_leave_hot_coal(PlayerbotAI* botAI) { return new RcMcLeaveHotCoalAction(botAI); }
     static Action* mc_carry_living_bomb(PlayerbotAI* botAI) { return new RcMcCarryLivingBombAction(botAI); }
@@ -223,6 +229,9 @@ public:
         creators["rc mc ragnaros ranged"] = &RaidClearTriggerContext::mc_ragnaros_ranged;
         creators["rc mc garr gather"] = &RaidClearTriggerContext::mc_garr_gather;
         creators["rc mc anxious firesworn"] = &RaidClearTriggerContext::mc_anxious_firesworn;
+        creators["rc mc splash trash"] = &RaidClearTriggerContext::mc_splash_trash;
+        creators["rc mc play dead target"] = &RaidClearTriggerContext::mc_play_dead_target;
+        creators["rc mc finish hounds"] = &RaidClearTriggerContext::mc_finish_hounds;
         creators["rc mc inferno"] = &RaidClearTriggerContext::mc_inferno;
         creators["rc mc hot coal"] = &RaidClearTriggerContext::mc_hot_coal;
         creators["rc mc living bomb"] = &RaidClearTriggerContext::mc_living_bomb;
@@ -305,6 +314,9 @@ private:
     static Trigger* mc_ragnaros_ranged(PlayerbotAI* botAI) { return new RcMcRagnarosRangedTrigger(botAI); }
     static Trigger* mc_garr_gather(PlayerbotAI* botAI) { return new RcMcGarrGatherTrigger(botAI); }
     static Trigger* mc_anxious_firesworn(PlayerbotAI* botAI) { return new RcMcAnxiousFireswornTrigger(botAI); }
+    static Trigger* mc_splash_trash(PlayerbotAI* botAI) { return new RcMcSplashTrashTrigger(botAI); }
+    static Trigger* mc_play_dead_target(PlayerbotAI* botAI) { return new RcMcPlayDeadTargetTrigger(botAI); }
+    static Trigger* mc_finish_hounds(PlayerbotAI* botAI) { return new RcMcFinishHoundsTrigger(botAI); }
     static Trigger* mc_inferno(PlayerbotAI* botAI) { return new RcMcInfernoTrigger(botAI); }
     static Trigger* mc_hot_coal(PlayerbotAI* botAI) { return new RcMcHotCoalTrigger(botAI); }
     static Trigger* mc_living_bomb(PlayerbotAI* botAI) { return new RcMcLivingBombTrigger(botAI); }

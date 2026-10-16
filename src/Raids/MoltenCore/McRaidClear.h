@@ -45,14 +45,28 @@
  *     the group, not for one in the middle of it, which is where the healers stand. Here the
  *     carrier walks to the nearest spot 24.5 yd from every other raid member (looked for up to
  *     40 yd away) and not within Inferno's reach of Geddon, or to the emptiest spot there is.
+ *   - Molten Giants and Molten Destroyers hit everyone within 10 and 13 yd of them (Smash,
+ *     Massive Tremor). Ranged and healers have no business there, but playerbots lets them
+ *     stand anywhere in range (logs of 2026-10-15/16: about half of the ~450 hits of each per
+ *     run were on healers and ranged). A ranged bot or healer inside either walks out to the
+ *     nearest spot 5 yd clear of every one in the fight.
+ *   - Core Hounds: one brought to 0 health plays dead for 10 s and takes no damage; then it
+ *     dies if no other Core Hound within 80 yd is still standing in the fight, else it gets up
+ *     at full health. Playerbots skulls the hound with the most health, which evens the pack
+ *     out. Here nobody hits a hound that is playing dead (a log of 2026-10-16: a quarter of all
+ *     hits on hounds landed on those, for nothing), and from the moment one plays dead skull
+ *     goes to the standing hound with the least health, so the rest go down inside its 10 s.
  *   - Garr: a Firesworn more than 40 yd from him gets Separation Anxiety (23492, +300% damage),
  *     and a Firesworn erupts when it dies (Eruption, 19497: about 2,000 fire to everyone within
  *     15 yd). With the two together that is 8,000, which kills everyone around it. So the fight
  *     stays with Garr: a bot more than 30 yd from him walks back to 22 (a Firesworn follows
  *     whoever it is on; a tank only comes when a Firesworn is on it, so trash pulled with the
  *     boss stays where its tank holds it), nobody but the tanks hits a Firesworn that has
- *     Separation Anxiety or is about to get it (bots already on one stop, pets too), and the
- *     kill order skips it.
+ *     Separation Anxiety or is about to get it (bots already on one stop, pets too, and a cast
+ *     or channel already going at it is broken off), no area or chain spell is cast where it
+ *     would land on one (a log of 2026-10-15: a Multi-Shot at the Firesworn beside it and an
+ *     Arcane Missiles that kept channelling finished one, and its Eruption killed nine), tanks'
+ *     area spells spare one that is below 40%, and the kill order skips it.
  *
  * Released under the MIT License.
  */
@@ -99,6 +113,7 @@ namespace RaidClear::MoltenCore
         NPC_LAVA_SPAWN           = 12265,  // Firelord trash, splits every 15s
         NPC_LAVA_SURGER          = 12101,  // patrols; Surge
         NPC_SULFURON             = 12098,
+        NPC_CORE_HOUND           = 11671,  // packs of five: Lucifron, Magmadar
     };
 
     enum Spells : uint32
@@ -111,6 +126,7 @@ namespace RaidClear::MoltenCore
         SPELL_GIANT_KNOCK_AWAY   = 18945,  // Molten Giant: the nearest player, 9 yd
         SPELL_SURGE              = 19196,  // Lava Surger: a charge, then everyone within 10 yd of it, 5 yd
         SPELL_HAND_OF_RAGNAROS   = 19780,  // Sulfuron: everyone within 10 yd, 6 yd
+        SPELL_PLAY_DEAD          = 19822,  // Core Hound at 0 health, 10 s, takes no damage
     };
 
     // The Living Bomb's explosion reaches 18 yd, centre to centre. Its carrier walks to the
@@ -144,6 +160,16 @@ namespace RaidClear::MoltenCore
     constexpr float HOT_COAL_WORTH_IT = 2.0f;
     constexpr float HOT_COAL_SEARCH = 27.0f;
 
+    // Molten Giant's Smash (18944) reaches 10 yd from its middle, Molten Destroyer's Massive
+    // Tremor (19129) 13 yd. Ranged and healers closer than KEEP_AWAY past that edge walk to the
+    // nearest spot SPOT past it (looked for up to SEARCH yards round the bot).
+    constexpr float SMASH_RADIUS = 10.0f;
+    constexpr float MASSIVE_TREMOR_RADIUS = 13.0f;
+    constexpr float SPLASH_TRASH_KEEP_AWAY = 2.5f;
+    constexpr float SPLASH_TRASH_SPOT = 5.0f;
+    constexpr float SPLASH_TRASH_WORTH_IT = 2.0f;
+    constexpr float SPLASH_TRASH_SEARCH = 24.0f;
+
     // Panic (19408) radius.
     constexpr float PANIC_RANGE = 45.0f;
     // Wrath of Ragnaros (20566) reaches 25 yd from his middle. Ranged and healers closer than
@@ -161,10 +187,20 @@ namespace RaidClear::MoltenCore
     // A bot further than this from Garr walks back to the target distance.
     constexpr float GARR_GATHER = 30.0f;
     constexpr float GARR_GATHER_TARGET = 22.0f;
+    // A tank's area spells (Consecration, Thunder Clap, a Swipe) leave an anxious Firesworn alone
+    // below this much health: it would die to them before it is back with Garr.
+    constexpr float GARR_TANK_SPARES_BELOW_PCT = 40.0f;
+
+    // A Core Hound's Play Dead ends in its death only if no other Core Hound within this of it
+    // is still standing in the fight; otherwise it gets up at full health.
+    constexpr float CORE_HOUND_LINK_RANGE = 80.0f;
 
     std::vector<KillOrderEntry> const& KillOrder();
-    // Adds the kill order leaves alone for now (a Firesworn with Separation Anxiety).
+    // Adds the kill order leaves alone for now (a Firesworn with Separation Anxiety, a Core Hound
+    // playing dead).
     bool KillOrderSkips(Player* bot, Unit const* unit);
+    // While Core Hounds are being finished (one plays dead) skull follows the hounds' own rule.
+    bool KillOrderSuspended(Player* bot);
 
     // Bosses where mod-playerbots places the tanks itself (Golemagg: main tank on him, assist
     // tank on the Core Ragers at fixed spots), so the generic off-tank split stays out.
@@ -336,7 +372,8 @@ public:
     bool Execute(Event event) override;
 };
 
-// A bot that isn't a tank is attacking a Firesworn that has Separation Anxiety.
+// A bot that isn't a tank is attacking, casting at or channelling into a Firesworn that has
+// Separation Anxiety, or its pet is on one.
 class RcMcAnxiousFireswornTrigger : public Trigger
 {
 public:
@@ -344,7 +381,7 @@ public:
     bool IsActive() override;
 };
 
-// Stops the swing, the Auto Shot or the wand, and the pet.
+// Stops the swing, the Auto Shot or the wand, the cast or channel, and the pet.
 class RcMcLeaveFireswornAction : public Action
 {
 public:
@@ -352,11 +389,74 @@ public:
     bool Execute(Event event) override;
 };
 
-// Nobody but the tanks hits a Firesworn that would erupt for four times the damage.
+// Nobody but the tanks hits a Firesworn that would erupt for four times the damage, and no
+// splash or chain spell lands on one.
 class RcMcAnxiousFireswornMultiplier : public Multiplier
 {
 public:
     RcMcAnxiousFireswornMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc mc anxious firesworn") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Molten Giants and Destroyers ---------------------------------------------
+
+// A ranged bot or healer stands inside a fighting Giant's Smash or Destroyer's Massive Tremor.
+class RcMcSplashTrashTrigger : public Trigger
+{
+public:
+    RcMcSplashTrashTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc splash trash") {}
+    bool IsActive() override;
+};
+
+class RcMcLeaveSplashTrashAction : public Action
+{
+public:
+    RcMcLeaveSplashTrashAction(PlayerbotAI* botAI) : Action(botAI, "rc mc leave splash trash"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
+// --- Core Hounds -----------------------------------------------------------
+
+// The bot is hitting, casting at or channelling into a Core Hound that is playing dead.
+class RcMcPlayDeadTargetTrigger : public Trigger
+{
+public:
+    RcMcPlayDeadTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc play dead target") {}
+    bool IsActive() override;
+};
+
+class RcMcLeavePlayDeadAction : public Action
+{
+public:
+    RcMcLeavePlayDeadAction(PlayerbotAI* botAI) : Action(botAI, "rc mc leave play dead") {}
+    bool Execute(Event event) override;
+};
+
+// The group's marker, with a Core Hound playing dead and skull not on the standing hound with the
+// least health.
+class RcMcFinishHoundsTrigger : public Trigger
+{
+public:
+    RcMcFinishHoundsTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc finish hounds") {}
+    bool IsActive() override;
+};
+
+class RcMcMarkHoundAction : public Action
+{
+public:
+    RcMcMarkHoundAction(PlayerbotAI* botAI) : Action(botAI, "rc mc mark hound") {}
+    bool Execute(Event event) override;
+};
+
+// Nothing is aimed at a hound playing dead, and playerbots' own hound marking (most health
+// first) waits while the pack is being finished.
+class RcMcCoreHoundMultiplier : public Multiplier
+{
+public:
+    RcMcCoreHoundMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc mc core hound") {}
     float GetValue(Action* action) override;
 };
 
