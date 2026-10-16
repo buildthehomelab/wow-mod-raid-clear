@@ -317,9 +317,10 @@ RaidClear.OnyxiasLair.Enable = 1
 #    RaidClear.RuinsOfAhnQiraj.Enable
 #        Description: Ruins of Ahn'Qiraj strategy (map 509). Ossirian: the tank he is on takes
 #                     him to the next crystal before his weakness wears off, and one bot (the
-#                     nearest that isn't a tank) waits at the crystal and uses it once he is in
-#                     reach. Replaces playerbots' crystal walk, which sent every bot. Also: bots
-#                     walk out of an Anubisath Guardian's Explode (20 yd) before it goes off.
+#                     nearest damage dealer, else a healer) waits at the crystal and uses it
+#                     once he is in reach and has Strength or less than 15 s of weakness left.
+#                     Replaces playerbots' crystal walk, which sent every bot. Also: bots walk
+#                     out of an Anubisath Guardian's Explode (20 yd) before it goes off.
 #        Default:     1
 #
 
@@ -332,7 +333,8 @@ RaidClear.RuinsOfAhnQiraj.Enable = 1
 #                     shaman Frost Shock, death knight Howling Blast or Icy Touch); bots walk out
 #                     of the Toxic Slime clouds and toward nothing standing in one, and the tank
 #                     he is on walks him out of a cloud; skull goes on the Globs of Viscidus first
-#                     (needs RaidClear.KillOrder). Also: bots walk out of an Anubisath Explode.
+#                     (needs RaidClear.KillOrder). Also: bots walk out of an Anubisath Defender's
+#                     Explode (20 yd) before it goes off.
 #        Default:     1
 #
 

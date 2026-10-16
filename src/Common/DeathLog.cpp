@@ -186,7 +186,7 @@ namespace
 
     // What a boss carries that its own fight put on it: its buffs, and whatever a creature cast on
     // it, permanent ones too (Strength of Ossirian, a crystal's weakness, Viscidus' Freeze), but
-    // not the raid's debuffs (or their pets').
+    // not the raid's debuffs (or their pets', totems' and guardians').
     std::string BossAuraList(Unit const* boss)
     {
         std::ostringstream out;
@@ -194,9 +194,20 @@ namespace
         for (auto const& [id, aurApp] : boss->GetAppliedAuras())
         {
             Aura const* aura = aurApp->GetBase();
-            ObjectGuid const caster = aura->GetCasterGUID();
-            if (aura->IsPassive() || (!aurApp->IsPositive() && (caster.IsPlayer() || caster.IsPet())))
+            if (aura->IsPassive())
                 continue;
+            // Its own channel counts as a negative aura on it.
+            if (aura->GetCasterGUID() == boss->GetGUID() && aura->GetSpellInfo()->IsChanneled())
+                continue;
+            if (!aurApp->IsPositive())
+            {
+                // The raid's, its pets', totems' and guardians': whoever the caster belongs to.
+                ObjectGuid owner = aura->GetCasterGUID();
+                if (Unit const* caster = aura->GetCaster())
+                    owner = caster->GetCharmerOrOwnerOrOwnGUID();
+                if (owner.IsPlayer() || owner.IsPet())
+                    continue;
+            }
             out << (first ? "" : ", ") << aura->GetSpellInfo()->SpellName[LOCALE_enUS];
             if (aura->GetStackAmount() > 1)
                 out << " x" << uint32(aura->GetStackAmount());

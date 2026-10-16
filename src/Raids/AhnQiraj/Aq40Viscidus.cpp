@@ -38,10 +38,13 @@ namespace
 {
     Creature* FightingViscidus(Player* bot) { return RaidClear::FightingCreature(bot, { NPC_VISCIDUS }); }
 
-    // Neither frozen nor shattered: frost hits count.
+    // Neither frozen nor shattered: frost hits count. He stuns himself the moment he shatters and
+    // stays stunned until the last glob is gone (he only turns invisible 3 s in, and visible again
+    // when the first glob reaches him): until then the globs come first.
     bool CanBeFrozen(Unit const* boss)
     {
-        return !boss->HasAura(SPELL_VISCIDUS_FREEZE) && !boss->HasAura(SPELL_VISCIDUS_INVIS);
+        return !boss->HasAura(SPELL_VISCIDUS_FREEZE) && !boss->HasAura(SPELL_VISCIDUS_INVIS) &&
+               !boss->HasAura(SPELL_VISCIDUS_STUN_SELF);
     }
 
     // --- Frost ------------------------------------------------------------
@@ -88,11 +91,12 @@ namespace
     // A damage dealer that can cast one of its frost spells at him now.
     FrostSpell const* ReadyFrostSpell(PlayerbotAI* botAI, Player* bot, Unit* boss)
     {
-        if (PlayerbotAI::IsHeal(bot) || PlayerbotAI::IsTank(bot) || !bot->IsWithinLOSInMap(boss))
+        std::vector<FrostSpell> const& spells = FrostSpellsFor(bot);
+        if (spells.empty() || PlayerbotAI::IsHeal(bot) || PlayerbotAI::IsTank(bot))
             return nullptr;
-        for (FrostSpell const& spell : FrostSpellsFor(bot))
+        for (FrostSpell const& spell : spells)
             if (CanCastFrost(botAI, bot, spell, boss))
-                return &spell;
+                return bot->IsWithinLOSInMap(boss) ? &spell : nullptr;
         return nullptr;
     }
 
@@ -297,8 +301,9 @@ float RcAq40ToxinHoldMultiplier::GetValue(Action* action)
     if (!bot->IsInCombat())
         return 1.0f;
 
+    // Only walks toward an enemy: a healer still walks to whoever it has to heal.
     Unit* target = action->GetTarget();
-    if (!target || target == bot)
+    if (!target || target == bot || !bot->IsValidAttackTarget(target))
         return 1.0f;
     Creature* boss = FightingViscidus(bot);
     if (!boss)

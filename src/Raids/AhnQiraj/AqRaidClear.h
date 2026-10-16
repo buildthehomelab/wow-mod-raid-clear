@@ -5,9 +5,9 @@
  * the spell data.
  *
  * Both raids:
- *   - Anubisath Explode. An Anubisath Guardian (and any other mob that does it) can go off at
- *     10% health: Explode (25698) is a 6 s fuse on the mob, then 25699 hits everyone within
- *     20 yd for about 4,700. Every bot in reach, tanks too, walks out and stays out until it has
+ *   - Anubisath Explode. An Anubisath Guardian (Ruins) or Defender (Temple), or any other mob
+ *     that does it, can go off at 10% health: Explode (25698) is a 6 s fuse on the mob (it stuns
+ *     it), then 25699 hits everyone within 20 yd for about 4,700. Every bot in reach, tanks too, walks out and stays out until it has
  *     gone off, the ZG Bat Rider rule. A bot in the middle of a cast is told to drop it the moment
  *     the fuse is lit.
  *
@@ -24,8 +24,9 @@
  *         his weakness has less left than the walk takes plus a margin. It walks to the crystal
  *         and waits there; he follows his victim. A crystal the aggro leash keeps stopping the
  *         walk to is passed over for a while.
- *       - One bot uses the crystal: the bot (not a tank) nearest to it, picked once for the
- *         crystal. It walks there ahead of him, waits, and uses it as soon as he is in reach and
+ *       - One bot uses the crystal: the damage dealer nearest to it (a healer only when no
+ *         damage dealer can), picked once for the crystal. The tank stops short of it, so the
+ *         two aren't in one spot. It walks there ahead of him, waits, and uses it as soon as he is in reach and
  *         has Strength or less than CLICK_AHEAD of weakness left. A bot that can't get there is
  *         replaced for a while. After a use the plan stays on that crystal until the weakness has
  *         landed (the crystal's trigger casts it), so the tank doesn't take him out of its reach
@@ -156,7 +157,8 @@ namespace RaidClear::TempleOfAhnQiraj
         NPC_GLOB_OF_VISCIDUS = 15667,
         NPC_TOXIC_SLIME = 15925,
         SPELL_VISCIDUS_FREEZE = 25937,
-        SPELL_VISCIDUS_INVIS = 25905,  // shattered into globs
+        SPELL_VISCIDUS_INVIS = 25905,  // shattered into globs (from 3 s in)
+        SPELL_VISCIDUS_STUN_SELF = 25900,  // shattered, until the last glob is gone
         SPELL_TOXIN_CLOUD = 25989,
         SPELL_FROSTBOLT_RANK_1 = 116,
     };
