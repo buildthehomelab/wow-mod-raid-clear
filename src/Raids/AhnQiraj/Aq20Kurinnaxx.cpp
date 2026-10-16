@@ -39,9 +39,11 @@ namespace
     {
         if (!trap->IsInWorld() || !trap->isSpawned())
             return false;
+        // The trap deletes itself when it goes off, which also clears its respawn time; it stays
+        // in the world until the end of that update.
         time_t const ends = trap->GetRespawnTime();
         if (!ends)
-            return true;  // no life on it: no telling, so it counts
+            return false;
 
         static int64 const lifeS = []
         {

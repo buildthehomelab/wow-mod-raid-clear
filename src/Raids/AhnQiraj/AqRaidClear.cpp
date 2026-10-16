@@ -12,7 +12,11 @@
 #include "RaidClearConfig.h"
 
 #include "AllSpellScript.h"
+#include "CellImpl.h"
 #include "Creature.h"
+#include "DynamicObject.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "Map.h"
 #include "Playerbots.h"
 #include "ReachTargetActions.h"
@@ -21,6 +25,8 @@
 #include "Timer.h"
 
 #include <algorithm>
+#include <cmath>
+#include <list>
 
 using namespace RaidClear::AhnQiraj;
 
@@ -123,7 +129,8 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::TempleOfAhnQiraj::KillO
 bool RaidClear::TempleOfAhnQiraj::KillOrderSkips(Player* /*bot*/, Unit const* unit)
 {
     // The script turns a bug passive while it walks over to eat a dying one, and the dying one
-    // for as long as it waits to be eaten; neither takes damage meanwhile.
+    // for as long as it waits to be eaten. The dying one takes no damage; the eater gets a Full
+    // Heal when it arrives.
     if (!unit)
         return false;
     uint32 const entry = unit->GetEntry();
@@ -159,6 +166,45 @@ float RaidClear::AhnQiraj::ExplodeRadius()
         return r > 0.0f ? r : 20.0f;
     }();
     return radius;
+}
+
+std::vector<RaidClear::TempleOfAhnQiraj::ToxinCloud> RaidClear::TempleOfAhnQiraj::FindToxinClouds(
+    WorldObject const* centre, uint32 dropper, float range)
+{
+    std::vector<ToxinCloud> clouds;
+
+    std::list<WorldObject*> objects;
+    Acore::AllWorldObjectsInRange check(centre, range);
+    Acore::WorldObjectListSearcher<Acore::AllWorldObjectsInRange> searcher(centre, objects, check,
+                                                                           GRID_MAP_TYPE_MASK_DYNAMICOBJECT);
+    Cell::VisitObjects(centre, searcher, range);
+    for (WorldObject* object : objects)
+    {
+        DynamicObject const* dynObj = object->ToDynObject();
+        if (dynObj && dynObj->GetSpellId() == SPELL_TOXIN_CLOUD)
+            clouds.push_back({ dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetRadius() });
+    }
+
+    static float const radius = AhnQiraj::SpellRadius(SPELL_TOXIN_CLOUD, 5.0f);
+    std::list<Creature*> droppers;
+    centre->GetCreatureListWithEntryInGrid(droppers, dropper, range);
+    for (Creature const* mob : droppers)
+        if (mob->IsAlive())
+            clouds.push_back({ mob->GetPositionX(), mob->GetPositionY(), radius });
+    return clouds;
+}
+
+float RaidClear::TempleOfAhnQiraj::ToxinGap(std::vector<ToxinCloud> const& clouds, float x, float y)
+{
+    float gap = 1000.0f;
+    for (ToxinCloud const& cloud : clouds)
+        gap = std::min(gap, std::hypot(cloud.x - x, cloud.y - y) - cloud.radius);
+    return gap;
+}
+
+float RaidClear::TempleOfAhnQiraj::ToxinGap(std::vector<ToxinCloud> const& clouds, Position const* pos)
+{
+    return ToxinGap(clouds, pos->GetPositionX(), pos->GetPositionY());
 }
 
 float RaidClear::AhnQiraj::SpellRadius(uint32 spellId, float fallback)
@@ -276,7 +322,7 @@ public:
                 reach = SpellRadius(SPELL_GUARD_WHIRLWIND_HIT, 10.0f) + WHIRLWIND_KEEP_EXTRA;
                 break;
             case SPELL_POISON_CLOUD_SUMMON:
-                reach = SpellRadius(SPELL_TOXIC_VAPORS, 8.0f) + POISON_CLOUD_KEEP_EXTRA;
+                reach = SpellRadius(SPELL_TOXIN_CLOUD, 5.0f) + TOXIN_SPOT;
                 break;
             default:
                 return;

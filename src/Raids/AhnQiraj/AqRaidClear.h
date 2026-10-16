@@ -36,8 +36,8 @@
  *   - Sand Trap. Every 5-15 s he puts a Sand Trap (GO 180647) under a random raid member; 5 s
  *     later it goes off: 25656 hits everyone within 8 yd of it for about 2,000 nature, with 75%
  *     less chance to hit and a silence for 20 s. Every bot within its reach, tanks too, walks out
- *     while the fuse burns and walks toward nothing inside it. A spent trap stays on the floor
- *     and is harmless.
+ *     while the fuse burns and walks toward nothing inside it. The trap is gone once it has
+ *     gone off.
  *
  * Ruins of Ahn'Qiraj, Moam:
  *   - Arcane Eruption. Every 2-6 s he drains up to six mana users (anywhere within 100 yd) of
@@ -63,7 +63,9 @@
  *   - Stuns. Outside her whirlwind she can be stunned, and a stun when one is due makes the
  *     whirlwind fail. The guards can be stunned in theirs. A bot with a stun in reach (Hammer of
  *     Justice, Concussion Blow, Kidney Shot, Bash, Maim) puts it on a whirlwinding guard, else on
- *     Sartura, else on a guard, whenever none is on it; one bot at a time per target.
+ *     Sartura, else on a guard, whenever none is on it; one bot at a time per target, and none
+ *     on a target that diminishing returns would make immune or shorten to a quarter. (A guard
+ *     in its whirlwind is mostly stunned by the bot it is on: everyone else keeps out of reach.)
  *   - The guards die before her: they go in the kill order.
  *
  * Temple of Ahn'Qiraj, Fankriss the Unyielding:
@@ -75,12 +77,15 @@
  *   - Kill order. A bug that drops while another is alive is eaten by the others, who get their
  *     health back; Yauj leaves ten Yauj Broods, Kri a Poison Cloud, and Vem's death enrages the
  *     other two (Vengeance). Skull: Broods, then Yauj (she heals the others and fears), then Kri,
- *     then Vem. A bug that is eating or being eaten can't be hurt: skull leaves it meanwhile.
+ *     then Vem. A bug that is being eaten can't be hurt and one on its way to eat gets its health
+ *     back when it arrives: skull leaves both meanwhile.
  *   - Great Heal. Yauj's heal (25807, 2 s) is interrupted by any bot that can reach her.
  *   - Fear. Every 20 s Yauj fears everyone within 45 yd and wipes her threat. Shamans keep
  *     Tremor Totem down while she is alive.
- *   - Poison Cloud. Kri dying leaves a cloud (creature 15933) whose Toxic Vapors (25786) hit
- *     everyone within 8 yd for 2,000 nature a second. Bots walk out and toward nothing in it.
+ *   - Poison Cloud. Kri dying leaves a Poison Cloud (creature 15933) that drops a Toxin cloud
+ *     (25989, 5 yd, about 1,300 nature every 2 s and a slow) round itself every 10 s, the same
+ *     cloud as Viscidus' slimes. Bots walk out of them, and toward nothing standing in one, as
+ *     at Viscidus.
  *   - Vekniss Guardians. Their Impale throws everyone within 10 yd: off-tanks keep them 10 yd
  *     from the other tanks' mobs, and skull takes them one at a time.
  *
@@ -287,6 +292,22 @@ namespace RaidClear::TempleOfAhnQiraj
     // its melee reach.
     constexpr float MELEE_SLACK = 0.5f;
 
+    // A Toxin cloud on the floor (25989), or one to come: Viscidus' Toxic Slimes and Lord Kri's
+    // Poison Cloud each leave a new one round themselves every 10 s.
+    struct ToxinCloud
+    {
+        float x;
+        float y;
+        float radius;
+    };
+
+    // Every Toxin cloud within `range` of `centre`, and one round every living `dropper`.
+    std::vector<ToxinCloud> FindToxinClouds(WorldObject const* centre, uint32 dropper, float range);
+
+    // Yards from a spot to the edge of the nearest cloud (less than 0 inside one).
+    float ToxinGap(std::vector<ToxinCloud> const& clouds, float x, float y);
+    float ToxinGap(std::vector<ToxinCloud> const& clouds, Position const* pos);
+
     // --- Sartura ---------------------------------------------------------
     enum : uint32
     {
@@ -323,20 +344,14 @@ namespace RaidClear::TempleOfAhnQiraj
         NPC_KRI = 15511,
         NPC_VEM = 15544,
         NPC_YAUJ_BROOD = 15621,
-        NPC_POISON_CLOUD = 15933,
+        NPC_POISON_CLOUD = 15933,  // drops Toxin clouds like a Toxic Slime
         NPC_VEKNISS_GUARDIAN = 15233,
         SPELL_YAUJ_GREAT_HEAL = 25807,
         SPELL_POISON_CLOUD_SUMMON = 26590,  // Kri, as he dies
-        SPELL_TOXIC_VAPORS = 25786,         // the cloud's damage, 8 yd
         SPELL_GUARDIAN_IMPALE = 26025,      // 10 yd round the guardian
     };
-    // A bot closer than the cloud's radius + KEEP_EXTRA leaves, to radius + SPOT_EXTRA; within
-    // radius + HOLD_EXTRA it walks toward nothing inside one.
-    constexpr float POISON_CLOUD_KEEP_EXTRA = 2.5f;
-    constexpr float POISON_CLOUD_SPOT_EXTRA = 5.0f;
-    constexpr float POISON_CLOUD_HOLD_EXTRA = 12.0f;
-    constexpr float POISON_CLOUD_WORTH_IT = 2.0f;
-    // Clouds are looked for this far round the bugs (their room).
+    // Kri's clouds are looked for this far round the bugs (their room); bots keep out of them as
+    // out of Viscidus' (TOXIN_KEEP and the rest).
     constexpr float POISON_CLOUD_SEARCH = 100.0f;
     // Tremor Totem goes down while Yauj is alive and this close.
     constexpr float YAUJ_FEAR_RANGE = 50.0f;

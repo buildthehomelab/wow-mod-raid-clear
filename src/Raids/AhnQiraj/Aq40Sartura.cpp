@@ -21,7 +21,9 @@
 #include <cmath>
 #include <iterator>
 #include <list>
-#include <unordered_map>
+#include <map>
+#include <mutex>
+#include <utility>
 
 using namespace RaidClear::TempleOfAhnQiraj;
 
@@ -67,8 +69,9 @@ namespace
         tWhirls.clear();
         tInstanceId = bot->GetInstanceId();
         tAtMs = now ? now : 1;
-        // Her fight, or her guards' (they can be pulled on their own).
-        Creature* anchor = RaidClear::FightingCreature(bot, { NPC_SARTURA, NPC_SARTURA_ROYAL_GUARD });
+        // Her fight, looked for round her. Only her: a lookup with several entries stops at the
+        // first spawn, dead or alive, and the guards die first.
+        Creature* anchor = RaidClear::FightingCreature(bot, { NPC_SARTURA });
         if (!anchor)
             return tWhirls;
 
@@ -76,7 +79,7 @@ namespace
         anchor->GetCreatureListWithEntryInGrid(found, { NPC_SARTURA, NPC_SARTURA_ROYAL_GUARD }, WHIRLWIND_SEARCH);
         for (Creature const* mob : found)
         {
-            if (!mob->IsAlive())
+            if (!mob->IsAlive() || !mob->IsInCombat())
                 continue;
             float reach = 0.0f;
             if (mob->GetEntry() == NPC_SARTURA && mob->HasAura(SPELL_SARTURA_WHIRLWIND))
@@ -120,24 +123,27 @@ namespace
         { "bash", 0.0f }, { "maim", 0.0f },
     }};
 
-    // When a bot of the instance last sent a stun at each target (getMSTime()). One instance's
-    // bots update one after another on one thread.
-    std::unordered_map<ObjectGuid, uint32>& StunsSent()
-    {
-        thread_local std::unordered_map<ObjectGuid, uint32> tSent;
-        return tSent;
-    }
+    // When a bot last sent a stun at each target (getMSTime()), by instance and target. Map
+    // updates move between threads from one tick to the next, so it is shared and locked.
+    using StunKey = std::pair<uint32, ObjectGuid>;
+    std::map<StunKey, uint32> sStunsSent;
+    std::mutex sStunsLock;
 
     bool StunJustSent(Unit const* target)
     {
-        auto& sent = StunsSent();
-        auto it = sent.find(target->GetGUID());
-        if (it == sent.end())
-            return false;
-        if (getMSTimeDiff(it->second, getMSTime()) < STUN_SPREAD_MS)
-            return true;
-        sent.erase(it);
-        return false;
+        std::lock_guard<std::mutex> lock(sStunsLock);
+        auto it = sStunsSent.find({ target->GetInstanceId(), target->GetGUID() });
+        return it != sStunsSent.end() && getMSTimeDiff(it->second, getMSTime()) < STUN_SPREAD_MS;
+    }
+
+    void StunSent(Unit const* target)
+    {
+        std::lock_guard<std::mutex> lock(sStunsLock);
+        uint32 const now = getMSTime();
+        // Stamps that have run out (dead guards, other raids) go.
+        for (auto it = sStunsSent.begin(); it != sStunsSent.end();)
+            it = getMSTimeDiff(it->second, now) >= STUN_SPREAD_MS ? sStunsSent.erase(it) : std::next(it);
+        sStunsSent[{ target->GetInstanceId(), target->GetGUID() }] = now ? now : 1;
     }
 
     // Whether this one should be stunned now: not stunned already, not just sent one, and (for
@@ -163,6 +169,10 @@ namespace
             uint32 const spellId = botAI->GetAiObjectContext()->GetValue<uint32>("spell id", stun.spell)->Get();
             SpellInfo const* info = spellId ? sSpellMgr->GetSpellInfo(spellId) : nullptr;
             if (!info || target->IsImmunedToSpell(info))
+                continue;
+            // Stuns diminish on creatures too: the third lasts a quarter as long and the fourth
+            // does nothing, until 15 s after the last. Keep the cooldown for later.
+            if (target->GetDiminishing(GetDiminishingReturnsGroupForSpell(info, false)) >= DIMINISHING_LEVEL_3)
                 continue;
             if (botAI->CanCastSpell(stun.spell, target) && RaidClear::CanPayFor(botAI, bot, stun.spell))
                 return bot->IsWithinLOSInMap(target) ? stun.spell : nullptr;
@@ -253,11 +263,6 @@ bool RcAq40SarturaStunAction::Execute(Event /*event*/)
     Unit* target = StunTarget(botAI, bot, spell);
     if (!target || !spell || !botAI->CastSpell(spell, target))
         return false;
-    uint32 const now = getMSTime();
-    auto& sent = StunsSent();
-    // Guards that died with a stamp on them: dropped once it has run out.
-    for (auto it = sent.begin(); it != sent.end();)
-        it = getMSTimeDiff(it->second, now) >= STUN_SPREAD_MS ? sent.erase(it) : std::next(it);
-    sent[target->GetGUID()] = now ? now : 1;
+    StunSent(target);
     return true;
 }

@@ -8,11 +8,7 @@
 
 #include "Common/BossLookup.h"
 
-#include "CellImpl.h"
 #include "Creature.h"
-#include "DynamicObject.h"
-#include "GridNotifiers.h"
-#include "GridNotifiersImpl.h"
 #include "Playerbots.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
@@ -88,85 +84,26 @@ namespace
 
     // --- Toxin ------------------------------------------------------------
 
-    // A Toxin cloud on the floor, or one to come: every slime leaves a new one round itself every
-    // 10 s.
-    struct Cloud
-    {
-        float x;
-        float y;
-        float radius;
-    };
-
-    float CloudRadius()
-    {
-        static float const radius = []
-        {
-            SpellInfo const* info = sSpellMgr->GetSpellInfo(SPELL_TOXIN_CLOUD);
-            float const r = info ? info->Effects[EFFECT_0].CalcRadius() : 0.0f;
-            return r > 0.0f ? r : 5.0f;
-        }();
-        return radius;
-    }
-
-    // Every cloud in the room, and every slime.
-    std::vector<Cloud> FindClouds(Creature const* boss)
-    {
-        std::vector<Cloud> clouds;
-
-        std::list<WorldObject*> objects;
-        Acore::AllWorldObjectsInRange check(boss, TOXIN_ROOM_SEARCH);
-        Acore::WorldObjectListSearcher<Acore::AllWorldObjectsInRange> searcher(boss, objects, check,
-                                                                               GRID_MAP_TYPE_MASK_DYNAMICOBJECT);
-        Cell::VisitObjects(boss, searcher, TOXIN_ROOM_SEARCH);
-        for (WorldObject* object : objects)
-        {
-            DynamicObject const* dynObj = object->ToDynObject();
-            if (dynObj && dynObj->GetSpellId() == SPELL_TOXIN_CLOUD)
-                clouds.push_back({ dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetRadius() });
-        }
-
-        std::list<Creature*> slimes;
-        boss->GetCreatureListWithEntryInGrid(slimes, NPC_TOXIC_SLIME, TOXIN_ROOM_SEARCH);
-        for (Creature const* slime : slimes)
-            if (slime->IsAlive())
-                clouds.push_back({ slime->GetPositionX(), slime->GetPositionY(), CloudRadius() });
-        return clouds;
-    }
-
     // The clouds in the bot's copy of the room, looked up again after CLOUDS_FRESH_MS: the
     // triggers and the hold multiplier of the whole raid ask many times a second. One instance's
     // bots update one after another on one thread.
     constexpr uint32 CLOUDS_FRESH_MS = 200;
-    std::vector<Cloud> const& CloudsNear(Player* bot, Creature const* boss)
+    std::vector<ToxinCloud> const& CloudsNear(Player* bot, Creature const* boss)
     {
         thread_local uint32 tInstanceId = 0;
         thread_local ObjectGuid tBoss;
         thread_local uint32 tAtMs = 0;
-        thread_local std::vector<Cloud> tClouds;
+        thread_local std::vector<ToxinCloud> tClouds;
         uint32 const now = getMSTime();
         if (tInstanceId != bot->GetInstanceId() || tBoss != boss->GetGUID() || !tAtMs ||
             getMSTimeDiff(tAtMs, now) >= CLOUDS_FRESH_MS)
         {
-            tClouds = FindClouds(boss);
+            tClouds = FindToxinClouds(boss, NPC_TOXIC_SLIME, TOXIN_ROOM_SEARCH);
             tInstanceId = bot->GetInstanceId();
             tBoss = boss->GetGUID();
             tAtMs = now ? now : 1;
         }
         return tClouds;
-    }
-
-    // Yards from a spot to the edge of the nearest cloud (less than 0 inside one).
-    float ToxinGap(std::vector<Cloud> const& clouds, float x, float y)
-    {
-        float gap = 1000.0f;
-        for (Cloud const& cloud : clouds)
-            gap = std::min(gap, std::hypot(cloud.x - x, cloud.y - y) - cloud.radius);
-        return gap;
-    }
-
-    float ToxinGap(std::vector<Cloud> const& clouds, Position const* pos)
-    {
-        return ToxinGap(clouds, pos->GetPositionX(), pos->GetPositionY());
     }
 
     // He can't follow anyone: frozen, shattered, stunned or rooted.
@@ -177,7 +114,7 @@ namespace
     }
 
     // The tank he is on, with him standing in a cloud and able to follow it out.
-    bool MustWalkHimOut(Player* bot, Unit const* boss, std::vector<Cloud> const& clouds)
+    bool MustWalkHimOut(Player* bot, Unit const* boss, std::vector<ToxinCloud> const& clouds)
     {
         return boss->GetVictim() == bot && PlayerbotAI::IsTank(bot) && !StuckInPlace(boss) &&
                ToxinGap(clouds, boss) < TOXIN_BOSS_KEEP;
@@ -216,7 +153,7 @@ bool RcAq40ToxinTrigger::IsActive()
     Creature* boss = FightingViscidus(bot);
     if (!boss)
         return false;
-    std::vector<Cloud> const clouds = CloudsNear(bot, boss);
+    std::vector<ToxinCloud> const clouds = CloudsNear(bot, boss);
     return ToxinGap(clouds, bot) < TOXIN_KEEP || MustWalkHimOut(bot, boss, clouds);
 }
 
@@ -225,7 +162,7 @@ bool RcAq40LeaveToxinAction::Execute(Event /*event*/)
     Creature* boss = FightingViscidus(bot);
     if (!boss)
         return false;
-    std::vector<Cloud> const clouds = CloudsNear(bot, boss);
+    std::vector<ToxinCloud> const clouds = CloudsNear(bot, boss);
 
     if (MustWalkHimOut(bot, boss, clouds))
     {

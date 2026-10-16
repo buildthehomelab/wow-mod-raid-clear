@@ -18,8 +18,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
-#include <list>
 
 using namespace RaidClear::TempleOfAhnQiraj;
 
@@ -47,27 +45,17 @@ namespace
 
     // --- Poison Cloud -----------------------------------------------------
 
-    float CloudRadius()
-    {
-        static float const radius = RaidClear::AhnQiraj::SpellRadius(SPELL_TOXIC_VAPORS, 8.0f);
-        return radius;
-    }
-
-    struct Cloud
-    {
-        float x;
-        float y;
-    };
-
     // Kri's clouds in the bot's copy of the room, looked up again after CLOUDS_FRESH_MS: the
     // triggers and the hold multiplier of the whole raid ask many times a second. One instance's
-    // bots update one after another on one thread. Only while a bug is still in the fight.
+    // bots update one after another on one thread. Only while a bug is still in the fight, and
+    // looked for round it: each bug is its own lookup (one with several entries stops at the first
+    // spawn, dead or alive).
     constexpr uint32 CLOUDS_FRESH_MS = 200;
-    std::vector<Cloud> const& Clouds(Player* bot)
+    std::vector<ToxinCloud> const& Clouds(Player* bot)
     {
         thread_local uint32 tInstanceId = 0;
         thread_local uint32 tAtMs = 0;
-        thread_local std::vector<Cloud> tClouds;
+        thread_local std::vector<ToxinCloud> tClouds;
         uint32 const now = getMSTime();
         if (tInstanceId == bot->GetInstanceId() && tAtMs && getMSTimeDiff(tAtMs, now) < CLOUDS_FRESH_MS)
             return tClouds;
@@ -75,29 +63,14 @@ namespace
         tClouds.clear();
         tInstanceId = bot->GetInstanceId();
         tAtMs = now ? now : 1;
-        Creature* bug = RaidClear::FightingCreature(bot, { NPC_YAUJ, NPC_VEM, NPC_KRI, NPC_YAUJ_BROOD });
+        Creature* bug = RaidClear::FightingCreature(bot, { NPC_VEM });
         if (!bug)
-            return tClouds;
-        std::list<Creature*> found;
-        bug->GetCreatureListWithEntryInGrid(found, NPC_POISON_CLOUD, POISON_CLOUD_SEARCH);
-        for (Creature const* cloud : found)
-            if (cloud->IsAlive())
-                tClouds.push_back({ cloud->GetPositionX(), cloud->GetPositionY() });
+            bug = RaidClear::FightingCreature(bot, { NPC_KRI });
+        if (!bug)
+            bug = FightingYauj(bot);
+        if (bug)
+            tClouds = FindToxinClouds(bug, NPC_POISON_CLOUD, POISON_CLOUD_SEARCH);
         return tClouds;
-    }
-
-    // Yards from a spot to the nearest cloud, centre to centre.
-    float CloudGap(std::vector<Cloud> const& clouds, float x, float y)
-    {
-        float gap = 1000.0f;
-        for (Cloud const& cloud : clouds)
-            gap = std::min(gap, std::hypot(cloud.x - x, cloud.y - y));
-        return gap;
-    }
-
-    float CloudGap(std::vector<Cloud> const& clouds, Position const* pos)
-    {
-        return CloudGap(clouds, pos->GetPositionX(), pos->GetPositionY());
     }
 }
 
@@ -154,20 +127,16 @@ bool RcAq40PoisonCloudTrigger::IsActive()
     // A bot that is feared or rooted isn't going anywhere.
     if (!bot->IsAlive() || !bot->IsInCombat() || !botAI->CanMove())
         return false;
-    return CloudGap(Clouds(bot), bot) < CloudRadius() + POISON_CLOUD_KEEP_EXTRA;
+    return ToxinGap(Clouds(bot), bot) < TOXIN_KEEP;
 }
 
 bool RcAq40LeavePoisonCloudAction::Execute(Event /*event*/)
 {
-    std::vector<Cloud> const clouds = Clouds(bot);
-    float const radius = CloudRadius();
-    float const keepAway = radius + POISON_CLOUD_KEEP_EXTRA;
-    if (CloudGap(clouds, bot) >= keepAway)
+    std::vector<ToxinCloud> const clouds = Clouds(bot);
+    if (ToxinGap(clouds, bot) >= TOXIN_KEEP)
         return false;
-    auto const gapAt = [&clouds](float x, float y, float /*z*/) { return CloudGap(clouds, x, y); };
-    // Up to the whole cloud across from the middle of it.
-    return _walk.Go(gapAt, keepAway, radius + POISON_CLOUD_SPOT_EXTRA, POISON_CLOUD_WORTH_IT,
-                    radius + POISON_CLOUD_SPOT_EXTRA + 3.0f, clouds.size() == 1);
+    auto const gapAt = [&clouds](float x, float y, float /*z*/) { return ToxinGap(clouds, x, y); };
+    return _walk.Go(gapAt, TOXIN_KEEP, TOXIN_SPOT, TOXIN_WORTH_IT, TOXIN_SEARCH);
 }
 
 float RcAq40PoisonCloudHoldMultiplier::GetValue(Action* action)
@@ -175,9 +144,6 @@ float RcAq40PoisonCloudHoldMultiplier::GetValue(Action* action)
     Unit* target = RaidClear::AhnQiraj::WalkTarget(action, bot);
     if (!target)
         return 1.0f;
-    std::vector<Cloud> const& clouds = Clouds(bot);
-    float const radius = CloudRadius();
-    if (clouds.empty() || CloudGap(clouds, bot) >= radius + POISON_CLOUD_HOLD_EXTRA)
-        return 1.0f;
-    return CloudGap(clouds, target) < radius + POISON_CLOUD_KEEP_EXTRA ? 0.0f : 1.0f;
+    // Only what stands right in a cloud: a bug that walked in to eat Kri follows its tank out.
+    return ToxinGap(Clouds(bot), target) < 0.0f ? 0.0f : 1.0f;
 }
