@@ -159,8 +159,8 @@ void RaidClearDisciplineStrategy::InitMultipliers(std::vector<Multiplier*>& mult
 }
 
 // Playerbots puts the group's skull among every bot's "attackers" whether it is fighting or not.
-// The skull itself is still handed out before anything is skipped ("dps assist" asks for it by
-// name), which is what RcPullDisciplineMultiplier is for.
+// "dps target" and "tank target" skip an excluded skull, but "attack rti target" still goes
+// straight for it (and pets ignore exclusions), which is what RcPullDisciplineMultiplier is for.
 void RaidClearDisciplineStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type)
 {
     // A tank picks what it pulls.
@@ -186,9 +186,9 @@ bool RcUnpulledTargetTrigger::IsActive()
     if (pet && MustWaitFor(botAI, bot, pet->GetVictim()))
         return true;
 
-    // Nothing to hit, and all playerbots would offer is a target to wait for (the skull is
-    // handed out before anything is skipped, so "dps assist" keeps asking for it and keeps
-    // being refused): the bot would stand idle next to a fight. It is given something from it.
+    // Nothing to hit, and all playerbots would offer is a target to wait for (a skull reached
+    // through "attack rti target", which skips no exclusions, keeps being refused): the bot
+    // would stand idle next to a fight. It is given something from it.
     if (current && current->IsAlive())
         return false;
     return MustWaitFor(botAI, bot, NextTarget(botAI, bot)) && NearestInFight(botAI, bot, nullptr);
@@ -216,7 +216,7 @@ bool RcLeaveUnpulledTargetAction::Execute(Event /*event*/)
     if (next && next != current && next->IsAlive() && !MustWaitFor(botAI, bot, next) && Attack(next))
         return true;
 
-    // That can be the target to wait for again (the skull is picked before anything is skipped):
+    // That can be the target to wait for again (the skull through "attack rti target"):
     // then the nearest enemy the raid is fighting.
     Unit* nearest = NearestInFight(botAI, bot, current);
     if (nearest && Attack(nearest))

@@ -747,8 +747,8 @@ namespace
 // Playerbots asks every combat strategy what its target picking should skip ("dps target", "tank
 // target", the debuff targets), in whichever engine the bot is running: a bot whose target has
 // just died picks its next one outside combat, where this strategy's multipliers don't reach.
-// A raid icon comes before the exclusions: a skull a player puts on an evading mob is still
-// picked, and then left again by the trigger below.
+// "dps target" and "tank target" skip a skull on an evading mob, but "attack rti target" can
+// still pick one, and the trigger below leaves it again.
 void RaidClearOnyxiasLairStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType /*type*/)
 {
     GuidVector const& attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
