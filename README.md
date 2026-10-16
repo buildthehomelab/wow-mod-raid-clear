@@ -246,12 +246,19 @@ Playerbots has no Zul'Gurub strategy, so everything here is new.
 ### Ahn'Qiraj
 
 Playerbots only knows Ossirian's crystals in the Ruins, and has no Temple strategy at all.
+The kill orders below need `RaidClear.KillOrder`.
 
 | Fight | What the bots do |
 |---|---|
 | Anubisath Explode (both raids) | An **Anubisath Guardian** (Ruins) or **Anubisath Defender** (Temple) can light a 6 second fuse at 10% health, then blows up for about 4,700 to everyone within 20 yards. Every bot in reach, tanks too, walks out and stays out until it has gone off, the same way as from a Zul'Gurub Bat Rider. A bot in the middle of a cast drops it the moment the fuse is lit. |
 | Ossirian the Unscarred | Without a crystal's weakness on him he has **Strength of Ossirian**: four times the damage, so his **War Stomp** (20 yards) hits for 6,000-8,000 and his swings kill a cloth wearer in two. Using a crystal while he is within 30 yards of it gives him a weakness for a while, and each use spawns the next crystal elsewhere in the room. Playerbots sent the whole raid running to the crystal. Now the tank he is on takes him to the next crystal in time (when his weakness has less left than the walk, plus a margin) and stops a little short of it. One bot, the nearest damage dealer (a healer only if no damage dealer can), goes there ahead of him and uses it once he is in reach and has Strength or less than 15 seconds of weakness left. Everyone else keeps fighting. A crystal the tank can't get any closer to (a pack in the way, no path) is skipped for a while, and so is a bot that can't get to its crystal. |
 | Viscidus | 200 frost hits freeze him, and while he's frozen enough hits shatter him into globs. Playerbots' casters only cast their spec's spells, so an arcane mage never added a frost hit. Until he's frozen, every bot damage dealer with a frost spell casts it at him: mages **Frostbolt** (rank 1, which casts in 1.5 seconds), shamans **Frost Shock**, death knights **Howling Blast** or **Icy Touch**. Healers keep healing. Bots walk out of the **Toxic Slime** clouds (and away from the slimes that drop them) to the nearest clear spot, instead of stepping straight back into the next cloud, and nobody walks toward something standing in one, except toward Viscidus while he's frozen. The tank he is on walks him out of a cloud, never toward the entrance, where he resets. When he shatters, skull goes on the **Globs**: each one that reaches the middle of the room heals him. The glob kill order needs `RaidClear.KillOrder`. |
+| Kurinnaxx | Every 5-15 seconds he puts a **Sand Trap** under someone. Five seconds later it goes off: about 2,000 nature damage to everyone within 8 yards, 75% less chance to hit and a 20 second silence. Every bot in reach, tanks too, walks out while the fuse burns, and nobody walks toward something standing on a trap until it has gone off. |
+| Moam | Every few seconds he drains mana from up to six raid members anywhere in the room and gains twice as much. When his mana is full he spends it all on **Arcane Eruption**: 3,000-4,000 arcane damage to everyone within 45 yards. Hunters keep **Viper Sting** on him, priests that aren't healing **Mana Burn** him and warlocks **Drain Mana**, so he doesn't fill up. In his stone phase he gains mana faster until his three **Mana Fiends** are dead: skull goes on them first. |
+| Ayamiss the Hunter | She paralyzes someone and takes them to the altar, and a **Hive'Zara Larva** crawls there and eats them. The larva isn't in the fight, so playerbots never attacked it. Every bot damage dealer within 60 yards goes for the larva nearest the altar and stays on it until it is dead. |
+| Battleguard Sartura | She and her three **Royal Guards** **Whirlwind** (10 yards) and turn to someone random every few seconds; Sartura runs 15 yards a second, so nobody outruns her. Every bot she or a guard isn't on, tanks too, walks out of a whirlwind and nobody walks toward someone inside one. She can't be stunned while she whirlwinds, but outside it a stun stops her next whirlwind, and the guards can be stunned in theirs. So bots with **Hammer of Justice**, **Concussion Blow**, **Kidney Shot**, **Bash** or **Maim** in reach stun a whirlwinding guard first (mostly the bot it is chasing: everyone else is out of reach), then Sartura, then any guard, one stun at a time, and none that diminishing returns would make immune or shorten to a quarter. The guards die first. |
+| Fankriss the Unyielding | His **Spawn of Fankriss** go **Berserk** 30 seconds after they appear: five times the damage, and no taunt holds them. Each gets an off-tank of its own and skull before anything else, then the **Vekniss Hatchlings**. |
+| Bug Trio | A bug that drops while another lives is eaten, and the eaters get their health back. **Princess Yauj** leaves ten **Yauj Broods**, **Lord Kri** a **Poison Cloud** that keeps dropping the same **Toxin** clouds as Viscidus' slimes and **Vem**'s death enrages the others. Skull goes on the broods, then Yauj, then Kri, then Vem last, and leaves a bug that is being eaten (it can't be hurt) or is on its way to eat (it gets its health back when it arrives). Any bot that can reach Yauj interrupts her **Great Heal**, shamans keep **Tremor Totem** down for her fear, and bots walk out of Kri's cloud and toward nothing in it. **Vekniss Guardians** are taken one at a time, and an off-tank holds its guardian 10 yards from the other tanks' mobs (**Impale**). |
 
 ## Requirements
 
@@ -444,6 +451,17 @@ Category: Raids
   the **Toxic Slime** clouds, and they kill the **Globs** before the globs reach him.
 - Raids: the death log shows the boss's own buffs and the debuffs its fight put on it, such as
   Ossirian's **Strength** or a crystal's weakness.
+- Ahn'Qiraj: skull now follows the kill order in both raids. It was never moved before, so the
+  bots didn't go for Viscidus' **Globs** first.
+- Kurinnaxx: bots walk out of a **Sand Trap** before it goes off.
+- Moam: hunters, priests and warlocks drain his mana so he doesn't reach **Arcane Eruption**, and
+  bots kill the **Mana Fiends** first.
+- Ayamiss: bots kill the **Hive'Zara Larva** before it reaches the paralyzed player.
+- Battleguard Sartura: bots stay out of the **Whirlwinds** and keep her and her guards stunned
+  between them. The guards die first.
+- Fankriss: each **Spawn of Fankriss** gets an off-tank and dies before it goes **Berserk**.
+- Bug Trio: bots kill the bugs one at a time (Yauj, Kri, then Vem), interrupt Yauj's
+  **Great Heal**, drop **Tremor Totem** for her fear and walk out of Kri's **Poison Cloud**.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.

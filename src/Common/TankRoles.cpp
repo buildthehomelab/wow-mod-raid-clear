@@ -8,6 +8,7 @@
 
 #include "RaidClearConfig.h"
 #include "Common/AggroLeash.h"
+#include "Raids/AhnQiraj/AqRaidClear.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/MoltenCore/McRaidClear.h"
 #include "Raids/ZulGurub/ZgRaidClear.h"
@@ -105,8 +106,9 @@ namespace RaidClear::Tanks
             static std::vector<uint32> const none;
             switch (mapId)
             {
-                case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitOwnTankAdds();
-                default:                    return none;
+                case BlackwingLair::MAP_ID:    return BlackwingLair::TankSplitOwnTankAdds();
+                case TempleOfAhnQiraj::MAP_ID: return TempleOfAhnQiraj::TankSplitOwnTankAdds();
+                default:                       return none;
             }
         }
 
@@ -155,9 +157,10 @@ namespace RaidClear::Tanks
             static std::vector<SplashRadius> const none;
             switch (mapId)
             {
-                case MoltenCore::MAP_ID:    return MoltenCore::TankSplitSplashRadii();
-                case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitSplashRadii();
-                default:                    return none;
+                case MoltenCore::MAP_ID:       return MoltenCore::TankSplitSplashRadii();
+                case BlackwingLair::MAP_ID:    return BlackwingLair::TankSplitSplashRadii();
+                case TempleOfAhnQiraj::MAP_ID: return TempleOfAhnQiraj::TankSplitSplashRadii();
+                default:                       return none;
             }
         }
 

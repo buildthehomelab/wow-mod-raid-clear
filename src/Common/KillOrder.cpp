@@ -43,6 +43,7 @@ namespace RaidClear
             case MoltenCore::MAP_ID:       return MoltenCore::KillOrder();
             case BlackwingLair::MAP_ID:    return BlackwingLair::KillOrder();
             case ZulGurub::MAP_ID:         return ZulGurub::KillOrder();
+            case RuinsOfAhnQiraj::MAP_ID:  return RuinsOfAhnQiraj::KillOrder();
             case TempleOfAhnQiraj::MAP_ID: return TempleOfAhnQiraj::KillOrder();
             default:                       return none;
         }
@@ -52,9 +53,10 @@ namespace RaidClear
     {
         switch (bot->GetMapId())
         {
-            case MoltenCore::MAP_ID: return MoltenCore::KillOrderSkips(bot, unit);
-            case ZulGurub::MAP_ID:   return ZulGurub::KillOrderSkips(bot, unit);
-            default:                 return false;
+            case MoltenCore::MAP_ID:       return MoltenCore::KillOrderSkips(bot, unit);
+            case ZulGurub::MAP_ID:         return ZulGurub::KillOrderSkips(bot, unit);
+            case TempleOfAhnQiraj::MAP_ID: return TempleOfAhnQiraj::KillOrderSkips(bot, unit);
+            default:                       return false;
         }
     }
 
