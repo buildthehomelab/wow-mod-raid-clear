@@ -55,6 +55,26 @@
  *     The larva is passive and not in the fight, so playerbots never looks at it. Every damage
  *     dealer in reach goes for the larva nearest the altar and stays on it until it is dead.
  *
+ * Temple of Ahn'Qiraj, the Prophet Skeram:
+ *   - True Fulfillment (785). Every 20-30 s he mind-controls the raid member second nearest to
+ *     him for 20 s, and it does four times its damage meanwhile (+300%). In one bot raid the
+ *     bots he took killed four others with their own area spells: playerbots went on running
+ *     them against their new enemies, the raid. Such a member does nothing of its own, is
+ *     stopped with a Polymorph or a Hammer of Justice and kept out of the raid's area spells
+ *     (Common/Charmed.h), and a bot or pet on it lets go.
+ *   - Interrupts. His Arcane Explosion (26192: a 1 s cast, 30 yd round him) and True Fulfillment
+ *     (a 0.5 s cast) can both be interrupted, and he isn't immune to it. Any bot with an interrupt
+ *     in reach stops either, his target or not (a tank only when he is on that tank), True
+ *     Fulfillment first; one bot per cast, the next only if the cast is still going a moment
+ *     later. A bot that is casting doesn't think until its cast is done, so the moment he starts
+ *     one the bots that could stop it look at once, and if none of those is free, the nearest
+ *     one in the middle of a cast drops it. (A bot channelling a spell can't be asked: playerbots
+ *     reports none of its spells as ready until the channel ends.)
+ *   - Images. At 75%, 50% and 25% he splits into himself and two images, with 10%, 20% and 50% of
+ *     his health (at his health share), that cast all he casts. Skull goes on the images before
+ *     him: each has a fraction of what he has left. Who is who is the server's knowledge (an
+ *     image is his summon), the same as a player reading the health bars.
+ *
  * Temple of Ahn'Qiraj, Battleguard Sartura and her Royal Guards:
  *   - Whirlwind. Sartura whirlwinds for 15 s (26083: 10 yd round her, every second, immune to
  *     stuns meanwhile), each guard for 8 s (26038, 10 yd); all the while they turn to a random
@@ -73,6 +93,18 @@
  *   - Spawn of Fankriss. Every 22-70 s he sends one to three worms; 30 s after it appears a worm
  *     goes Berserk (500% damage, immune to taunts). Each one gets an off-tank of its own (Common/
  *     TankRoles.h) and skull before anything else; the Vekniss Hatchlings come next.
+ *   - Mortal Wound (25646). Every 7-14 s he puts a stack on his victim: 10% less healing taken
+ *     each, for 15 s, up to 10. The hits come faster than a stack wears off, so on one tank they
+ *     only ever add up. Two tanks take him in turns, the main tank and the first bot off-tank
+ *     that isn't holding a worm (it builds threat on him meanwhile and keeps him once he is on
+ *     it, Common/TankRoles.h): when the one he is on has MORTAL_WOUND_SWAP_STACKS, the other
+ *     taunts him as soon as its own stacks are gone. No other taunt takes him off one of the two
+ *     (playerbots' main tank would taunt him straight back, a paladin with Righteous Defense on
+ *     the other tank), and the one waiting its turn keeps its spells under 90% of the other's
+ *     threat. If he ends up on some other tank (his main tank died, and a worm's tank caught him)
+ *     or the off-tank he is on goes for a worm (with only two tanks, nobody else takes it),
+ *     whichever of the two has fewer stacks taunts him at once. Three tanks or more keep the
+ *     swap clean.
  *
  * Temple of Ahn'Qiraj, the Bug Trio (Princess Yauj, Lord Kri, Vem):
  *   - Kill order. A bug that drops while another is alive is eaten by the others, who get their
@@ -333,12 +365,41 @@ namespace RaidClear::TempleOfAhnQiraj
     // this long, so the stuns go out one after another instead of all at once.
     constexpr uint32 STUN_SPREAD_MS = 1500;
 
+    // --- Skeram -----------------------------------------------------------
+    enum : uint32
+    {
+        NPC_SKERAM = 15263,  // his images too
+        SPELL_SKERAM_ARCANE_EXPLOSION = 26192,
+        SPELL_TRUE_FULFILLMENT = 785,
+    };
+    // One interrupt per cast: after a bot sends one, the rest leave that Skeram alone this long.
+    constexpr uint32 SKERAM_INTERRUPT_SPREAD_MS = 400;
+    // Bots this close to him when he starts a cast are woken to interrupt it (the farthest
+    // interrupt, Silencing Shot, reaches 35 yd).
+    constexpr float SKERAM_WAKE_RANGE = 40.0f;
+    // His images are looked for this far round him (his room).
+    constexpr float SKERAM_IMAGE_SEARCH = 100.0f;
+
+    // Skeram himself while one of his images is alive and can be hit: skull waits.
+    bool SkeramWaitsForImages(Unit const* unit);
+    void AddSkeramScripts();
+
     // --- Fankriss --------------------------------------------------------
     enum : uint32
     {
+        NPC_FANKRISS = 15510,
         NPC_SPAWN_OF_FANKRISS = 15630,
         NPC_VEKNISS_HATCHLING = 15962,
+        SPELL_MORTAL_WOUND = 25646,
     };
+    // The tank he is on hands him over at this many stacks (of 10): 40% less healing taken.
+    constexpr uint8 MORTAL_WOUND_SWAP_STACKS = 4;
+    // Challenging Shout and Challenging Roar take everything this close to the tank; area threat
+    // (Consecration, Thunder Clap) reaches about as far.
+    constexpr float CHALLENGING_TAUNT_REACH = 10.0f;
+    // The one of his two tanks he isn't on stays under this share of the other's threat, so it
+    // doesn't take him back before the swap is due.
+    constexpr float MORTAL_WOUND_WAITING_SHARE = 0.9f;
 
     // --- Bug Trio --------------------------------------------------------
     enum : uint32
@@ -364,6 +425,8 @@ namespace RaidClear::TempleOfAhnQiraj
     // A bug that is eating or being eaten: no damage lands on it, so skull leaves it.
     bool KillOrderSkips(Player* bot, Unit const* unit);
 
+    // Fankriss: two tanks take him in turns (Mortal Wound).
+    std::vector<uint32> const& TankSplitCoTankBosses();
     // Spawn of Fankriss: an off-tank each. Vekniss Guardian: Impale, 10 yd round it.
     std::vector<uint32> const& TankSplitOwnTankAdds();
     std::vector<Tanks::SplashRadius> const& TankSplitSplashRadii();
@@ -619,6 +682,49 @@ class RcAq40SarturaStunAction : public Action
 public:
     RcAq40SarturaStunAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 sartura stun") {}
     bool Execute(Event event) override;
+};
+
+// --- Skeram ---------------------------------------------------------------
+
+// Skeram or an image is casting Arcane Explosion or True Fulfillment and the bot has an interrupt
+// in reach.
+class RcAq40SkeramCastTrigger : public Trigger
+{
+public:
+    RcAq40SkeramCastTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 skeram cast") {}
+    bool IsActive() override;
+};
+
+class RcAq40SkeramInterruptAction : public Action
+{
+public:
+    RcAq40SkeramInterruptAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 skeram interrupt") {}
+    bool Execute(Event event) override;
+};
+
+// --- Fankriss -------------------------------------------------------------
+
+// The bot is one of Fankriss' two tanks, has no Mortal Wound, and the tank he is on has enough.
+class RcAq40MortalWoundTrigger : public Trigger
+{
+public:
+    RcAq40MortalWoundTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 mortal wound") {}
+    bool IsActive() override;
+};
+
+class RcAq40MortalWoundTauntAction : public Action
+{
+public:
+    RcAq40MortalWoundTauntAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 mortal wound taunt") {}
+    bool Execute(Event event) override;
+};
+
+// No other taunt takes Fankriss off a tank.
+class RcAq40MortalWoundMultiplier : public Multiplier
+{
+public:
+    RcAq40MortalWoundMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 mortal wound") {}
+    float GetValue(Action* action) override;
 };
 
 // --- Bug Trio -------------------------------------------------------------

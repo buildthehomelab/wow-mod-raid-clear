@@ -1,14 +1,15 @@
 /*
  * mod-raid-clear: Ahn'Qiraj, both raids. See AqRaidClear.h. The strategies, the kill-order and
  * tank tables, and what the two raids share (Anubisath Explode); each boss is in a file of its
- * own (Aq20Ossirian.cpp, Aq20Kurinnaxx.cpp, Aq20Moam.cpp, Aq20Ayamiss.cpp, Aq40Viscidus.cpp,
- * Aq40Sartura.cpp, Aq40BugTrio.cpp). Fankriss is only the tables.
+ * own (Aq20Ossirian.cpp, Aq20Kurinnaxx.cpp, Aq20Moam.cpp, Aq20Ayamiss.cpp, Aq40Skeram.cpp,
+ * Aq40Viscidus.cpp, Aq40Sartura.cpp, Aq40Fankriss.cpp, Aq40BugTrio.cpp).
  *
  * Released under the MIT License.
  */
 
 #include "AqRaidClear.h"
 
+#include "Common/Charmed.h"
 #include "RaidClearConfig.h"
 
 #include "AllSpellScript.h"
@@ -76,6 +77,12 @@ void RaidClearAq40Strategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // A heal that undoes the kill, and the stun that stops a whirlwind: over the rotation and the
     // skull, like Lor'Khan's heal in Zul'Gurub.
     triggers.push_back(new TriggerNode("rc aq40 yauj heal", { NextAction("rc aq40 yauj interrupt", ACTION_RAID + 4) }));
+    triggers.push_back(new TriggerNode("rc aq40 skeram cast", { NextAction("rc aq40 skeram interrupt", ACTION_RAID + 4) }));
+    // Skeram's mind control, as in Zul'Gurub: over the skull (ACTION_RAID + 2).
+    triggers.push_back(new TriggerNode("rc charmed member", { NextAction("rc control charmed", ACTION_RAID + 4) }));
+    triggers.push_back(new TriggerNode("rc charmed target", { NextAction("rc leave charmed target", ACTION_RAID + 3) }));
+    // Like Ebonroc's swap.
+    triggers.push_back(new TriggerNode("rc aq40 mortal wound", { NextAction("rc aq40 mortal wound taunt", ACTION_RAID + 3) }));
     triggers.push_back(new TriggerNode("rc aq40 sartura stun", { NextAction("rc aq40 sartura stun", ACTION_RAID + 3) }));
     triggers.push_back(new TriggerNode("rc aq40 yauj tremor", { NextAction("rc mc tremor totem", ACTION_RAID + 1) }));
 
@@ -91,6 +98,9 @@ void RaidClearAq40Strategy::InitMultipliers(std::vector<Multiplier*>& multiplier
     multipliers.push_back(new RcAq40WhirlwindHoldMultiplier(botAI));
     multipliers.push_back(new RcAq40PoisonCloudHoldMultiplier(botAI));
     multipliers.push_back(new RcAq40YaujTremorMultiplier(botAI));
+    multipliers.push_back(new RcAq40MortalWoundMultiplier(botAI));
+    multipliers.push_back(new RcCharmedSplashMultiplier(botAI));
+    multipliers.push_back(new RcCharmedSelfMultiplier(botAI));
 }
 
 // --- Tables ---------------------------------------------------------------
@@ -107,6 +117,8 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::RuinsOfAhnQiraj::KillOr
 std::vector<RaidClear::KillOrderEntry> const& RaidClear::TempleOfAhnQiraj::KillOrder()
 {
     static std::vector<KillOrderEntry> const table = {
+        // Skeram's images, then Skeram (KillOrderSkips holds him back while one is alive).
+        { NPC_SKERAM, 0 },
         // Each glob that reaches the middle of the room heals Viscidus.
         { NPC_GLOB_OF_VISCIDUS, 0 },
         // Berserk 30 s after it appears.
@@ -128,6 +140,9 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::TempleOfAhnQiraj::KillO
 
 bool RaidClear::TempleOfAhnQiraj::KillOrderSkips(Player* /*bot*/, Unit const* unit)
 {
+    if (SkeramWaitsForImages(unit))
+        return true;
+
     // The script turns a bug passive while it walks over to eat a dying one, and the dying one
     // for as long as it waits to be eaten. The dying one takes no damage; the eater gets a Full
     // Heal when it arrives.
@@ -138,6 +153,13 @@ bool RaidClear::TempleOfAhnQiraj::KillOrderSkips(Player* /*bot*/, Unit const* un
         return false;
     Creature const* bug = unit->ToCreature();
     return bug && bug->HasReactState(REACT_PASSIVE);
+}
+
+std::vector<uint32> const& RaidClear::TempleOfAhnQiraj::TankSplitCoTankBosses()
+{
+    // Mortal Wound: two tanks take him in turns, so the second one is already on his threat.
+    static std::vector<uint32> const bosses = { NPC_FANKRISS };
+    return bosses;
 }
 
 std::vector<uint32> const& RaidClear::TempleOfAhnQiraj::TankSplitOwnTankAdds()
@@ -351,4 +373,5 @@ public:
 void RaidClear::AhnQiraj::AddScripts()
 {
     new RaidClearAqWakeSpellScript();
+    TempleOfAhnQiraj::AddSkeramScripts();
 }

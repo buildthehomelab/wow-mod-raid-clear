@@ -50,9 +50,12 @@ RaidClear.Tanks.AssignMainTank = 1
 #                     the main tank, and leave mobs another off-tank holds. In packs where every
 #                     tank should hold one (BWL's Death Talon Wyrmguards) each off-tank is handed
 #                     one at the pull and taunts it off the main tank.
-#                     On bosses that cut their tank's threat or can't be taunted (Broodlord
-#                     Lashlayer, Firemaw, Ebonroc, Flamegor, Vaelastrasz) an off-tank with no add to hold attacks the boss too, so it catches
-#                     the boss after a Knock Away / Wing Buffet. Blackwing Lair's Suppression Room
+#                     On bosses that cut their tank's threat, can't be taunted or need two tanks
+#                     taking turns (Broodlord Lashlayer, Firemaw, Ebonroc, Flamegor, Vaelastrasz,
+#                     Chromaggus, Nefarian, Hakkar, Fankriss) an off-tank with no add to hold
+#                     attacks the boss too, so it catches the boss after a Knock Away / Wing Buffet,
+#                     and keeps a boss that turns to it unless an add that needs its own tank is
+#                     loose and no other off-tank is free. Blackwing Lair's Suppression Room
 #                     whelps are never picked up, and neither is a loose mob that evades every
 #                     attack (one that can't find a way to its victim): a taunt does nothing to it.
 #                     On bosses that keep taking their tank away (Hakkar) the tanks share the
@@ -333,19 +336,23 @@ RaidClear.RuinsOfAhnQiraj.Enable = 1
 
 #
 #    RaidClear.TempleOfAhnQiraj.Enable
-#        Description: Temple of Ahn'Qiraj strategy (map 531). Viscidus: until he is frozen, bot
-#                     damage dealers with a frost spell cast it at him (mage rank 1 Frostbolt,
-#                     shaman Frost Shock, death knight Howling Blast or Icy Touch); bots walk out
-#                     of the Toxic Slime clouds and toward nothing standing in one, and the tank
-#                     he is on walks him out of a cloud; skull goes on the Globs of Viscidus first
-#                     (needs RaidClear.KillOrder). Sartura: bots she or a guard isn't on stay out
-#                     of a Whirlwind (10 yd); bots with a stun in reach keep her stunned between
-#                     whirlwinds and the guards in theirs; guards die first. Fankriss: each Spawn
-#                     of Fankriss gets an off-tank and skull first. Bug Trio: skull on the broods,
-#                     then Yauj, Kri, Vem; Yauj's Great Heal is interrupted, shamans keep Tremor
-#                     Totem down, bots leave Kri's Poison Cloud; Vekniss Guardians one at a time.
-#                     Also: bots walk out of an Anubisath Defender's Explode (20 yd) before it
-#                     goes off.
+#        Description: Temple of Ahn'Qiraj strategy (map 531). Skeram: a bot he mind-controls does
+#                     nothing of its own (its area spells killed the raid around it), a mage
+#                     Polymorphs it or a paladin stuns it, and nobody hurts it; any bot with an
+#                     interrupt in reach stops his Arcane Explosion and True Fulfillment; skull goes
+#                     on his images before him. Viscidus: until he is frozen, bot damage dealers
+#                     with a frost spell cast it at him (mage rank 1 Frostbolt, shaman Frost Shock,
+#                     death knight Howling Blast or Icy Touch); bots walk out of the Toxic Slime
+#                     clouds and toward nothing standing in one, and the tank he is on walks him out
+#                     of a cloud; skull goes on the Globs of Viscidus first (needs
+#                     RaidClear.KillOrder). Sartura: bots she or a guard isn't on stay out of a
+#                     Whirlwind (10 yd); bots with a stun in reach keep her stunned between
+#                     whirlwinds and the guards in theirs; guards die first. Fankriss: each Spawn of
+#                     Fankriss gets an off-tank and skull first; two tanks take him in turns,
+#                     swapping at 4 stacks of Mortal Wound. Bug Trio: skull on the broods, then
+#                     Yauj, Kri, Vem; Yauj's Great Heal is interrupted, shamans keep Tremor Totem
+#                     down, bots leave Kri's Poison Cloud; Vekniss Guardians one at a time. Also:
+#                     bots walk out of an Anubisath Defender's Explode (20 yd) before it goes off.
 #        Default:     1
 #
 

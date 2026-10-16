@@ -59,17 +59,19 @@ namespace RaidClear::Tanks
             }
         }
 
-        // Bosses that cut their tank's threat (Knock Away, Wing Buffet) or take their tank away
-        // (Hakkar's mind control): the off-tank builds threat on them as well, so the boss lands
-        // on a tank instead of the top damage dealer.
+        // Bosses that cut their tank's threat (Knock Away, Wing Buffet), take their tank away
+        // (Hakkar's mind control) or need two tanks taking turns (Fankriss' Mortal Wound): the
+        // off-tank builds threat on them as well, so the boss lands on a tank instead of the top
+        // damage dealer.
         std::vector<uint32> const& CoTankBosses(uint32 mapId)
         {
             static std::vector<uint32> const none;
             switch (mapId)
             {
-                case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitCoTankBosses();
-                case ZulGurub::MAP_ID:      return ZulGurub::TankSplitCoTankBosses();
-                default:                    return none;
+                case BlackwingLair::MAP_ID:    return BlackwingLair::TankSplitCoTankBosses();
+                case ZulGurub::MAP_ID:         return ZulGurub::TankSplitCoTankBosses();
+                case TempleOfAhnQiraj::MAP_ID: return TempleOfAhnQiraj::TankSplitCoTankBosses();
+                default:                       return none;
             }
         }
 
@@ -499,6 +501,18 @@ namespace RaidClear::Tanks
     constexpr std::array<char const*, 4> SINGLE_TAUNTS = { "taunt", "growl", "hand of reckoning", "dark command" };
     constexpr float TAUNT_RANGE = 30.0f;
 
+    bool IsTauntAction(Action* action)
+    {
+        static constexpr std::array<char const*, 9> TAUNT_ACTIONS = {
+            "taunt", "growl", "hand of reckoning", "dark command", "death grip", "mocking blow",
+            "righteous defense", "challenging shout", "challenging roar",
+        };
+        if (!action)
+            return false;
+        std::string const name = action->getName();
+        return std::any_of(TAUNT_ACTIONS.begin(), TAUNT_ACTIONS.end(), [&name](char const* taunt) { return name == taunt; });
+    }
+
     bool CanTaunt(PlayerbotAI* botAI, Unit* unit)
     {
         // CanCastSpell lets an out-of-range target through, and the cast then fails every tick.
@@ -520,8 +534,56 @@ namespace RaidClear::Tanks
         return false;
     }
 
+    // A tank that nothing is hitting.
+    bool IsFreeTank(Player* tank)
+    {
+        for (Unit* attacker : tank->getAttackers())
+            if (attacker->IsAlive() && attacker->GetVictim() == tank)
+                return false;
+        return true;
+    }
+
+    // An add that wants its own tank is on someone who isn't a tank, within this off-tank's reach,
+    // and no other bot off-tank is free to take it.
+    bool LooseOwnTankAddForMe(PlayerbotAI* botAI, Player* bot, Player* mainTank, GuidVector const& attackers)
+    {
+        bool loose = false;
+        for (ObjectGuid const& guid : attackers)
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsAlive() || !IsOwnTankAdd(unit) || bot->GetDistance(unit) > PICKUP_RANGE)
+                continue;
+            Player* victim = unit->GetVictim() ? unit->GetVictim()->ToPlayer() : nullptr;
+            if (!victim || !PlayerbotAI::IsTank(victim))
+            {
+                loose = true;
+                break;
+            }
+        }
+        if (!loose)
+            return false;
+
+        Group* group = bot->GetGroup();
+        for (GroupReference* ref = group ? group->GetFirstMember() : nullptr; ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (member && member != bot && IsOffTank(member, mainTank) && member->IsInMap(bot) &&
+                GET_PLAYERBOT_AI(member) && IsFreeTank(member))
+                return false;
+        }
+        return true;
+    }
+
     Unit* PickOffTankTarget(PlayerbotAI* botAI, Player* bot, Player* mainTank, GuidVector const& attackers)
     {
+        // A boss that sheds threat and is on this off-tank: keep it. Turning to the adds would hand
+        // it back to the main tank on threat alone (after a Mortal Wound swap, with its stacks).
+        // Not while an add that wants its own tank is loose and no other off-tank is free for it:
+        // the main tank takes the boss back then.
+        Unit* coBoss = CoTankBoss(botAI, bot, attackers);
+        if (coBoss && coBoss->GetVictim() == bot && !LooseOwnTankAddForMe(botAI, bot, mainTank, attackers))
+            return coBoss;
+
         // An add that wants a tank of its own comes first, wherever it is, unless another off-tank
         // already holds it. The main tank leaves it alone (see the raid's target exclusions).
         Unit* ownTankAdd = nullptr;
@@ -558,7 +620,6 @@ namespace RaidClear::Tanks
                         return unit;
 
         Unit* mainTarget = mainTank->GetVictim();
-        Unit* coBoss = CoTankBoss(botAI, bot, attackers);
 
         // 0 = already on me, 1 = loose on a non-tank, 2 = extra mob on the main tank,
         // 3 = attacking nobody. Mobs held by another off-tank are left alone.
