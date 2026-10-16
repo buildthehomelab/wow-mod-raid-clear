@@ -24,6 +24,7 @@
 #include "Common/Knockback.h"
 #include "Common/RaidDiscipline.h"
 #include "Common/TankRoles.h"
+#include "Raids/AhnQiraj/AqRaidClear.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/OnyxiasLair/OnyRaidClear.h"
 
@@ -250,4 +251,5 @@ void AddRaidClearScripts()
     MoltenCore::AddScripts();
     OnyxiasLair::AddScripts();
     ZulGurub::AddScripts();
+    AhnQiraj::AddScripts();
 }

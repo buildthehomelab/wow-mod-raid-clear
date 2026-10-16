@@ -12,6 +12,7 @@
 #include "Common/Knockback.h"
 #include "Common/RaidDiscipline.h"
 #include "Common/TankRoles.h"
+#include "Raids/AhnQiraj/AqRaidClear.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
 #include "Raids/MoltenCore/McRaidClear.h"
 #include "Raids/OnyxiasLair/OnyRaidClear.h"
@@ -32,6 +33,8 @@ public:
         creators["rc bwl runners"] = &RaidClearStrategyContext::bwl_runners;
         creators["rc zg"] = &RaidClearStrategyContext::zg;
         creators["rc ony"] = &RaidClearStrategyContext::ony;
+        creators["rc aq20"] = &RaidClearStrategyContext::aq20;
+        creators["rc aq40"] = &RaidClearStrategyContext::aq40;
     }
 
 private:
@@ -43,6 +46,8 @@ private:
     static Strategy* bwl_runners(PlayerbotAI* botAI) { return new RaidClearBwlRunnersStrategy(botAI); }
     static Strategy* zg(PlayerbotAI* botAI) { return new RaidClearZulGurubStrategy(botAI); }
     static Strategy* ony(PlayerbotAI* botAI) { return new RaidClearOnyxiasLairStrategy(botAI); }
+    static Strategy* aq20(PlayerbotAI* botAI) { return new RaidClearAq20Strategy(botAI); }
+    static Strategy* aq40(PlayerbotAI* botAI) { return new RaidClearAq40Strategy(botAI); }
 };
 
 class RaidClearActionContext : public NamedObjectContext<Action>
@@ -102,6 +107,12 @@ public:
         creators["rc ony kill whelps"] = &RaidClearActionContext::ony_kill_whelps;
         creators["rc ony spread out"] = &RaidClearActionContext::ony_spread_out;
         creators["rc ony leave cleave"] = &RaidClearActionContext::ony_leave_cleave;
+
+        creators["rc aq explode move away"] = &RaidClearActionContext::aq_explode_move_away;
+        creators["rc aq20 lead to crystal"] = &RaidClearActionContext::aq20_lead_to_crystal;
+        creators["rc aq20 use crystal"] = &RaidClearActionContext::aq20_use_crystal;
+        creators["rc aq40 viscidus frost"] = &RaidClearActionContext::aq40_viscidus_frost;
+        creators["rc aq40 leave toxin"] = &RaidClearActionContext::aq40_leave_toxin;
     }
 
 private:
@@ -161,6 +172,12 @@ private:
     static Action* ony_kill_whelps(PlayerbotAI* botAI) { return new RcOnyKillWhelpsAction(botAI); }
     static Action* ony_spread_out(PlayerbotAI* botAI) { return new RcOnySpreadOutAction(botAI); }
     static Action* ony_leave_cleave(PlayerbotAI* botAI) { return new RcOnyLeaveCleaveAction(botAI); }
+
+    static Action* aq_explode_move_away(PlayerbotAI* botAI) { return new RcAqExplodeMoveAwayAction(botAI); }
+    static Action* aq20_lead_to_crystal(PlayerbotAI* botAI) { return new RcAq20LeadToCrystalAction(botAI); }
+    static Action* aq20_use_crystal(PlayerbotAI* botAI) { return new RcAq20UseCrystalAction(botAI); }
+    static Action* aq40_viscidus_frost(PlayerbotAI* botAI) { return new RcAq40ViscidusFrostAction(botAI); }
+    static Action* aq40_leave_toxin(PlayerbotAI* botAI) { return new RcAq40LeaveToxinAction(botAI); }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -222,6 +239,12 @@ public:
         creators["rc ony evading target"] = &RaidClearTriggerContext::ony_evading_target;
         creators["rc ony spread"] = &RaidClearTriggerContext::ony_spread;
         creators["rc ony cleave"] = &RaidClearTriggerContext::ony_cleave;
+
+        creators["rc aq explode"] = &RaidClearTriggerContext::aq_explode;
+        creators["rc aq20 lead to crystal"] = &RaidClearTriggerContext::aq20_lead_to_crystal;
+        creators["rc aq20 crystal"] = &RaidClearTriggerContext::aq20_crystal;
+        creators["rc aq40 viscidus frost"] = &RaidClearTriggerContext::aq40_viscidus_frost;
+        creators["rc aq40 toxin"] = &RaidClearTriggerContext::aq40_toxin;
     }
 
 private:
@@ -290,6 +313,12 @@ private:
     static Trigger* ony_evading_target(PlayerbotAI* botAI) { return new RcOnyEvadingTargetTrigger(botAI); }
     static Trigger* ony_spread(PlayerbotAI* botAI) { return new RcOnySpreadTrigger(botAI); }
     static Trigger* ony_cleave(PlayerbotAI* botAI) { return new RcOnyCleaveTrigger(botAI); }
+
+    static Trigger* aq_explode(PlayerbotAI* botAI) { return new RcAqExplodeTrigger(botAI); }
+    static Trigger* aq20_lead_to_crystal(PlayerbotAI* botAI) { return new RcAq20LeadToCrystalTrigger(botAI); }
+    static Trigger* aq20_crystal(PlayerbotAI* botAI) { return new RcAq20CrystalTrigger(botAI); }
+    static Trigger* aq40_viscidus_frost(PlayerbotAI* botAI) { return new RcAq40ViscidusFrostTrigger(botAI); }
+    static Trigger* aq40_toxin(PlayerbotAI* botAI) { return new RcAq40ToxinTrigger(botAI); }
 };
 
 #endif

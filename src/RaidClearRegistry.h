@@ -36,11 +36,13 @@ namespace RaidClear
     // non-combat engine too: a pull starts from there.
     inline constexpr char const* DISCIPLINE_STRATEGY = "rc raid discipline";
 
-    inline constexpr std::array<RaidEntry, 4> Raids = {{
+    inline constexpr std::array<RaidEntry, 6> Raids = {{
         { 409, "rc moltencore", "MoltenCore" },
         { 469, "rc bwl", "BlackwingLair", "rc bwl runners" },
         { 309, "rc zg", "ZulGurub" },
         { 249, "rc ony", "OnyxiasLair" },
+        { 509, "rc aq20", "RuinsOfAhnQiraj" },
+        { 531, "rc aq40", "TempleOfAhnQiraj" },
     }};
 
     // The raid entry for a map, or nullptr when mod-raid-clear has nothing for it.

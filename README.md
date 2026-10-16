@@ -179,7 +179,9 @@ mechanic that's killing the bots found:
 [RaidClear] Chromaggus killed (map 469 instance 1): 24 deaths | Incinerate (Chromaggus) 9, melee (Chromaggus) 6, ...
 ```
 
-Damage is what was actually dealt. A hit whose spell can't be matched shows as `unknown`.
+Damage is what was actually dealt. A hit whose spell can't be matched shows as `unknown`. The
+brackets after the boss list what its own fight put on it: its buffs, permanent ones too (Strength
+of Ossirian), and what a creature cast on it (a crystal's weakness), never the raid's debuffs.
 `grep "\[RaidClear\]" Server.log` pulls them out.
 
 ## Raids
@@ -241,6 +243,16 @@ Playerbots has no Zul'Gurub strategy, so everything here is new.
 | High Priestess Jeklik | From 50% her Bat Riders drop **Liquid Fire** on a random raid member every 8 seconds. Each patch burns for 20 seconds and hits everyone within 5 yards for about 900 whenever someone stands in it. Bots within about 6 yards of a patch walk out. When she or her tank stands in one, the tank takes her out of it, and melee wait until she is out. |
 | Trash | The packs' healers die first: a **Hakkari Blood Priest**, then a **Hakkari Priest**, then the **Gurubashi Blood Drinkers** that heal themselves off the whole raid. While a Hakkari Priest has **Anti-Magic Shield** (8 seconds, immune to every spell), skull comes off it and casters don't target it. The kill order needs `RaidClear.KillOrder`. A **Gurubashi Bat Rider** below 30% casts **Unstable Concoction**: 3 seconds, then it blows itself up for about 5,000 fire damage to everyone within 10 yards. It dies either way, so every bot in reach, tanks too, walks out and stays out until it has gone off: to the nearest spot, in any direction, that is clear of every Bat Rider about to blow, that it can actually walk to, and that doesn't take it into the next pack. That comes before anything else a bot was doing. Nobody goes on hitting a mob that evades everything, or a raid member an enemy has taken over (Will of Hakkar, Brain Wash, Cause Insanity): a bot or pet on one lets go, and area spells aren't cast where a mind-controlled member stands. A mind-controlled member is also stopped: a mage **Polymorphs** them or a paladin uses **Hammer of Justice**, one bot at a time. If the mind control ends first, the bot takes its sheep or stun off again, so nobody comes back as a sheep. That goes for you too if you play in the raid. |
 
+### Ahn'Qiraj
+
+Playerbots only knows Ossirian's crystals in the Ruins, and has no Temple strategy at all.
+
+| Fight | What the bots do |
+|---|---|
+| Anubisath Explode (both raids) | An **Anubisath Guardian** (Ruins) or **Anubisath Defender** (Temple) can light a 6 second fuse at 10% health, then blows up for about 4,700 to everyone within 20 yards. Every bot in reach, tanks too, walks out and stays out until it has gone off, the same way as from a Zul'Gurub Bat Rider. A bot in the middle of a cast drops it the moment the fuse is lit. |
+| Ossirian the Unscarred | Without a crystal's weakness on him he has **Strength of Ossirian**: four times the damage, so his **War Stomp** (20 yards) hits for 6,000-8,000 and his swings kill a cloth wearer in two. Using a crystal while he is within 30 yards of it gives him a weakness for a while, and each use spawns the next crystal elsewhere in the room. Playerbots sent the whole raid running to the crystal. Now the tank he is on takes him to the next crystal in time (when his weakness has less left than the walk, plus a margin) and stops a little short of it. One bot, the nearest damage dealer (a healer only if no damage dealer can), goes there ahead of him and uses it once he is in reach and has Strength or less than 15 seconds of weakness left. Everyone else keeps fighting. A crystal the tank can't get any closer to (a pack in the way, no path) is skipped for a while, and so is a bot that can't get to its crystal. |
+| Viscidus | 200 frost hits freeze him, and while he's frozen enough hits shatter him into globs. Playerbots' casters only cast their spec's spells, so an arcane mage never added a frost hit. Until he's frozen, every bot damage dealer with a frost spell casts it at him: mages **Frostbolt** (rank 1, which casts in 1.5 seconds), shamans **Frost Shock**, death knights **Howling Blast** or **Icy Touch**. Healers keep healing. Bots walk out of the **Toxic Slime** clouds (and away from the slimes that drop them) to the nearest clear spot, instead of stepping straight back into the next cloud, and nobody walks toward something standing in one, except toward Viscidus while he's frozen. The tank he is on walks him out of a cloud, never toward the entrance, where he resets. When he shatters, skull goes on the **Globs**: each one that reaches the middle of the room heals him. The glob kill order needs `RaidClear.KillOrder`. |
+
 ## Requirements
 
 - An AzerothCore WotLK server running [mod-playerbots](https://github.com/mod-playerbots/mod-playerbots)
@@ -292,6 +304,8 @@ also keep playerbots' own raid strategies.
 | `RaidClear.BlackwingLair.Enable` | 1 | Blackwing Lair strategy. |
 | `RaidClear.ZulGurub.Enable` | 1 | Zul'Gurub strategy. |
 | `RaidClear.OnyxiasLair.Enable` | 1 | Onyxia's Lair strategy. |
+| `RaidClear.RuinsOfAhnQiraj.Enable` | 1 | Ruins of Ahn'Qiraj strategy. |
+| `RaidClear.TempleOfAhnQiraj.Enable` | 1 | Temple of Ahn'Qiraj strategy. |
 
 ## Patch Notes: Raid Clear
 
@@ -423,6 +437,13 @@ Category: Raids
   **Righteous Defense** on him (he can't be taunted). No tank taunts a boss that can't be taunted.
 - Nefarian: the **Bone Construct** pile is now outside **Bellowing Roar**, where a fear can't
   scatter it into his breath.
+- Ahn'Qiraj: bots walk out of an **Anubisath Guardian** or **Defender** about to **Explode**.
+- Ossirian: the tank takes him from crystal to crystal and one bot uses each crystal, so he no
+  longer gets his **Strength** back while the whole raid runs for the same crystal.
+- Viscidus: mages, shamans and death knights freeze him with their frost spells, bots get out of
+  the **Toxic Slime** clouds, and they kill the **Globs** before the globs reach him.
+- Raids: the death log shows the boss's own buffs and the debuffs its fight put on it, such as
+  Ossirian's **Strength** or a crystal's weakness.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.
@@ -449,7 +470,8 @@ Onyxia.
 
 - **Bots don't use any of the raid mechanics.** Check that `AiPlayerbot.ApplyInstanceStrategies`
   is `1`, that `RaidClear.Enable` and the raid's own setting (`RaidClear.MoltenCore.Enable`,
-  `RaidClear.BlackwingLair.Enable`, `RaidClear.ZulGurub.Enable`, `RaidClear.OnyxiasLair.Enable`) are `1`, and restart the worldserver: `RaidClear.Enable` is
+  `RaidClear.BlackwingLair.Enable`, `RaidClear.ZulGurub.Enable`, `RaidClear.OnyxiasLair.Enable`,
+  `RaidClear.RuinsOfAhnQiraj.Enable`, `RaidClear.TempleOfAhnQiraj.Enable`) are `1`, and restart the worldserver: `RaidClear.Enable` is
   read at startup only.
 - **The worldserver doesn't start or the module doesn't link.** The folder must be named exactly
   `mod-raid-clear`, because AzerothCore derives the loader function from it. Re-run CMake after
