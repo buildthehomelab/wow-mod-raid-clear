@@ -534,12 +534,54 @@ namespace RaidClear::Tanks
         return false;
     }
 
+    // A tank that nothing is hitting.
+    bool IsFreeTank(Player* tank)
+    {
+        for (Unit* attacker : tank->getAttackers())
+            if (attacker->IsAlive() && attacker->GetVictim() == tank)
+                return false;
+        return true;
+    }
+
+    // An add that wants its own tank is on someone who isn't a tank, within this off-tank's reach,
+    // and no other bot off-tank is free to take it.
+    bool LooseOwnTankAddForMe(PlayerbotAI* botAI, Player* bot, Player* mainTank, GuidVector const& attackers)
+    {
+        bool loose = false;
+        for (ObjectGuid const& guid : attackers)
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsAlive() || !IsOwnTankAdd(unit) || bot->GetDistance(unit) > PICKUP_RANGE)
+                continue;
+            Player* victim = unit->GetVictim() ? unit->GetVictim()->ToPlayer() : nullptr;
+            if (!victim || !PlayerbotAI::IsTank(victim))
+            {
+                loose = true;
+                break;
+            }
+        }
+        if (!loose)
+            return false;
+
+        Group* group = bot->GetGroup();
+        for (GroupReference* ref = group ? group->GetFirstMember() : nullptr; ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (member && member != bot && IsOffTank(member, mainTank) && member->IsInMap(bot) &&
+                GET_PLAYERBOT_AI(member) && IsFreeTank(member))
+                return false;
+        }
+        return true;
+    }
+
     Unit* PickOffTankTarget(PlayerbotAI* botAI, Player* bot, Player* mainTank, GuidVector const& attackers)
     {
         // A boss that sheds threat and is on this off-tank: keep it. Turning to the adds would hand
         // it back to the main tank on threat alone (after a Mortal Wound swap, with its stacks).
+        // Not while an add that wants its own tank is loose and no other off-tank is free for it:
+        // the main tank takes the boss back then.
         Unit* coBoss = CoTankBoss(botAI, bot, attackers);
-        if (coBoss && coBoss->GetVictim() == bot)
+        if (coBoss && coBoss->GetVictim() == bot && !LooseOwnTankAddForMe(botAI, bot, mainTank, attackers))
             return coBoss;
 
         // An add that wants a tank of its own comes first, wherever it is, unless another off-tank

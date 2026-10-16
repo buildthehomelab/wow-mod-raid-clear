@@ -10,9 +10,11 @@
 #include "Common/BossLookup.h"
 
 #include "Creature.h"
+#include "GenericSpellActions.h"
 #include "Group.h"
 #include "Playerbots.h"
 #include "SpellAuras.h"
+#include "ThreatManager.h"
 
 #include <string>
 #include <utility>
@@ -29,17 +31,18 @@ namespace
         return aura ? aura->GetStackAmount() : 0;
     }
 
-    // A mob other than Fankriss is on this tank: an add it holds (a worm, a hatchling).
-    bool HoldsAnAdd(Player* tank, Unit const* fankriss)
+    // A Spawn of Fankriss is on this tank. Hatchlings don't count: twelve come every 25-55 s and
+    // any tank with an area attack ends up with a few.
+    bool HoldsAWorm(Player* tank)
     {
         for (Unit* attacker : tank->getAttackers())
-            if (attacker != fankriss && attacker->IsAlive() && attacker->GetVictim() == tank)
+            if (attacker->GetEntry() == NPC_SPAWN_OF_FANKRISS && attacker->IsAlive() && attacker->GetVictim() == tank)
                 return true;
         return false;
     }
 
-    // His two tanks: the main tank, and the first living bot tank after it in group order that
-    // isn't holding an add (worms and hatchlings stay with whoever has them).
+    // His two tanks: the main tank, and the off-tank he is on (unless it has a worm to hold), else
+    // the first living bot tank after the main tank in group order that isn't holding a worm.
     std::pair<Player*, Player*> FankrissTanks(Player* bot, Creature* fankriss)
     {
         Group* group = bot->GetGroup();
@@ -48,11 +51,15 @@ namespace
         Player* mainTank = RaidClear::Tanks::ActingMainTank(group);
         if (mainTank && (!mainTank->IsAlive() || !mainTank->IsInMap(fankriss)))
             mainTank = nullptr;
+        Unit* victim = fankriss->GetVictim();
+        Player* onHim = victim ? victim->ToPlayer() : nullptr;
+        if (onHim && onHim != mainTank && PlayerbotAI::IsTank(onHim) && GET_PLAYERBOT_AI(onHim) && !HoldsAWorm(onHim))
+            return { mainTank, onHim };
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->GetSource();
             if (!member || member == mainTank || !member->IsAlive() || !member->IsInMap(fankriss) ||
-                !PlayerbotAI::IsTank(member) || !GET_PLAYERBOT_AI(member) || HoldsAnAdd(member, fankriss))
+                !PlayerbotAI::IsTank(member) || !GET_PLAYERBOT_AI(member) || HoldsAWorm(member))
                 continue;
             return { mainTank, member };
         }
@@ -69,7 +76,8 @@ namespace
 
     // The one of his two tanks that should taunt him now, or nullptr. Off the other one once that
     // has MORTAL_WOUND_SWAP_STACKS and the taker has none left; off any other tank (his main
-    // tank died and a worm's tank caught him) at once, by whichever of the two has fewer stacks.
+    // tank died and a worm's tank caught him, or the tank he is on went for a worm) at once, by
+    // whichever of the two has fewer stacks.
     Player* SwapTaker(Player* bot, Creature* fankriss)
     {
         Player* onHim = TankOnFankriss(fankriss);
@@ -120,16 +128,38 @@ bool RcAq40MortalWoundTauntAction::Execute(Event /*event*/)
 
 float RcAq40MortalWoundMultiplier::GetValue(Action* action)
 {
-    // Playerbots' main tank taunts whatever it is fighting back the moment it is on someone else,
-    // the other tank included: only the swap above takes him off one of his two tanks.
-    if (!action || !PlayerbotAI::IsTank(bot) || !RaidClear::Tanks::IsTauntAction(action))
+    if (!action || !PlayerbotAI::IsTank(bot))
+        return 1.0f;
+    bool const taunt = RaidClear::Tanks::IsTauntAction(action);
+    if (!taunt && !dynamic_cast<CastSpellAction*>(action))
         return 1.0f;
     Creature* fankriss = FightingFankriss(bot);
-    if (!fankriss || !TauntsFankriss(bot, action, fankriss))
+    if (!fankriss)
         return 1.0f;
     Player* onHim = TankOnFankriss(fankriss);
     if (!onHim || onHim == bot)
         return 1.0f;
     auto const [mainTank, second] = FankrissTanks(bot, fankriss);
-    return onHim == mainTank || onHim == second ? 0.0f : 1.0f;
+    if (onHim != mainTank && onHim != second)
+        return 1.0f;
+
+    // Playerbots' main tank taunts whatever it is fighting back the moment it is on someone else,
+    // the other tank included: only the swap above takes him off one of his two tanks.
+    if (taunt)
+        return TauntsFankriss(bot, action, fankriss) ? 0.0f : 1.0f;
+
+    // And the one waiting its turn keeps hitting him (playerbots' main tank stays on its target):
+    // its spells stop short of the threat that would take him back with its stacks. Swings carry
+    // on. Area threat (Consecration, Thunder Clap, Swipe) counts once it is at his feet.
+    if (bot != mainTank && bot != second)
+        return 1.0f;
+    if (action->getThreatType() == Action::ActionThreatType::Aoe)
+    {
+        if (!bot->IsWithinCombatRange(fankriss, CHALLENGING_TAUNT_REACH))
+            return 1.0f;
+    }
+    else if (action->GetTarget() != fankriss || !RaidClear::Tanks::HeldByThreatCap(botAI, action))
+        return 1.0f;
+    ThreatManager const& threat = fankriss->GetThreatMgr();
+    return threat.GetThreat(bot) >= threat.GetThreat(onHim) * MORTAL_WOUND_WAITING_SHARE ? 0.0f : 1.0f;
 }

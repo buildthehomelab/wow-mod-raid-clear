@@ -96,12 +96,15 @@
  *   - Mortal Wound (25646). Every 7-14 s he puts a stack on his victim: 10% less healing taken
  *     each, for 15 s, up to 10. The hits come faster than a stack wears off, so on one tank they
  *     only ever add up. Two tanks take him in turns, the main tank and the first bot off-tank
- *     that isn't holding a worm or a hatchling (it builds threat on him meanwhile and keeps him
- *     once he is on it, Common/TankRoles.h): when the one he is on has MORTAL_WOUND_SWAP_STACKS,
- *     the other taunts him as soon as its own stacks are gone. No other taunt takes him off one
- *     of the two (playerbots' main tank would taunt him straight back, a paladin with Righteous
- *     Defense on the other tank). If he ends up on some other tank (his main tank died, and a
- *     worm's tank caught him), whichever of the two has fewer stacks taunts him at once.
+ *     that isn't holding a worm (it builds threat on him meanwhile and keeps him once he is on
+ *     it, Common/TankRoles.h): when the one he is on has MORTAL_WOUND_SWAP_STACKS, the other
+ *     taunts him as soon as its own stacks are gone. No other taunt takes him off one of the two
+ *     (playerbots' main tank would taunt him straight back, a paladin with Righteous Defense on
+ *     the other tank), and the one waiting its turn keeps its spells under 90% of the other's
+ *     threat. If he ends up on some other tank (his main tank died, and a worm's tank caught him)
+ *     or the off-tank he is on goes for a worm (with only two tanks, nobody else takes it),
+ *     whichever of the two has fewer stacks taunts him at once. Three tanks or more keep the
+ *     swap clean.
  *
  * Temple of Ahn'Qiraj, the Bug Trio (Princess Yauj, Lord Kri, Vem):
  *   - Kill order. A bug that drops while another is alive is eaten by the others, who get their
@@ -391,8 +394,12 @@ namespace RaidClear::TempleOfAhnQiraj
     };
     // The tank he is on hands him over at this many stacks (of 10): 40% less healing taken.
     constexpr uint8 MORTAL_WOUND_SWAP_STACKS = 4;
-    // Challenging Shout and Challenging Roar take everything this close to the tank.
+    // Challenging Shout and Challenging Roar take everything this close to the tank; area threat
+    // (Consecration, Thunder Clap) reaches about as far.
     constexpr float CHALLENGING_TAUNT_REACH = 10.0f;
+    // The one of his two tanks he isn't on stays under this share of the other's threat, so it
+    // doesn't take him back before the swap is due.
+    constexpr float MORTAL_WOUND_WAITING_SHARE = 0.9f;
 
     // --- Bug Trio --------------------------------------------------------
     enum : uint32
