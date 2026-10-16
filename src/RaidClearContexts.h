@@ -113,6 +113,13 @@ public:
         creators["rc aq20 use crystal"] = &RaidClearActionContext::aq20_use_crystal;
         creators["rc aq40 viscidus frost"] = &RaidClearActionContext::aq40_viscidus_frost;
         creators["rc aq40 leave toxin"] = &RaidClearActionContext::aq40_leave_toxin;
+        creators["rc aq20 leave sand trap"] = &RaidClearActionContext::aq20_leave_sand_trap;
+        creators["rc aq20 moam drain"] = &RaidClearActionContext::aq20_moam_drain;
+        creators["rc aq20 kill larva"] = &RaidClearActionContext::aq20_kill_larva;
+        creators["rc aq40 whirlwind keep away"] = &RaidClearActionContext::aq40_whirlwind_keep_away;
+        creators["rc aq40 sartura stun"] = &RaidClearActionContext::aq40_sartura_stun;
+        creators["rc aq40 yauj interrupt"] = &RaidClearActionContext::aq40_yauj_interrupt;
+        creators["rc aq40 leave poison cloud"] = &RaidClearActionContext::aq40_leave_poison_cloud;
     }
 
 private:
@@ -178,6 +185,13 @@ private:
     static Action* aq20_use_crystal(PlayerbotAI* botAI) { return new RcAq20UseCrystalAction(botAI); }
     static Action* aq40_viscidus_frost(PlayerbotAI* botAI) { return new RcAq40ViscidusFrostAction(botAI); }
     static Action* aq40_leave_toxin(PlayerbotAI* botAI) { return new RcAq40LeaveToxinAction(botAI); }
+    static Action* aq20_leave_sand_trap(PlayerbotAI* botAI) { return new RcAq20LeaveSandTrapAction(botAI); }
+    static Action* aq20_moam_drain(PlayerbotAI* botAI) { return new RcAq20MoamDrainAction(botAI); }
+    static Action* aq20_kill_larva(PlayerbotAI* botAI) { return new RcAq20KillLarvaAction(botAI); }
+    static Action* aq40_whirlwind_keep_away(PlayerbotAI* botAI) { return new RcAq40WhirlwindKeepAwayAction(botAI); }
+    static Action* aq40_sartura_stun(PlayerbotAI* botAI) { return new RcAq40SarturaStunAction(botAI); }
+    static Action* aq40_yauj_interrupt(PlayerbotAI* botAI) { return new RcAq40YaujInterruptAction(botAI); }
+    static Action* aq40_leave_poison_cloud(PlayerbotAI* botAI) { return new RcAq40LeavePoisonCloudAction(botAI); }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -245,6 +259,14 @@ public:
         creators["rc aq20 crystal"] = &RaidClearTriggerContext::aq20_crystal;
         creators["rc aq40 viscidus frost"] = &RaidClearTriggerContext::aq40_viscidus_frost;
         creators["rc aq40 toxin"] = &RaidClearTriggerContext::aq40_toxin;
+        creators["rc aq20 sand trap"] = &RaidClearTriggerContext::aq20_sand_trap;
+        creators["rc aq20 moam drain"] = &RaidClearTriggerContext::aq20_moam_drain;
+        creators["rc aq20 larva"] = &RaidClearTriggerContext::aq20_larva;
+        creators["rc aq40 whirlwind"] = &RaidClearTriggerContext::aq40_whirlwind;
+        creators["rc aq40 sartura stun"] = &RaidClearTriggerContext::aq40_sartura_stun;
+        creators["rc aq40 yauj heal"] = &RaidClearTriggerContext::aq40_yauj_heal;
+        creators["rc aq40 yauj tremor"] = &RaidClearTriggerContext::aq40_yauj_tremor;
+        creators["rc aq40 poison cloud"] = &RaidClearTriggerContext::aq40_poison_cloud;
     }
 
 private:
@@ -319,6 +341,14 @@ private:
     static Trigger* aq20_crystal(PlayerbotAI* botAI) { return new RcAq20CrystalTrigger(botAI); }
     static Trigger* aq40_viscidus_frost(PlayerbotAI* botAI) { return new RcAq40ViscidusFrostTrigger(botAI); }
     static Trigger* aq40_toxin(PlayerbotAI* botAI) { return new RcAq40ToxinTrigger(botAI); }
+    static Trigger* aq20_sand_trap(PlayerbotAI* botAI) { return new RcAq20SandTrapTrigger(botAI); }
+    static Trigger* aq20_moam_drain(PlayerbotAI* botAI) { return new RcAq20MoamDrainTrigger(botAI); }
+    static Trigger* aq20_larva(PlayerbotAI* botAI) { return new RcAq20LarvaTrigger(botAI); }
+    static Trigger* aq40_whirlwind(PlayerbotAI* botAI) { return new RcAq40WhirlwindTrigger(botAI); }
+    static Trigger* aq40_sartura_stun(PlayerbotAI* botAI) { return new RcAq40SarturaStunTrigger(botAI); }
+    static Trigger* aq40_yauj_heal(PlayerbotAI* botAI) { return new RcAq40YaujHealTrigger(botAI); }
+    static Trigger* aq40_yauj_tremor(PlayerbotAI* botAI) { return new RcAq40YaujTremorTrigger(botAI); }
+    static Trigger* aq40_poison_cloud(PlayerbotAI* botAI) { return new RcAq40PoisonCloudTrigger(botAI); }
 };
 
 #endif
