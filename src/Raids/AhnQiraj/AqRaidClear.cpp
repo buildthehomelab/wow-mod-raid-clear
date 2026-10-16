@@ -34,6 +34,11 @@ using namespace RaidClear::AhnQiraj;
 
 void RaidClearAq20Strategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // Under a reflect: the spell of the other school that playerbots ranks below the wand (a
+    // frost mage's Fireball), just above it. "rc spell reflect" zeroes whichever is reflected.
+    triggers.push_back(new TriggerNode("rc mage target reflects", { NextAction("fireball", 5.15f) }));
+    triggers.push_back(new TriggerNode("rc warlock target reflects", { NextAction("immolate", 5.15f) }));
+
     triggers.push_back(new TriggerNode("rc kill order", { NextAction("rc mark kill order", ACTION_RAID + 2) }));
 
     // The Zul'Gurub Bat Rider's priority: nothing but the leash comes first.
@@ -65,6 +70,11 @@ void RaidClearAq20Strategy::InitMultipliers(std::vector<Multiplier*>& multiplier
 
 void RaidClearAq40Strategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // Under a reflect: the spell of the other school that playerbots ranks below the wand (a
+    // frost mage's Fireball), just above it. "rc spell reflect" zeroes whichever is reflected.
+    triggers.push_back(new TriggerNode("rc mage target reflects", { NextAction("fireball", 5.15f) }));
+    triggers.push_back(new TriggerNode("rc warlock target reflects", { NextAction("immolate", 5.15f) }));
+
     triggers.push_back(new TriggerNode("rc kill order", { NextAction("rc mark kill order", ACTION_RAID + 2) }));
 
     triggers.push_back(new TriggerNode("rc aq explode", { NextAction("rc aq explode move away", ACTION_EMERGENCY + 7) }));

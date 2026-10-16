@@ -177,11 +177,15 @@ Some enemies send spells back at whoever casts them: the **Anubisath Guardians**
 Ahn'Qiraj and the **Anubisath Sentinels** and **Defenders** of the Temple have either **Fire and
 Arcane Reflect** or **Shadow and Frost Reflect**, and Majordomo's adds get **Magic Reflection**.
 Playerbots used to cast its rotation anyway, so an arcane mage hit itself with every Arcane
-Missile. Now a bot doesn't cast a spell at an enemy that would reflect it: it goes on to the next
-spell it has (an arcane or fire mage to Frostbolt, a frost mage to Fireball), and to its wand when
-nothing else gets through. Area spells and chains aren't cast where they would land on a
-reflecting enemy in the fight either (Arcane Explosion in a pack of Sentinels). The check reads
-the enemy's auras the way the server does, so any reflect in any raid is covered.
+Missile. Now a bot doesn't cast a spell at an enemy that would reflect it, Arcane Missiles
+included. It goes on to the next spell it has: an arcane or fire mage to Frostbolt, a frost mage
+to Fireball, a warlock to Shadow Bolt or Immolate. Only when nothing else gets through does it use
+its wand (not Searing Pain, which would pull the mob off the tank). Chain spells and the few area
+spells that can be reflected (Chain Lightning under Magic Reflection, Seed of Corruption, Living
+Bomb) aren't cast where they would land on a reflecting enemy in the fight. Most area spells
+(Arcane Explosion, Blizzard, Consecration) can't be reflected at all. The check reads the enemy's
+auras the way the server does, so any reflect in any raid is covered. Pets aren't covered: an
+Imp's Firebolt still bounces.
 
 ### Death log (all raids)
 

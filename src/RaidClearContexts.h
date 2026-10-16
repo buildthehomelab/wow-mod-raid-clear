@@ -12,6 +12,7 @@
 #include "Common/KillOrder.h"
 #include "Common/Knockback.h"
 #include "Common/RaidDiscipline.h"
+#include "Common/SpellReflect.h"
 #include "Common/TankRoles.h"
 #include "Raids/AhnQiraj/AqRaidClear.h"
 #include "Raids/BlackwingLair/BwlRaidClear.h"
@@ -277,6 +278,8 @@ public:
         creators["rc aq40 mortal wound"] = &RaidClearTriggerContext::aq40_mortal_wound;
         creators["rc charmed member"] = &RaidClearTriggerContext::charmed_member;
         creators["rc charmed target"] = &RaidClearTriggerContext::charmed_target;
+        creators["rc mage target reflects"] = &RaidClearTriggerContext::mage_target_reflects;
+        creators["rc warlock target reflects"] = &RaidClearTriggerContext::warlock_target_reflects;
     }
 
 private:
@@ -362,6 +365,14 @@ private:
     static Trigger* aq40_mortal_wound(PlayerbotAI* botAI) { return new RcAq40MortalWoundTrigger(botAI); }
     static Trigger* charmed_member(PlayerbotAI* botAI) { return new RcCharmedMemberTrigger(botAI); }
     static Trigger* charmed_target(PlayerbotAI* botAI) { return new RcCharmedTargetTrigger(botAI); }
+    static Trigger* mage_target_reflects(PlayerbotAI* botAI)
+    {
+        return new RcTargetReflectsTrigger(botAI, "rc mage target reflects", CLASS_MAGE);
+    }
+    static Trigger* warlock_target_reflects(PlayerbotAI* botAI)
+    {
+        return new RcTargetReflectsTrigger(botAI, "rc warlock target reflects", CLASS_WARLOCK);
+    }
 };
 
 #endif

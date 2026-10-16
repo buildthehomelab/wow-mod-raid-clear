@@ -36,6 +36,11 @@ using namespace RaidClear::OnyxiasLair;
 
 void RaidClearOnyxiasLairStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // Under a reflect: the spell of the other school that playerbots ranks below the wand (a
+    // frost mage's Fireball), just above it. "rc spell reflect" zeroes whichever is reflected.
+    triggers.push_back(new TriggerNode("rc mage target reflects", { NextAction("fireball", 5.15f) }));
+    triggers.push_back(new TriggerNode("rc warlock target reflects", { NextAction("immolate", 5.15f) }));
+
     // Above playerbots' own "ony move to safe zone" (ACTION_EMERGENCY + 5).
     triggers.push_back(new TriggerNode("rc ony deep breath",
                                        { NextAction("rc ony leave deep breath", ACTION_EMERGENCY + 6) }));
