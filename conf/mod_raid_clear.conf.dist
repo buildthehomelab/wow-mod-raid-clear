@@ -318,8 +318,13 @@ RaidClear.OnyxiasLair.Enable = 1
 #        Description: Ruins of Ahn'Qiraj strategy (map 509). Ossirian: the tank he is on takes
 #                     him to the next crystal before his weakness wears off, and one bot (the
 #                     nearest that isn't a tank) waits at the crystal and uses it once he is in
-#                     reach. Replaces playerbots' crystal walk, which sent every bot. Also: bots
-#                     walk out of an Anubisath Guardian's Explode (20 yd) before it goes off.
+#                     reach. Replaces playerbots' crystal walk, which sent every bot.
+#                     Kurinnaxx: bots walk out of a Sand Trap (8 yd) before it goes off. Moam:
+#                     hunters (Viper Sting), priests that aren't healing (Mana Burn) and warlocks
+#                     (Drain Mana) keep his mana down; skull goes on the Mana Fiends first.
+#                     Ayamiss: damage dealers kill the Hive'Zara Larva nearest the altar before it
+#                     eats the paralyzed player. Also: bots walk out of an Anubisath Guardian's
+#                     Explode (20 yd) before it goes off. Kill orders need RaidClear.KillOrder.
 #        Default:     1
 #
 
@@ -332,7 +337,13 @@ RaidClear.RuinsOfAhnQiraj.Enable = 1
 #                     shaman Frost Shock, death knight Howling Blast or Icy Touch); bots walk out
 #                     of the Toxic Slime clouds and toward nothing standing in one, and the tank
 #                     he is on walks him out of a cloud; skull goes on the Globs of Viscidus first
-#                     (needs RaidClear.KillOrder). Also: bots walk out of an Anubisath Explode.
+#                     (needs RaidClear.KillOrder). Sartura: bots she or a guard isn't on stay out
+#                     of a Whirlwind (10 yd); bots with a stun in reach keep her stunned between
+#                     whirlwinds and the guards in theirs; guards die first. Fankriss: each Spawn
+#                     of Fankriss gets an off-tank and skull first. Bug Trio: skull on the broods,
+#                     then Yauj, Kri, Vem; Yauj's Great Heal is interrupted, shamans keep Tremor
+#                     Totem down, bots leave Kri's Poison Cloud; Vekniss Guardians one at a time.
+#                     Also: bots walk out of an Anubisath Explode.
 #        Default:     1
 #
 

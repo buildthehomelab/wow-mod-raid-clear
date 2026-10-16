@@ -14,7 +14,6 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Playerbots.h"
-#include "ReachTargetActions.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Timer.h"
@@ -24,15 +23,6 @@
 #include <list>
 
 using namespace RaidClear::TempleOfAhnQiraj;
-
-std::vector<RaidClear::KillOrderEntry> const& RaidClear::TempleOfAhnQiraj::KillOrder()
-{
-    // Each glob that reaches the middle of the room heals him.
-    static std::vector<KillOrderEntry> const table = {
-        { NPC_GLOB_OF_VISCIDUS, 0 },
-    };
-    return table;
-}
 
 namespace
 {
@@ -291,14 +281,8 @@ bool RcAq40LeaveToxinAction::Execute(Event /*event*/)
 
 float RcAq40ToxinHoldMultiplier::GetValue(Action* action)
 {
-    bool const walks = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action);
-    if (!walks && !dynamic_cast<CastReachTargetSpellAction*>(action))
-        return 1.0f;
-    if (!bot->IsInCombat())
-        return 1.0f;
-
-    Unit* target = action->GetTarget();
-    if (!target || target == bot)
+    Unit* target = RaidClear::AhnQiraj::WalkTarget(action, bot);
+    if (!target)
         return 1.0f;
     Creature* boss = FightingViscidus(bot);
     if (!boss)

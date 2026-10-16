@@ -8,6 +8,7 @@
 
 #include "Common/AggroLeash.h"
 #include "Common/BossLookup.h"
+#include "Common/Interrupts.h"
 #include "Common/SplashSpells.h"
 #include "Common/WayOut.h"
 #include "RaidClearConfig.h"
@@ -917,18 +918,6 @@ float RcZgThekalSingleTargetMultiplier::GetValue(Action* action)
 
 namespace
 {
-    struct Interrupt
-    {
-        char const* spell;  // playerbots name
-        float range;        // 0 = melee reach
-    };
-    // Counterspell, Wind Shear and Silence already go to an enemy healer that isn't the bot's
-    // target (playerbots' "on enemy healer" triggers); the melee ones only ever hit the target.
-    constexpr std::array<Interrupt, 8> INTERRUPTS = {{
-        { "kick", 0.0f }, { "pummel", 0.0f }, { "shield bash", 0.0f }, { "mind freeze", 0.0f },
-        { "wind shear", 25.0f }, { "counterspell", 30.0f }, { "silence", 30.0f }, { "silencing shot", 35.0f },
-    }};
-
     // Zealot Lor'Khan, in the middle of Great Heal.
     Creature* LorkhanHealing(Player* bot)
     {
@@ -938,40 +927,6 @@ namespace
         Spell const* spell = lorkhan->GetCurrentSpell(CURRENT_GENERIC_SPELL);
         return spell && spell->GetSpellInfo()->Id == SPELL_LORKHAN_GREAT_HEAL ? lorkhan : nullptr;
     }
-
-    // CanCastSpell tests the spell with its cost ignored: a rogue out of energy would pass and
-    // then fail the cast on every tick of the heal.
-    bool CanPayFor(PlayerbotAI* botAI, Player* bot, char const* spell)
-    {
-        uint32 const spellId = botAI->GetAiObjectContext()->GetValue<uint32>("spell id", spell)->Get();
-        SpellInfo const* info = spellId ? sSpellMgr->GetSpellInfo(spellId) : nullptr;
-        if (!info)
-            return false;
-        int32 const cost = info->CalcPowerCost(bot, info->GetSchoolMask());
-        return cost <= 0 || bot->GetPower(Powers(info->PowerType)) >= uint32(cost);
-    }
-
-    // The first interrupt the bot has ready and in reach of him. CanCastSpell lets an out-of-range
-    // target through, so reach is checked here.
-    char const* ReadyInterrupt(PlayerbotAI* botAI, Player* bot, Unit* target)
-    {
-        // A tank holding something else would turn its back on it to reach him.
-        if (PlayerbotAI::IsTank(bot) && target->GetVictim() != bot)
-            return nullptr;
-
-        char const* ready = nullptr;
-        for (Interrupt const& interrupt : INTERRUPTS)
-        {
-            bool const inReach =
-                interrupt.range > 0.0f ? bot->GetDistance(target) <= interrupt.range : bot->IsWithinMeleeRange(target);
-            if (inReach && botAI->CanCastSpell(interrupt.spell, target) && CanPayFor(botAI, bot, interrupt.spell))
-            {
-                ready = interrupt.spell;
-                break;
-            }
-        }
-        return ready && bot->IsWithinLOSInMap(target) ? ready : nullptr;
-    }
 }
 
 bool RcZgLorkhanHealTrigger::IsActive()
@@ -979,7 +934,7 @@ bool RcZgLorkhanHealTrigger::IsActive()
     if (!bot->IsInCombat())
         return false;
     Creature* lorkhan = LorkhanHealing(bot);
-    return lorkhan && ReadyInterrupt(botAI, bot, lorkhan);
+    return lorkhan && RaidClear::ReadyInterrupt(botAI, bot, lorkhan);
 }
 
 bool RcZgLorkhanInterruptAction::Execute(Event /*event*/)
@@ -987,7 +942,7 @@ bool RcZgLorkhanInterruptAction::Execute(Event /*event*/)
     Creature* lorkhan = LorkhanHealing(bot);
     if (!lorkhan)
         return false;
-    char const* interrupt = ReadyInterrupt(botAI, bot, lorkhan);
+    char const* interrupt = RaidClear::ReadyInterrupt(botAI, bot, lorkhan);
     return interrupt && botAI->CastSpell(interrupt, lorkhan);
 }
 
@@ -1108,7 +1063,7 @@ namespace
                 if (left < control.needMs || dist > control.range)
                     continue;
                 if (!bot->IsWithinLOSInMap(member) || !botAI->CanCastSpell(control.spell, member) ||
-                    !CanPayFor(botAI, bot, control.spell))
+                    !RaidClear::CanPayFor(botAI, bot, control.spell))
                     continue;
                 with = control.spell;
                 return member;
