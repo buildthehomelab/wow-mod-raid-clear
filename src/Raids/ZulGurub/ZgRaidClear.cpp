@@ -259,8 +259,8 @@ bool RaidClear::ZulGurub::KillOrderSkips(Player* /*bot*/, Unit const* unit)
 }
 
 // Playerbots asks every combat strategy what its target picking should skip ("dps target", "tank
-// target", the debuff targets). The skull target is taken before this is asked, which is why the
-// kill order skips the same enemies. A mind-controlled raid member is never in the attackers (a
+// target", the debuff targets, the AoE count). Those skip an excluded skull, but "attack rti
+// target" does not, which is why the kill order skips the same enemies. A mind-controlled raid member is never in the attackers (a
 // player has no threat list); "rc zg bad target" is what takes a bot off one.
 void RaidClearZulGurubStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType /*type*/)
 {
@@ -292,7 +292,7 @@ bool RcZgLeaveBadTargetAction::IsBadPetTarget(Unit const* unit)
 
 float RcZgBadTargetMultiplier::GetValue(Action* action)
 {
-    // Skull is picked before anything is skipped, so "dps assist" can ask for one of these.
+    // "attack rti target" ignores exclusions, so a skull can still ask for one of these.
     if (!dynamic_cast<AttackAction*>(action) || dynamic_cast<RcZgLeaveBadTargetAction*>(action))
         return 1.0f;
     return IsBadTargetFor(bot, action->GetTarget()) ? 0.0f : 1.0f;

@@ -867,7 +867,7 @@ namespace
 void RaidClearBlackwingLairStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type)
 {
     // The main tank's own target picking skips the Captains and Wyrmguards its off-tanks take.
-    if (type != TargetValueExclusionType::Tank || !RaidClear::GetConfig().tankSplit)
+    if (type != TargetValueExclusionType::TankTarget || !RaidClear::GetConfig().tankSplit)
         return;
 
     Player* bot = botAI->GetBot();
