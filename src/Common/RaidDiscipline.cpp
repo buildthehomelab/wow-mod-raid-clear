@@ -164,7 +164,7 @@ void RaidClearDisciplineStrategy::InitMultipliers(std::vector<Multiplier*>& mult
 void RaidClearDisciplineStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type)
 {
     // A tank picks what it pulls.
-    if (type == TargetValueExclusionType::Tank)
+    if (type == TargetValueExclusionType::TankTarget)
         return;
 
     Player* bot = botAI->GetBot();
