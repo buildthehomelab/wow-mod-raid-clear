@@ -59,17 +59,19 @@ namespace RaidClear::Tanks
             }
         }
 
-        // Bosses that cut their tank's threat (Knock Away, Wing Buffet) or take their tank away
-        // (Hakkar's mind control): the off-tank builds threat on them as well, so the boss lands
-        // on a tank instead of the top damage dealer.
+        // Bosses that cut their tank's threat (Knock Away, Wing Buffet), take their tank away
+        // (Hakkar's mind control) or need two tanks taking turns (Fankriss' Mortal Wound): the
+        // off-tank builds threat on them as well, so the boss lands on a tank instead of the top
+        // damage dealer.
         std::vector<uint32> const& CoTankBosses(uint32 mapId)
         {
             static std::vector<uint32> const none;
             switch (mapId)
             {
-                case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitCoTankBosses();
-                case ZulGurub::MAP_ID:      return ZulGurub::TankSplitCoTankBosses();
-                default:                    return none;
+                case BlackwingLair::MAP_ID:    return BlackwingLair::TankSplitCoTankBosses();
+                case ZulGurub::MAP_ID:         return ZulGurub::TankSplitCoTankBosses();
+                case TempleOfAhnQiraj::MAP_ID: return TempleOfAhnQiraj::TankSplitCoTankBosses();
+                default:                       return none;
             }
         }
 
@@ -498,6 +500,18 @@ namespace RaidClear::Tanks
     // Single-target taunts, by their playerbots spell names; all reach 30 yd.
     constexpr std::array<char const*, 4> SINGLE_TAUNTS = { "taunt", "growl", "hand of reckoning", "dark command" };
     constexpr float TAUNT_RANGE = 30.0f;
+
+    bool IsTauntAction(Action* action)
+    {
+        static constexpr std::array<char const*, 9> TAUNT_ACTIONS = {
+            "taunt", "growl", "hand of reckoning", "dark command", "death grip", "mocking blow",
+            "righteous defense", "challenging shout", "challenging roar",
+        };
+        if (!action)
+            return false;
+        std::string const name = action->getName();
+        return std::any_of(TAUNT_ACTIONS.begin(), TAUNT_ACTIONS.end(), [&name](char const* taunt) { return name == taunt; });
+    }
 
     bool CanTaunt(PlayerbotAI* botAI, Unit* unit)
     {

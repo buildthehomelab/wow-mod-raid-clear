@@ -8,6 +8,7 @@
 #define MOD_RAID_CLEAR_CONTEXTS_H
 
 #include "Common/AggroLeash.h"
+#include "Common/Charmed.h"
 #include "Common/KillOrder.h"
 #include "Common/Knockback.h"
 #include "Common/RaidDiscipline.h"
@@ -99,7 +100,6 @@ public:
         creators["rc zg leave bad target"] = &RaidClearActionContext::zg_leave_bad_target;
         creators["rc zg concoction move away"] = &RaidClearActionContext::zg_concoction_move_away;
         creators["rc zg leave liquid fire"] = &RaidClearActionContext::zg_leave_liquid_fire;
-        creators["rc zg control charmed"] = &RaidClearActionContext::zg_control_charmed;
 
         creators["rc ony leave deep breath"] = &RaidClearActionContext::ony_leave_deep_breath;
         creators["rc ony offtank position"] = &RaidClearActionContext::ony_offtank_position;
@@ -120,6 +120,10 @@ public:
         creators["rc aq40 sartura stun"] = &RaidClearActionContext::aq40_sartura_stun;
         creators["rc aq40 yauj interrupt"] = &RaidClearActionContext::aq40_yauj_interrupt;
         creators["rc aq40 leave poison cloud"] = &RaidClearActionContext::aq40_leave_poison_cloud;
+        creators["rc aq40 skeram interrupt"] = &RaidClearActionContext::aq40_skeram_interrupt;
+        creators["rc aq40 mortal wound taunt"] = &RaidClearActionContext::aq40_mortal_wound_taunt;
+        creators["rc control charmed"] = &RaidClearActionContext::control_charmed;
+        creators["rc leave charmed target"] = &RaidClearActionContext::leave_charmed_target;
     }
 
 private:
@@ -171,7 +175,6 @@ private:
     static Action* zg_leave_bad_target(PlayerbotAI* botAI) { return new RcZgLeaveBadTargetAction(botAI); }
     static Action* zg_concoction_move_away(PlayerbotAI* botAI) { return new RcZgConcoctionMoveAwayAction(botAI); }
     static Action* zg_leave_liquid_fire(PlayerbotAI* botAI) { return new RcZgLeaveLiquidFireAction(botAI); }
-    static Action* zg_control_charmed(PlayerbotAI* botAI) { return new RcZgControlCharmedAction(botAI); }
 
     static Action* ony_leave_deep_breath(PlayerbotAI* botAI) { return new RcOnyLeaveDeepBreathAction(botAI); }
     static Action* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionAction(botAI); }
@@ -192,6 +195,10 @@ private:
     static Action* aq40_sartura_stun(PlayerbotAI* botAI) { return new RcAq40SarturaStunAction(botAI); }
     static Action* aq40_yauj_interrupt(PlayerbotAI* botAI) { return new RcAq40YaujInterruptAction(botAI); }
     static Action* aq40_leave_poison_cloud(PlayerbotAI* botAI) { return new RcAq40LeavePoisonCloudAction(botAI); }
+    static Action* aq40_skeram_interrupt(PlayerbotAI* botAI) { return new RcAq40SkeramInterruptAction(botAI); }
+    static Action* aq40_mortal_wound_taunt(PlayerbotAI* botAI) { return new RcAq40MortalWoundTauntAction(botAI); }
+    static Action* control_charmed(PlayerbotAI* botAI) { return new RcControlCharmedAction(botAI); }
+    static Action* leave_charmed_target(PlayerbotAI* botAI) { return new RcLeaveCharmedTargetAction(botAI); }
 };
 
 class RaidClearTriggerContext : public NamedObjectContext<Trigger>
@@ -246,7 +253,6 @@ public:
         creators["rc zg bad target"] = &RaidClearTriggerContext::zg_bad_target;
         creators["rc zg concoction"] = &RaidClearTriggerContext::zg_concoction;
         creators["rc zg liquid fire"] = &RaidClearTriggerContext::zg_liquid_fire;
-        creators["rc zg charmed member"] = &RaidClearTriggerContext::zg_charmed_member;
 
         creators["rc ony deep breath"] = &RaidClearTriggerContext::ony_deep_breath;
         creators["rc ony offtank position"] = &RaidClearTriggerContext::ony_offtank_position;
@@ -267,6 +273,10 @@ public:
         creators["rc aq40 yauj heal"] = &RaidClearTriggerContext::aq40_yauj_heal;
         creators["rc aq40 yauj tremor"] = &RaidClearTriggerContext::aq40_yauj_tremor;
         creators["rc aq40 poison cloud"] = &RaidClearTriggerContext::aq40_poison_cloud;
+        creators["rc aq40 skeram cast"] = &RaidClearTriggerContext::aq40_skeram_cast;
+        creators["rc aq40 mortal wound"] = &RaidClearTriggerContext::aq40_mortal_wound;
+        creators["rc charmed member"] = &RaidClearTriggerContext::charmed_member;
+        creators["rc charmed target"] = &RaidClearTriggerContext::charmed_target;
     }
 
 private:
@@ -328,7 +338,6 @@ private:
     static Trigger* zg_bad_target(PlayerbotAI* botAI) { return new RcZgBadTargetTrigger(botAI); }
     static Trigger* zg_concoction(PlayerbotAI* botAI) { return new RcZgConcoctionTrigger(botAI); }
     static Trigger* zg_liquid_fire(PlayerbotAI* botAI) { return new RcZgLiquidFireTrigger(botAI); }
-    static Trigger* zg_charmed_member(PlayerbotAI* botAI) { return new RcZgCharmedMemberTrigger(botAI); }
 
     static Trigger* ony_deep_breath(PlayerbotAI* botAI) { return new RcOnyDeepBreathTrigger(botAI); }
     static Trigger* ony_offtank_position(PlayerbotAI* botAI) { return new RcOnyOffTankPositionTrigger(botAI); }
@@ -349,6 +358,10 @@ private:
     static Trigger* aq40_yauj_heal(PlayerbotAI* botAI) { return new RcAq40YaujHealTrigger(botAI); }
     static Trigger* aq40_yauj_tremor(PlayerbotAI* botAI) { return new RcAq40YaujTremorTrigger(botAI); }
     static Trigger* aq40_poison_cloud(PlayerbotAI* botAI) { return new RcAq40PoisonCloudTrigger(botAI); }
+    static Trigger* aq40_skeram_cast(PlayerbotAI* botAI) { return new RcAq40SkeramCastTrigger(botAI); }
+    static Trigger* aq40_mortal_wound(PlayerbotAI* botAI) { return new RcAq40MortalWoundTrigger(botAI); }
+    static Trigger* charmed_member(PlayerbotAI* botAI) { return new RcCharmedMemberTrigger(botAI); }
+    static Trigger* charmed_target(PlayerbotAI* botAI) { return new RcCharmedTargetTrigger(botAI); }
 };
 
 #endif

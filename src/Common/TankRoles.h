@@ -13,8 +13,8 @@
  *     that are hitting someone who isn't a tank first, then extra mobs on the main tank, and
  *     leaves mobs another off-tank already holds.
  *   - On bosses that cut their tank's threat (Broodlord's Knock Away, the BWL drakes' Wing
- *     Buffet) the off-tank attacks the boss whenever no add needs it, so it sits second on
- *     threat and catches the boss. Playerbots' "lose aggro" never makes a non-main tank taunt
+ *     Buffet), or that two tanks take in turns (Fankriss), the off-tank attacks the boss whenever
+ *     no add needs it, so it sits second on threat and catches the boss. Playerbots' "lose aggro" never makes a non-main tank taunt
  *     off another tank, and makes the main tank taunt back.
  *   - On bosses that keep taking their tank away (each raid lists them: Hakkar's mind control and
  *     threat wipes) the tanks share the boss's threat and the damage dealers stay under it, so
@@ -128,6 +128,8 @@ namespace RaidClear::Tanks
     // Everything the main tank leaves to its off-tanks: own-tank adds and handed-out spread adds.
     GuidSet HandedOffAdds(PlayerbotAI* botAI, Player* mainTank, GuidVector const& attackers);
 
+    // One of playerbots' taunts (by action name), single-target or area.
+    bool IsTauntAction(Action* action);
     // Cast the first single-target taunt this bot has ready on the unit.
     bool CanTaunt(PlayerbotAI* botAI, Unit* unit);
     bool Taunt(PlayerbotAI* botAI, Unit* unit);

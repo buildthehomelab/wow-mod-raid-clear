@@ -44,13 +44,10 @@
  *     comes before everything but the leash, and nothing else happens while the bot is running.
  *   - Nobody goes on hitting a mob that evades everything, or a raid member an enemy has taken
  *     over (Will of Hakkar, Brain Wash, Cause Insanity): target picking skips the evading ones,
- *     a bot already on either lets go, and so does its pet. Area spells aren't cast within 12 yd
- *     of a mind-controlled member either.
- *   - A mind-controlled member is stopped as well: a mage's Polymorph or a paladin's Hammer of
- *     Justice, one bot at a time (Will of Hakkar runs 20 s, Cause Insanity 10 s; Polymorph lasts
- *     10 s on a player, Hammer of Justice 6 s). When the mind control ends first, the bot that
- *     cast it takes its sheep or stun off again, so nobody comes back as a sheep. Not Blind:
- *     nothing takes that off.
+ *     and a bot already on either lets go, and so does its pet.
+ *   - A mind-controlled member (Will of Hakkar runs 20 s, Cause Insanity 10 s) does nothing of
+ *     its own, is stopped with a Polymorph or a Hammer of Justice, and no area spell is cast
+ *     within 12 yd of it (Common/Charmed.h).
  *   - High Priestess Jeklik, from 50%: her Bat Riders drop Liquid Fire (GO 180125) on a random
  *     raid member every 8 s. It burns for 20 s and casts Blaze (23972, 874 fire to everyone
  *     within 5 yd) whenever someone stands within 3 yd of it. Playerbots only walks out of traps
@@ -64,6 +61,7 @@
 #ifndef MOD_RAID_CLEAR_ZUL_GURUB_H
 #define MOD_RAID_CLEAR_ZUL_GURUB_H
 
+#include "Common/Charmed.h"
 #include "Common/KillOrder.h"
 
 #include "Action.h"
@@ -155,8 +153,6 @@ namespace RaidClear::ZulGurub
     constexpr float LIQUID_FIRE_WORTH_IT = 2.0f;
     constexpr float LIQUID_FIRE_SCAN = 40.0f;
 
-    // No spell that hits more than one enemy is cast this close to a mind-controlled raid member.
-    constexpr float CHARMED_SPLASH_RANGE = 12.0f;
 
     std::vector<KillOrderEntry> const& KillOrder();
     // Enemies skull stays off for now, though they are in the table or the player marked them.
@@ -194,11 +190,14 @@ public:
     bool IsActive() override;
 };
 
-class RcZgLeaveBadTargetAction : public AttackAction
+class RcZgLeaveBadTargetAction : public RcLeaveTargetAction
 {
 public:
-    RcZgLeaveBadTargetAction(PlayerbotAI* botAI) : AttackAction(botAI, "rc zg leave bad target") {}
-    bool Execute(Event event) override;
+    RcZgLeaveBadTargetAction(PlayerbotAI* botAI) : RcLeaveTargetAction(botAI, "rc zg leave bad target") {}
+
+protected:
+    bool IsBadTarget(Unit const* unit) override;
+    bool IsBadPetTarget(Unit const* unit) override;
 };
 
 // Keeps a bot from switching to such a target in the first place.
@@ -260,31 +259,6 @@ class RcZgLiquidFireHoldMultiplier : public Multiplier
 {
 public:
     RcZgLiquidFireHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc zg liquid fire hold") {}
-    float GetValue(Action* action) override;
-};
-
-// An enemy has taken over a raid member this bot can stop (Polymorph, Hammer of Justice), or a
-// member it stopped is itself again.
-class RcZgCharmedMemberTrigger : public Trigger
-{
-public:
-    RcZgCharmedMemberTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc zg charmed member") {}
-    bool IsActive() override;
-};
-
-class RcZgControlCharmedAction : public Action
-{
-public:
-    RcZgControlCharmedAction(PlayerbotAI* botAI) : Action(botAI, "rc zg control charmed") {}
-    bool Execute(Event event) override;
-};
-
-// Zeroes spells that hit more than one enemy while a mind-controlled raid member stands where
-// they would land.
-class RcZgCharmedSplashMultiplier : public Multiplier
-{
-public:
-    RcZgCharmedSplashMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc zg charmed splash") {}
     float GetValue(Action* action) override;
 };
 
