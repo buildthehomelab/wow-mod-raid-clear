@@ -34,6 +34,15 @@
  *     target is on; one only crossing the pit is left alone. A tank with a mob on it goes 22 yd
  *     out when either of them is within 12 yd, so the mob follows it out of reach. Melee whose
  *     target stands in it stay on that target.
+ *   - Ragnaros' Lava Burst (21908): three eruptions every 10 s or so at eight fixed places,
+ *     seven of them on the rock 30 to 45 yd from him, each hitting whoever stands around it (logs
+ *     of 2026-10-15/16: 157 and 252 hits, up to 38 players by one eruption; Wrath of Ragnaros hit
+ *     no ranged bot or healer at all). Ranged bots and healers each take a spot of their own on
+ *     the rock 30 to 42 yd from him, as far from all eight as there is, dry and in his line of
+ *     sight, 3.5 yd apart: the west side of the room. Healers pick first, among spots within
+ *     36 yd of the main tank so he stays in reach of their heals. While he is up a bot walks
+ *     back to its spot when it is more than 4 yd off, and doesn't walk away from it for
+ *     anything else (a heal out of reach is somebody else's).
  *   - Ragnaros: ranged and healers stay out of Wrath of Ragnaros (20566), which reaches 25 yd
  *     from his middle. He is 20 yd wide himself (his combat reach), so this is measured centre
  *     to centre: 27.5 yd from his middle is only 6 yd from his edge. A bot closer than that
@@ -97,6 +106,8 @@
 #include "Multiplier.h"
 #include "Strategy.h"
 #include "Trigger.h"
+
+#include <array>
 
 #include <vector>
 
@@ -193,6 +204,19 @@ namespace RaidClear::MoltenCore
     constexpr float RAGNAROS_SEARCH = 30.0f;
     // Within this of his middle they don't walk toward anything closer to him than KEEP_AWAY.
     constexpr float RAGNAROS_HOLD = 36.0f;
+    // Lava Burst (21908) erupts at three of eight fixed places (Ragnaros' LAVA_BURSTS) every
+    // 10 s or so while he is up, and an eruption hits most of the raid around it. Seven of the
+    // eight are on the rock 30 to 45 yd from him, the ring KEEP_AWAY sends ranged bots to. So
+    // each ranged bot and healer holds a spot of its own on rings this far from his middle,
+    // this far apart, as far from all eight as the rock allows; a healer's within this of the
+    // main tank, so it can still heal him.
+    constexpr std::array<float, 4> RAGNAROS_RINGS = { 30.0f, 34.0f, 38.0f, 42.0f };
+    constexpr float RAGNAROS_SPOT_SPACING = 3.5f;
+    constexpr float RAGNAROS_HEAL_REACH = 36.0f;
+    // A bot further than this from its spot walks back to it; one this close holds it.
+    constexpr float RAGNAROS_SPOT_LEAVE = 4.0f;
+    constexpr float RAGNAROS_SPOT_HOLD = 6.0f;
+    constexpr uint32 RAGNAROS_SPOT_RECHECK_MS = 1000;
 
     // Garr checks his Firesworn once a second: more than 40 yd from him (edge to edge) and it
     // gets Separation Anxiety. A Firesworn this far out counts as having it already.
@@ -488,7 +512,23 @@ public:
     bool IsActive() override;
 };
 
-// Ranged bots and healers at Ragnaros don't walk toward something inside his Wrath.
+// A ranged bot or healer away from its spot at Ragnaros (see RAGNAROS_RINGS).
+class RcMcRagnarosSpotTrigger : public Trigger
+{
+public:
+    RcMcRagnarosSpotTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc ragnaros spot") {}
+    bool IsActive() override;
+};
+
+class RcMcRagnarosSpotAction : public MovementAction
+{
+public:
+    RcMcRagnarosSpotAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc mc ragnaros spot") {}
+    bool Execute(Event event) override;
+};
+
+// Ranged bots and healers at Ragnaros don't walk toward something inside his Wrath, and one on
+// its spot doesn't walk off it.
 class RcMcRagnarosHoldMultiplier : public Multiplier
 {
 public:

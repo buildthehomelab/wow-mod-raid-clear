@@ -10,6 +10,7 @@
 #include "Common/BossLookup.h"
 #include "Common/SpellReflect.h"
 #include "Common/SplashSpells.h"
+#include "Common/TankRoles.h"
 
 #include "AllSpellScript.h"
 #include "AttackAction.h"
@@ -32,6 +33,10 @@
 #include <algorithm>
 #include <array>
 #include <list>
+#include <vector>
+#include <mutex>
+#include <memory>
+#include <map>
 #include <cmath>
 #include <string>
 
@@ -110,6 +115,9 @@ void RaidClearMoltenCoreStrategy::InitTriggers(std::vector<TriggerNode*>& trigge
 
     triggers.push_back(
         new TriggerNode("rc mc ragnaros ranged", { NextAction("rc mc ragnaros move out", ACTION_RAID + 1) }));
+    // Above the way out of his Wrath: the spot is out of it too, and further from the eruptions.
+    triggers.push_back(
+        new TriggerNode("rc mc ragnaros spot", { NextAction("rc mc ragnaros spot", ACTION_RAID + 2) }));
 
     // Above the heals: eight pulses of Inferno are more than anyone is healed through.
     triggers.push_back(new TriggerNode("rc mc inferno", { NextAction("rc mc leave inferno", ACTION_EMERGENCY + 7) }));
@@ -978,6 +986,163 @@ namespace
     {
         return !PlayerbotAI::IsTank(bot) && (PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot));
     }
+
+    // Where Lava Burst erupts (spell_target_position of 21886, 21900-21903 and 21905-21907).
+    constexpr std::array<std::array<float, 2>, 8> LAVA_BURSTS = { {
+        { 871.540f, -839.115f }, { 843.509f, -798.313f }, { 827.276f, -874.028f }, { 864.573f, -806.463f },
+        { 819.757f, -807.176f }, { 892.633f, -790.410f }, { 906.695f, -828.611f }, { 862.862f, -866.955f },
+    } };
+
+    float GapToLavaBurst(float x, float y)
+    {
+        float gap = 1000.0f;
+        for (std::array<float, 2> const& at : LAVA_BURSTS)
+            gap = std::min(gap, std::hypot(x - at[0], y - at[1]));
+        return gap;
+    }
+
+    struct RagnarosSpot
+    {
+        float x, y, z, gap;
+    };
+    using RagnarosSpots = std::shared_ptr<std::vector<RagnarosSpot> const>;
+
+    // Every spot on the rock round him a ranged bot could hold, furthest from the eruptions
+    // first: on the rings, a spacing apart, on dry ground near his height and in his line of
+    // sight. He doesn't move, so it is worked out once per Ragnaros (map updates run on several
+    // threads, hence the lock).
+    RagnarosSpots SpotsRound(Creature* boss)
+    {
+        static std::mutex lock;
+        static std::map<uint32, std::pair<ObjectGuid, RagnarosSpots>> cache;
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            auto const it = cache.find(boss->GetInstanceId());
+            if (it != cache.end() && it->second.first == boss->GetGUID())
+                return it->second.second;
+        }
+
+        auto spots = std::make_shared<std::vector<RagnarosSpot>>();
+        Map* map = boss->GetMap();
+        uint32 const phaseMask = boss->GetPhaseMask();
+        for (float const ring : RAGNAROS_RINGS)
+        {
+            int const steps = int(2.0f * float(M_PI) * ring / RAGNAROS_SPOT_SPACING);
+            for (int i = 0; i < steps; ++i)
+            {
+                float const angle = 2.0f * float(M_PI) * float(i) / float(steps);
+                float const x = boss->GetPositionX() + std::cos(angle) * ring;
+                float const y = boss->GetPositionY() + std::sin(angle) * ring;
+                float const z = map->GetHeight(phaseMask, x, y, boss->GetPositionZ() + 10.0f);
+                if (z <= INVALID_HEIGHT || z < boss->GetPositionZ() - 4.0f || z > boss->GetPositionZ() + 8.0f)
+                    continue;
+                LiquidData const liquid = map->GetLiquidData(phaseMask, x, y, z, 2.0f, {});
+                if (liquid.Status & MAP_LIQUID_STATUS_IN_CONTACT)
+                    continue;
+                if (!boss->IsWithinLOS(x, y, z + 2.0f))
+                    continue;
+                spots->push_back({ x, y, z, GapToLavaBurst(x, y) });
+            }
+        }
+        std::stable_sort(spots->begin(), spots->end(),
+                         [](RagnarosSpot const& a, RagnarosSpot const& b) { return a.gap > b.gap; });
+
+        std::lock_guard<std::mutex> guard(lock);
+        cache[boss->GetInstanceId()] = { boss->GetGUID(), spots };
+        return spots;
+    }
+
+    // This bot's spot: the group's ranged bots and healers take theirs in turn, healers first and
+    // each in group order, every one the spot furthest from the eruptions that is a spacing clear
+    // of those already taken; a healer's within reach of the main tank if any is.
+    bool WorkOutSpot(Player* bot, Creature* boss, RagnarosSpot& out)
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return false;
+        RagnarosSpots const spots = SpotsRound(boss);
+        if (spots->empty())
+            return false;
+
+        std::vector<Player*> healers;
+        std::vector<Player*> ranged;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || !member->IsAlive() || !member->IsInMap(bot) || !GET_PLAYERBOT_AI(member) ||
+                !KeepsOutOfWrath(member))
+                continue;
+            (PlayerbotAI::IsHeal(member) ? healers : ranged).push_back(member);
+        }
+
+        Player* mainTank = RaidClear::Tanks::ActingMainTank(group);
+        std::vector<RagnarosSpot const*> taken;
+        auto const clear = [&taken](RagnarosSpot const& spot)
+        {
+            for (RagnarosSpot const* other : taken)
+                if (std::hypot(spot.x - other->x, spot.y - other->y) < RAGNAROS_SPOT_SPACING - 0.1f)
+                    return false;
+            return true;
+        };
+        auto const pick = [&](bool healer) -> RagnarosSpot const*
+        {
+            RagnarosSpot const* fallback = nullptr;
+            for (RagnarosSpot const& spot : *spots)
+            {
+                if (!clear(spot))
+                    continue;
+                if (!healer || !mainTank || mainTank->GetExactDist2d(spot.x, spot.y) <= RAGNAROS_HEAL_REACH)
+                    return &spot;
+                if (!fallback)
+                    fallback = &spot;
+            }
+            return fallback;
+        };
+
+        for (bool const healer : { true, false })
+            for (Player* member : healer ? healers : ranged)
+            {
+                RagnarosSpot const* spot = pick(healer);
+                if (!spot)
+                    return false;
+                if (member == bot)
+                {
+                    out = *spot;
+                    return true;
+                }
+                taken.push_back(spot);
+            }
+        return false;
+    }
+
+    // The same, looked at again at most once a second: the multiplier asks for it on every walk.
+    bool SpotFor(Player* bot, Creature* boss, RagnarosSpot& out)
+    {
+        struct Known
+        {
+            uint32 atMs;
+            bool found;
+            RagnarosSpot spot;
+        };
+        static std::mutex lock;
+        static std::map<ObjectGuid, Known> known;
+        uint32 const now = getMSTime();
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            auto const it = known.find(bot->GetGUID());
+            if (it != known.end() && getMSTimeDiff(it->second.atMs, now) < RAGNAROS_SPOT_RECHECK_MS)
+            {
+                out = it->second.spot;
+                return it->second.found;
+            }
+        }
+        RagnarosSpot spot{};
+        bool const found = WorkOutSpot(bot, boss, spot);
+        std::lock_guard<std::mutex> guard(lock);
+        known[bot->GetGUID()] = { now, found, spot };
+        out = spot;
+        return found;
+    }
 }
 
 bool RcMcRagnarosRangedTrigger::IsActive()
@@ -1012,6 +1177,25 @@ bool RcMcRagnarosMoveOutAction::Execute(Event /*event*/)
     return _walk.Go(gapAt, RAGNAROS_KEEP_AWAY, RAGNAROS_SPOT, RAGNAROS_WORTH_IT, RAGNAROS_SEARCH, dry);
 }
 
+bool RcMcRagnarosSpotTrigger::IsActive()
+{
+    if (!bot->IsAlive() || !KeepsOutOfWrath(bot) || !botAI->CanMove())
+        return false;
+    Creature* boss = EmergedRagnaros(bot);
+    RagnarosSpot spot;
+    return boss && SpotFor(bot, boss, spot) && bot->GetExactDist2d(spot.x, spot.y) > RAGNAROS_SPOT_LEAVE;
+}
+
+bool RcMcRagnarosSpotAction::Execute(Event /*event*/)
+{
+    Creature* boss = EmergedRagnaros(bot);
+    RagnarosSpot spot;
+    if (!boss || !SpotFor(bot, boss, spot))
+        return false;
+    return MoveTo(bot->GetMapId(), spot.x, spot.y, spot.z, false, false, false, false,
+                  MovementPriority::MOVEMENT_COMBAT);
+}
+
 float RcMcRagnarosHoldMultiplier::GetValue(Action* action)
 {
     // A healer whose patient stands on the far side of him would walk round the inner edge of the
@@ -1022,6 +1206,15 @@ float RcMcRagnarosHoldMultiplier::GetValue(Action* action)
         return 1.0f;
     if (!KeepsOutOfWrath(bot))
         return 1.0f;
+
+    // On its spot, a bot doesn't walk off it for anything but this module's own way out.
+    if (walks && action->getName().rfind("rc ", 0) != 0)
+        if (Creature* boss = EmergedRagnaros(bot))
+        {
+            RagnarosSpot spot;
+            if (SpotFor(bot, boss, spot) && bot->GetExactDist2d(spot.x, spot.y) <= RAGNAROS_SPOT_HOLD)
+                return 0.0f;
+        }
 
     Unit* target = action->GetTarget();
     if (!target || target == bot)
