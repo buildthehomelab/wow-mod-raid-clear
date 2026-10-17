@@ -1184,8 +1184,9 @@ public:
     bool Execute(Event event) override;
 
 private:
-    uint32 _sentMs = 0;  // the last walk sent, and how far off the spot the bot was then
-    float _sentDist = 0.0f;
+    uint32 _sentMs = 0;  // the last walk sent: when, to which spot, and where its path ended
+    Position _sentSpot;
+    Position _sentEnd;
 };
 
 // On its spot, nothing but the raid mechanics walks the bot off it.

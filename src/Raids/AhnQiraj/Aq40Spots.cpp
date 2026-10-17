@@ -17,6 +17,7 @@
 #include "LastMovementValue.h"
 #include "Log.h"
 #include "Map.h"
+#include "MoveSpline.h"
 #include "Playerbots.h"
 #include "SpellMgr.h"
 #include "Timer.h"
@@ -133,6 +134,8 @@ namespace
     constexpr uint32 SPOT_DROP_MS = 3000;
     // A walk sent this recently that ended no nearer counts as a spot the bot can't get to.
     constexpr uint32 SPOT_STUCK_MS = 5000;
+    // Within this of the end of that walk counts as having run it all.
+    constexpr float SPOT_STUCK_END = 1.5f;
     std::mutex sSpotDropLock;
     std::unordered_map<ObjectGuid, uint32> sSpotDropped;  // when
 
@@ -422,24 +425,36 @@ bool RcAq40BossSpotAction::Execute(Event /*event*/)
     if (Spots::OnTheWay(bot, want.place))
         return want.tank;
 
-    // The last walk ended and got it no nearer (the path stops short of the spot): the spot is
-    // dropped for a while rather than sent again every tick, the bot's rotation stopped meanwhile.
+    // The last walk to this spot ran to its end, and its end is short of the spot (the path can't
+    // get there): the spot is dropped for a while rather than sent again every tick, the bot's
+    // rotation stopped meanwhile. A walk cut off on the way (a knockback, a stun, a fear, a dodge)
+    // ends elsewhere and is simply sent again.
     uint32 const now = getMSTime();
-    float const dist = bot->GetExactDist(want.place);
-    if (_sentMs && getMSTimeDiff(_sentMs, now) < SPOT_STUCK_MS && !bot->isMoving() && dist > _sentDist - 1.0f)
+    if (_sentMs && getMSTimeDiff(_sentMs, now) < SPOT_STUCK_MS && !bot->isMoving() &&
+        _sentSpot.GetExactDist(want.place) < 1.0f && bot->GetExactDist(_sentEnd) < SPOT_STUCK_END &&
+        _sentEnd.GetExactDist(want.place) > SpotNear(want))
     {
         _sentMs = 0;
         DropSpot(bot, now);
         return false;
     }
-    _sentMs = now ? now : 1;
-    _sentDist = dist;
 
     if (want.tank)
         AI_VALUE(LastMovement&, "last movement").clear();
-    return MoveTo(bot->GetMapId(), want.place.GetPositionX(), want.place.GetPositionY(), want.place.GetPositionZ(),
-                  false, false, false, false,
-                  want.tank ? MovementPriority::MOVEMENT_FORCED : MovementPriority::MOVEMENT_COMBAT);
+    if (!MoveTo(bot->GetMapId(), want.place.GetPositionX(), want.place.GetPositionY(), want.place.GetPositionZ(),
+                false, false, false, false,
+                want.tank ? MovementPriority::MOVEMENT_FORCED : MovementPriority::MOVEMENT_COMBAT))
+        return false;
+    _sentMs = now ? now : 1;
+    _sentSpot = want.place;
+    if (bot->isMoving() && !bot->movespline->Finalized())
+    {
+        G3D::Vector3 const end = bot->movespline->FinalDestination();
+        _sentEnd.Relocate(end.x, end.y, end.z);
+    }
+    else
+        _sentEnd = bot->GetPosition();
+    return true;
 }
 
 float RcAq40SpotHoldMultiplier::GetValue(Action* action)
