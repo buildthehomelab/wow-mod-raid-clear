@@ -22,6 +22,7 @@
 #include "SpellMgr.h"
 #include "Timer.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <mutex>
@@ -132,7 +133,8 @@ namespace
     // flip the bot between its spot and free movement every tick. By bot, for all instances (a bot
     // is in one at a time).
     constexpr uint32 SPOT_DROP_MS = 3000;
-    // A walk sent this recently that ended no nearer counts as a spot the bot can't get to.
+    // A walk that should have arrived this recently, and ended short of the spot, counts as a spot
+    // the bot can't get to.
     constexpr uint32 SPOT_STUCK_MS = 5000;
     // Within this of the end of that walk counts as having run it all.
     constexpr float SPOT_STUCK_END = 1.5f;
@@ -430,11 +432,11 @@ bool RcAq40BossSpotAction::Execute(Event /*event*/)
     // rotation stopped meanwhile. A walk cut off on the way (a knockback, a stun, a fear, a dodge)
     // ends elsewhere and is simply sent again.
     uint32 const now = getMSTime();
-    if (_sentMs && getMSTimeDiff(_sentMs, now) < SPOT_STUCK_MS && !bot->isMoving() &&
+    if (_arriveMs && getMSTimeDiff(_arriveMs, now) < SPOT_STUCK_MS && !bot->isMoving() &&
         _sentSpot.GetExactDist(want.place) < 1.0f && bot->GetExactDist(_sentEnd) < SPOT_STUCK_END &&
         _sentEnd.GetExactDist(want.place) > SpotNear(want))
     {
-        _sentMs = 0;
+        _arriveMs = 0;
         DropSpot(bot, now);
         return false;
     }
@@ -445,15 +447,17 @@ bool RcAq40BossSpotAction::Execute(Event /*event*/)
                 false, false, false, false,
                 want.tank ? MovementPriority::MOVEMENT_FORCED : MovementPriority::MOVEMENT_COMBAT))
         return false;
-    _sentMs = now ? now : 1;
-    _sentSpot = want.place;
+    // Only a walk that started arms the check (a channelling bot is sent nowhere), from when it
+    // should arrive: a long walk takes longer than the check's window.
+    _arriveMs = 0;
     if (bot->isMoving() && !bot->movespline->Finalized())
     {
         G3D::Vector3 const end = bot->movespline->FinalDestination();
+        _sentSpot = want.place;
         _sentEnd.Relocate(end.x, end.y, end.z);
+        uint32 const arrive = now + uint32(std::max(0, bot->movespline->Duration()));
+        _arriveMs = arrive ? arrive : 1;
     }
-    else
-        _sentEnd = bot->GetPosition();
     return true;
 }
 

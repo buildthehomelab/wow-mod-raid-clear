@@ -1184,7 +1184,7 @@ public:
     bool Execute(Event event) override;
 
 private:
-    uint32 _sentMs = 0;  // the last walk sent: when, to which spot, and where its path ended
+    uint32 _arriveMs = 0;  // the last walk that started: when it should arrive, its spot, its path's end
     Position _sentSpot;
     Position _sentEnd;
 };
