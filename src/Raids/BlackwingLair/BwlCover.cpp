@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <mutex>
 #include <optional>
 #include <regex>
@@ -59,13 +60,14 @@ bool RaidClear::BlackwingLair::SeenBy(Unit const* boss, WorldObject const* who)
     return boss && who && boss->IsWithinLOSInMap(who, VMAP::ModelIgnoreFlags::M2);
 }
 
-bool RaidClear::BlackwingLair::SeesSpot(Unit const* boss, float x, float y, float z)
+bool RaidClear::BlackwingLair::SeesSpot(Unit const* boss, float x, float y, float z, float height)
 {
     if (!boss || !boss->IsInWorld())
         return false;
     // WorldObject::IsWithinLOS(x, y, z) raises the spot by the asker's own height, a dragon's:
-    // that looks over a wall a player hides behind. From the boss's eyes to a player's.
-    float const eyeZ = z + EYE_HEIGHT;
+    // that looks over a wall a player hides behind. From the boss's eyes to the player's, as
+    // IsWithinLOSInMap does for a player standing there.
+    float const eyeZ = z + (height > 0.0f ? height : EYE_HEIGHT);
     Position const from = boss->GetHitSpherePointFor({ x, y, eyeZ });
     return boss->GetMap()->isInLineOfSight(from.GetPositionX(), from.GetPositionY(), from.GetPositionZ(), x, y, eyeZ,
                                            boss->GetPhaseMask(), LINEOFSIGHT_ALL_CHECKS,
@@ -93,10 +95,19 @@ namespace
             return std::nullopt;
         static std::regex const number(R"(-?\d+(?:\.\d+)?)");
         std::vector<float> values;
+        bool bad = false;
         for (auto it = std::sregex_iterator(text.begin(), text.end(), number); it != std::sregex_iterator() && values.size() < 3;
              ++it)
-            values.push_back(std::stof(it->str()));
-        if (values.size() < 3)
+        {
+            // strtof, not stof: a number too long for a float throws from stof, and this runs in
+            // the config load.
+            std::string const word = it->str();
+            float const value = std::strtof(word.c_str(), nullptr);
+            if (!std::isfinite(value) || std::fabs(value) > 100000.0f)
+                bad = true;
+            values.push_back(value);
+        }
+        if (bad || values.size() < 3)
         {
             LOG_ERROR("module", "mod-raid-clear: {} = \"{}\" isn't \"x y z\"; the spot is ignored.", key, text);
             return std::nullopt;
@@ -191,7 +202,7 @@ namespace
                                   z + EYE_HEIGHT, bot->GetPhaseMask(), LINEOFSIGHT_ALL_CHECKS,
                                   VMAP::ModelIgnoreFlags::Nothing))
             return spot;
-        if (hideFrom && SeesSpot(hideFrom, x, y, z))
+        if (hideFrom && SeesSpot(hideFrom, x, y, z, bot->GetCollisionHeight()))
             return spot;
         return Position(x, y, z);
     }
@@ -221,7 +232,7 @@ namespace
                 float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + RaidClear::WAY_OUT_DOWN);
                 if (z <= INVALID_HEIGHT || std::fabs(z - botZ) > RaidClear::WAY_OUT_DOWN)
                     continue;
-                if (SeesSpot(from, x, y, z))
+                if (SeesSpot(from, x, y, z, bot->GetCollisionHeight()))
                     continue;
 
                 PathGenerator path(bot);
@@ -232,7 +243,8 @@ namespace
                 if (length > maxPath || (found && length >= bestLength))
                     continue;
                 G3D::Vector3 const& end = path.GetActualEndPosition();
-                if (std::hypot(end.x - x, end.y - y) > RaidClear::WAY_OUT_END_SLACK || SeesSpot(from, end.x, end.y, end.z) ||
+                if (std::hypot(end.x - x, end.y - y) > RaidClear::WAY_OUT_END_SLACK ||
+                    SeesSpot(from, end.x, end.y, end.z, bot->GetCollisionHeight()) ||
                     leash.Pulls(path.GetPath()))
                     continue;
 
@@ -328,25 +340,40 @@ namespace
 
     // --- Firemaw: who is hiding ---------------------------------------------------
 
+    struct Hide
+    {
+        uint32 sinceMs = 0;   // when it set off
+        uint32 unseenMs = 0;  // when it was last out of his sight; 0: not yet
+    };
     struct FiremawHides
     {
         ObjectGuid boss;
-        std::unordered_map<ObjectGuid, uint32> hiding;  // since when
+        uint32 touchedMs = 0;                           // when a bot last looked at it
+        std::unordered_map<ObjectGuid, Hide> hiding;
         std::unordered_map<ObjectGuid, uint32> gaveUp;  // when it last gave up
     };
     std::mutex sHideLock;
     std::unordered_map<uint32, FiremawHides> sHides;  // by instance id
+    // A record nobody has looked at for this long is from an earlier pull (he keeps his GUID
+    // through a wipe): the next look starts a new one.
+    constexpr uint32 HIDES_STALE_MS = 10000;
 
     // The record for this fight. Call with the lock held.
-    FiremawHides& HidesOf(uint32 instanceId, ObjectGuid boss)
+    FiremawHides& HidesOf(uint32 instanceId, ObjectGuid boss, uint32 now)
     {
         FiremawHides& hides = sHides[instanceId];
-        if (hides.boss != boss)
+        if (hides.boss != boss || getMSTimeDiff(hides.touchedMs, now) > HIDES_STALE_MS)
         {
             hides = FiremawHides();
             hides.boss = boss;
         }
+        hides.touchedMs = now;
         return hides;
+    }
+
+    bool Listed(std::vector<ObjectGuid> const& guids, ObjectGuid guid)
+    {
+        return std::find(guids.begin(), guids.end(), guid) != guids.end();
     }
 
     void StopHiding(Player* bot)
@@ -376,7 +403,8 @@ namespace
 
     // Healers take turns: at most a third of them out at once, those with the most stacks
     // first. One with HEALER_MUST_HIDE_STACKS goes anyway: it is about to die where it stands.
-    bool HealerTurn(Player* bot, Creature* boss, uint8 stacks, std::vector<ObjectGuid> const& hiding)
+    bool HealerTurn(Player* bot, Creature* boss, uint8 stacks, std::vector<ObjectGuid> const& hiding,
+                    std::vector<ObjectGuid> const& gaveUp)
     {
         if (stacks >= HEALER_MUST_HIDE_STACKS)
             return true;
@@ -396,13 +424,15 @@ namespace
             if (member == bot)
                 continue;
             uint8 const theirs = BuffetStacks(member);
-            if (std::find(hiding.begin(), hiding.end(), member->GetGUID()) != hiding.end())
+            if (Listed(hiding, member->GetGUID()))
             {
                 if (theirs)
                     ++hidden;
                 continue;
             }
-            if (!GET_PLAYERBOT_AI(member) || boss->GetVictim() == member || theirs < FlameBuffetThreshold(member))
+            // One that found nowhere to go a moment ago isn't waiting for a turn it can't use.
+            if (!GET_PLAYERBOT_AI(member) || boss->GetVictim() == member || theirs < FlameBuffetThreshold(member) ||
+                Listed(gaveUp, member->GetGUID()))
                 continue;
             if (theirs > stacks || (theirs == stacks && member->GetGUID() < bot->GetGUID()))
                 ++ahead;
@@ -421,8 +451,7 @@ namespace
         {
             Player* member = ref->GetSource();
             if (!InFight(member, bot) || member == bot || boss->GetVictim() == member || !PlayerbotAI::IsTank(member) ||
-                !GET_PLAYERBOT_AI(member) || BuffetStacks(member) > TANK_SPARE_STACKS ||
-                std::find(hiding.begin(), hiding.end(), member->GetGUID()) != hiding.end())
+                !GET_PLAYERBOT_AI(member) || BuffetStacks(member) > TANK_SPARE_STACKS || Listed(hiding, member->GetGUID()))
                 continue;
             return true;
         }
@@ -430,19 +459,29 @@ namespace
     }
 
     // Whether a bot that isn't hiding yet should go now.
-    bool WantsToHide(Player* bot, Creature* boss, uint8 stacks, std::vector<ObjectGuid> const& hiding)
+    bool WantsToHide(Player* bot, Creature* boss, uint8 stacks, std::vector<ObjectGuid> const& hiding,
+                     std::vector<ObjectGuid> const& gaveUp)
     {
         if (PlayerbotAI::IsTank(bot))
         {
-            // One of his two tanks rests while another can stand in for it; a spare one hides
-            // like everyone else.
+            // One of his two tanks rests while another can stand in for it, or (with only two)
+            // once he is on a fresh one that holds him on its own. A spare one hides like
+            // everyone else.
             if (HoldsDrake(bot, boss))
-                return stacks >= TANK_REST_STACKS && SpareTank(bot, boss, hiding);
+            {
+                if (stacks < TANK_REST_STACKS)
+                    return false;
+                Unit* victim = boss->GetVictim();
+                Player* onTank = victim ? victim->ToPlayer() : nullptr;
+                bool const freshTank = onTank && onTank != bot && PlayerbotAI::IsTank(onTank) &&
+                                       BuffetStacks(onTank) + TANK_SWAP_GAP <= stacks;
+                return freshTank || SpareTank(bot, boss, hiding);
+            }
             return stacks >= FlameBuffetThreshold(bot);
         }
         if (stacks < FlameBuffetThreshold(bot))
             return false;
-        return !PlayerbotAI::IsHeal(bot) || HealerTurn(bot, boss, stacks, hiding);
+        return !PlayerbotAI::IsHeal(bot) || HealerTurn(bot, boss, stacks, hiding, gaveUp);
     }
 
     // Decides, for this bot, whether it hides from Firemaw now, and keeps the record. Only a bot's
@@ -460,15 +499,26 @@ namespace
 
         uint32 const now = getMSTime();
         ObjectGuid const me = bot->GetGUID();
+        // Asked before the lock: a sight test is all it is, but nothing else runs under it.
+        bool const seen = SeenBy(boss, bot);
         std::vector<ObjectGuid> hiding;
+        std::vector<ObjectGuid> gaveUp;
         {
             std::lock_guard<std::mutex> guard(sHideLock);
-            FiremawHides& hides = HidesOf(bot->GetInstanceId(), boss->GetGUID());
+            FiremawHides& hides = HidesOf(bot->GetInstanceId(), boss->GetGUID(), now);
             auto mine = hides.hiding.find(me);
             if (mine != hides.hiding.end())
             {
-                // Gone this long and still in his sight: there is nowhere to go. Fight on.
-                if (getMSTimeDiff(mine->second, now) >= HIDE_GIVE_UP_MS && SeenBy(boss, bot))
+                Hide& hide = mine->second;
+                if (!seen)
+                {
+                    hide.unseenMs = now ? now : 1;
+                    return true;
+                }
+                // In his sight for this long, since it set off or since it last was out of it
+                // (a dodge, a turn of his): there is nowhere to go. Fight on.
+                uint32 const lastTry = hide.unseenMs ? hide.unseenMs : hide.sinceMs;
+                if (getMSTimeDiff(lastTry, now) >= HIDE_GIVE_UP_MS)
                 {
                     hides.hiding.erase(mine);
                     hides.gaveUp[me] = now ? now : 1;
@@ -476,20 +526,24 @@ namespace
                 }
                 return true;
             }
-            auto gaveUp = hides.gaveUp.find(me);
-            if (gaveUp != hides.gaveUp.end() && getMSTimeDiff(gaveUp->second, now) < HIDE_RETRY_MS)
+            for (auto const& [guid, at] : hides.gaveUp)
+                if (getMSTimeDiff(at, now) < HIDE_RETRY_MS)
+                    gaveUp.push_back(guid);
+            if (Listed(gaveUp, me))
                 return false;
             hiding.reserve(hides.hiding.size());
-            for (auto const& [guid, since] : hides.hiding)
+            for (auto const& [guid, hide] : hides.hiding)
                 hiding.push_back(guid);
         }
 
         // Looked at without the lock: it asks about other bots' hiding through it.
-        if (!WantsToHide(bot, boss, stacks, hiding))
+        if (!WantsToHide(bot, boss, stacks, hiding, gaveUp))
             return false;
 
         std::lock_guard<std::mutex> guard(sHideLock);
-        HidesOf(bot->GetInstanceId(), boss->GetGUID()).hiding[me] = now ? now : 1;
+        Hide& hide = HidesOf(bot->GetInstanceId(), boss->GetGUID(), now).hiding[me];
+        hide.sinceMs = now ? now : 1;
+        hide.unseenMs = seen ? 0 : hide.sinceMs;
         return true;
     }
 
@@ -529,6 +583,19 @@ void RaidClear::BlackwingLair::NoteChromaggusBreath(Creature* boss, uint32 spell
 
 // --- Hiding ------------------------------------------------------------------------
 
+namespace
+{
+    // Already walking to within a yard of there: a walk sent again every tick plans its path
+    // again every tick.
+    bool OnTheWay(Player* bot, Position const& to)
+    {
+        if (!bot->isMoving() || bot->movespline->Finalized())
+            return false;
+        G3D::Vector3 const dest = bot->movespline->FinalDestination();
+        return to.GetExactDist(dest.x, dest.y, dest.z) < 1.0f;
+    }
+}
+
 bool RcBwlHideAction::Execute(Event /*event*/)
 {
     Unit* from = HideFrom();
@@ -540,35 +607,50 @@ bool RcBwlHideAction::Execute(Event /*event*/)
     if (!SeenBy(from, bot))
         return false;
 
-    // The role's spot from the config, unless he can see it from where he stands now.
+    float const height = bot->GetCollisionHeight();
+    Position target;
+    bool found = false;
+
+    // The role's spot from the config, unless he can see it from where he stands now, or the bot
+    // stands on it and he still sees it there.
     if (Position const* spot = HideSpotFor(bot, from->GetEntry()))
     {
         Position const place = PlaceAt(bot, *spot, from);
-        if (!SeesSpot(from, place.GetPositionX(), place.GetPositionY(), place.GetPositionZ()))
+        if (bot->GetExactDist(place) > 1.0f &&
+            !SeesSpot(from, place.GetPositionX(), place.GetPositionY(), place.GetPositionZ(), height))
         {
-            AI_VALUE(LastMovement&, "last movement").clear();
-            return MoveTo(bot->GetMapId(), place.GetPositionX(), place.GetPositionY(), place.GetPositionZ(), false,
-                          false, false, false, MovementPriority::MOVEMENT_FORCED);
+            target = place;
+            found = true;
         }
     }
 
-    uint64 const now = GameTime::GetGameTimeMS().count();
-    bool const cached = _coverFrom == from->GetGUID() && now - _coverFoundMs < COVER_REUSE_MS &&
-                        !SeesSpot(from, _cover.GetPositionX(), _cover.GetPositionY(), _cover.GetPositionZ());
-    if (!cached)
+    if (!found)
     {
-        if (now < _noCoverUntilMs)
-            return false;
-        if (!FindCover(botAI, bot, from, _range, _maxPath, _cover))
+        uint64 const now = GameTime::GetGameTimeMS().count();
+        bool const cached =
+            _coverFrom == from->GetGUID() && now - _coverFoundMs < COVER_REUSE_MS && bot->GetExactDist(_cover) > 1.0f &&
+            !SeesSpot(from, _cover.GetPositionX(), _cover.GetPositionY(), _cover.GetPositionZ(), height);
+        if (!cached)
         {
-            _noCoverUntilMs = now + COVER_RETRY_MS;
-            return false;  // nowhere to hide: fight on
+            if (now < _noCoverUntilMs)
+                return false;
+            if (!FindCover(botAI, bot, from, _range, _maxPath, _cover) || bot->GetExactDist(_cover) <= 1.0f)
+            {
+                _coverFrom = ObjectGuid::Empty;
+                _noCoverUntilMs = now + COVER_RETRY_MS;
+                return false;  // nowhere to hide: fight on
+            }
+            _coverFrom = from->GetGUID();
+            _coverFoundMs = now;
         }
-        _coverFrom = from->GetGUID();
-        _coverFoundMs = now;
+        target = _cover;
     }
 
-    return MoveTo(bot->GetMapId(), _cover.GetPositionX(), _cover.GetPositionY(), _cover.GetPositionZ(), false, false,
+    // On its way: nothing else this tick, so no cast stops the run.
+    if (OnTheWay(bot, target))
+        return true;
+    AI_VALUE(LastMovement&, "last movement").clear();
+    return MoveTo(bot->GetMapId(), target.GetPositionX(), target.GetPositionY(), target.GetPositionZ(), false, false,
                   false, false, MovementPriority::MOVEMENT_FORCED);
 }
 
@@ -619,10 +701,68 @@ namespace
         return nullptr;
     }
 
+    // Spell and heal reach, with a margin, between two players' middles (heals) and from a
+    // caster's middle to the edge of a boss (damage).
+    constexpr float SPOT_HEAL_REACH = 38.0f;
+    constexpr float SPOT_SPELL_REACH = 33.0f;
+
+    // Whether a caster or healer standing there can do its job: a healer reach and see whoever
+    // the boss is on, a damage dealer reach and see the boss. A spot it can't is no spot: the
+    // bot is left to playerbots' own positioning until it can again.
+    bool CanWorkFrom(Player* bot, Creature* boss, Position const& place)
+    {
+        float const eyeZ = place.GetPositionZ() + bot->GetCollisionHeight();
+        if (PlayerbotAI::IsHeal(bot))
+        {
+            Unit* victim = boss->GetVictim();
+            if (!victim)
+                return true;
+            return victim->GetExactDist(place) <= SPOT_HEAL_REACH &&
+                   bot->GetMap()->isInLineOfSight(place.GetPositionX(), place.GetPositionY(), eyeZ,
+                                                  victim->GetPositionX(), victim->GetPositionY(),
+                                                  victim->GetPositionZ() + victim->GetCollisionHeight(),
+                                                  bot->GetPhaseMask(), LINEOFSIGHT_ALL_CHECKS,
+                                                  VMAP::ModelIgnoreFlags::M2);
+        }
+        return boss->GetExactDist2d(place.GetPositionX(), place.GetPositionY()) - boss->GetCombatReach() <=
+                   SPOT_SPELL_REACH &&
+               SeesSpot(boss, place.GetPositionX(), place.GetPositionY(), place.GetPositionZ(),
+                        bot->GetCollisionHeight());
+    }
+
+    struct SpotWant
+    {
+        Position place;
+        bool tank = false;
+        bool still = false;  // stays where it is for now (he is breathing): held, not walked
+    };
+
+    // Firemaw's two tank spots, for one of his tanks: the one he is on keeps to whichever of the
+    // two it stands at (a swap doesn't drag him across), else the tank spot; the other takes the
+    // one the tank he is on doesn't.
+    Position const* FiremawTankSpot(Player* bot, Creature* boss)
+    {
+        Position const* main = BossSpot(NPC_FIREMAW, Spot::Tank);
+        Position const* side = BossSpot(NPC_FIREMAW, Spot::OffTank);
+        Unit* victim = boss->GetVictim();
+        if (victim == bot)
+        {
+            if (main && side && bot->GetExactDist(*side) < bot->GetExactDist(*main) &&
+                bot->GetExactDist(*side) <= SPOT_HOLD)
+                return side;
+            return main;
+        }
+        if (!HoldsDrake(bot, boss))
+            return nullptr;
+        if (main && side && victim)
+            return victim->GetExactDist(*main) <= victim->GetExactDist(*side) ? side : main;
+        return side;
+    }
+
     // Where this bot belongs in the fight, if its role has a spot and it isn't hiding: the tank
-    // the boss is on at the tank spot, Firemaw's other tank at the off-tank spot, ranged and
+    // the boss is on at the tank spot, Firemaw's other tank at the other one, ranged and
     // healers round theirs. Melee and spare tanks have none: they go where the fight is.
-    bool WantedSpot(Player* bot, Position& out, bool& tank)
+    bool WantedSpot(Player* bot, SpotWant& want)
     {
         Creature* boss = SpotBoss(bot);
         if (!boss || !bot->IsAlive())
@@ -632,15 +772,23 @@ namespace
             return false;
 
         Position const* spot = nullptr;
-        tank = PlayerbotAI::IsTank(bot);
-        if (tank)
+        want.tank = PlayerbotAI::IsTank(bot);
+        if (want.tank)
         {
-            if (boss->GetVictim() == bot)
+            if (entry == NPC_FIREMAW)
+                spot = FiremawTankSpot(bot, boss);
+            else if (boss->GetVictim() == bot)
                 spot = BossSpot(entry, Spot::Tank);
-            else if (entry == NPC_FIREMAW && HoldsDrake(bot, boss))
-                spot = BossSpot(entry, Spot::OffTank);
+            if (!spot)
+                return false;
+            want.place = *spot;
+            // He turns with whoever he is on, and a breath or buffet lands where he faces when
+            // the cast ends.
+            want.still = boss->GetVictim() == bot && DragonBreathing(boss);
+            return true;
         }
-        else if (PlayerbotAI::IsHeal(bot))
+
+        if (PlayerbotAI::IsHeal(bot))
         {
             spot = BossSpot(entry, Spot::Healer);
             if (!spot)
@@ -651,8 +799,17 @@ namespace
         if (!spot)
             return false;
 
-        out = tank ? *spot : PlaceAt(bot, *spot, nullptr);
-        return true;
+        want.place = PlaceAt(bot, *spot, nullptr);
+        // Not a place in Firemaw's front (where that is moves with his tank), and not one it
+        // can't heal or hit from.
+        if (entry == NPC_FIREMAW && InDragonsWay(bot, boss, want.place.GetPositionX(), want.place.GetPositionY()))
+            return false;
+        return CanWorkFrom(bot, boss, want.place);
+    }
+
+    float SpotNear(SpotWant const& want)
+    {
+        return want.tank ? SPOT_TANK_NEAR : SPOT_NEAR;
     }
 }
 
@@ -660,28 +817,24 @@ bool RcBwlBossSpotTrigger::IsActive()
 {
     if (!botAI->CanMove())
         return false;
-    Position spot;
-    bool tank = false;
-    return WantedSpot(bot, spot, tank) && bot->GetExactDist(spot) > (tank ? SPOT_TANK_NEAR : SPOT_NEAR);
+    SpotWant want;
+    return WantedSpot(bot, want) && !want.still && bot->GetExactDist(want.place) > SpotNear(want);
 }
 
 bool RcBwlBossSpotAction::Execute(Event /*event*/)
 {
-    Position spot;
-    bool tank = false;
-    if (!WantedSpot(bot, spot, tank) || bot->GetExactDist(spot) <= (tank ? SPOT_TANK_NEAR : SPOT_NEAR))
+    SpotWant want;
+    if (!WantedSpot(bot, want) || want.still || bot->GetExactDist(want.place) <= SpotNear(want))
         return false;
-    // Already on the way.
-    if (bot->isMoving() && !bot->movespline->Finalized())
-    {
-        G3D::Vector3 const dest = bot->movespline->FinalDestination();
-        if (spot.GetExactDist(dest.x, dest.y, dest.z) < 1.0f)
-            return true;
-    }
-    if (tank)
+    // On its way: a tank holds the tick (nothing else should walk it), a caster or healer lets
+    // its heals and instants go out meanwhile.
+    if (OnTheWay(bot, want.place))
+        return want.tank;
+    if (want.tank)
         AI_VALUE(LastMovement&, "last movement").clear();
-    return MoveTo(bot->GetMapId(), spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), false, false, false,
-                  false, tank ? MovementPriority::MOVEMENT_FORCED : MovementPriority::MOVEMENT_COMBAT);
+    return MoveTo(bot->GetMapId(), want.place.GetPositionX(), want.place.GetPositionY(), want.place.GetPositionZ(),
+                  false, false, false, false,
+                  want.tank ? MovementPriority::MOVEMENT_FORCED : MovementPriority::MOVEMENT_COMBAT);
 }
 
 float RcBwlSpotHoldMultiplier::GetValue(Action* action)
@@ -693,9 +846,8 @@ float RcBwlSpotHoldMultiplier::GetValue(Action* action)
     if (!_checkedAtMs || getMSTimeDiff(_checkedAtMs, now) >= 250)
     {
         _checkedAtMs = now ? now : 1;
-        Position spot;
-        bool tank = false;
-        _holds = WantedSpot(bot, spot, tank) && bot->GetExactDist(spot) <= SPOT_HOLD;
+        SpotWant want;
+        _holds = WantedSpot(bot, want) && bot->GetExactDist(want.place) <= SPOT_HOLD;
     }
     if (!_holds)
         return 1.0f;

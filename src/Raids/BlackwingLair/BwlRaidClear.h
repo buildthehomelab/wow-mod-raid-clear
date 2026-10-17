@@ -447,7 +447,14 @@ namespace RaidClear::BlackwingLair
     // spells judge it: small props (M2 models) don't block, and a spot is looked at from the
     // boss's own eyes to a player's height above it.
     bool SeenBy(Unit const* boss, WorldObject const* who);
-    bool SeesSpot(Unit const* boss, float x, float y, float z);
+    // `height`: the eyes of whoever would stand there (0: a player's usual 2 yd).
+    bool SeesSpot(Unit const* boss, float x, float y, float z, float height = 0.0f);
+
+    // Firemaw, Ebonroc, Flamegor, Nefarian (BwlPositions.cpp): whether a spot is somewhere this
+    // bot keeps out of round the dragon (his front, Nefarian's tail and roar), and whether he is
+    // casting Shadow Flame or Wing Buffet right now.
+    bool InDragonsWay(Player* bot, Creature* boss, float x, float y);
+    bool DragonBreathing(Creature* boss);
 
     // The bot has set off to hide from Firemaw's Flame Buffet and holds there until the last
     // stack is gone. One answer for every bot: healers' turns, his tanks and the front rule all

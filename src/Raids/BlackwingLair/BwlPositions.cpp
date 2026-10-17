@@ -204,6 +204,7 @@ namespace
     struct DrakeState
     {
         ObjectGuid drake;
+        uint32 touchedMs = 0;    // when a bot last looked at it
         ObjectGuid second;
         uint32 secondAddMs = 0;  // since when the second has held an add; 0: it holds none
         uint32 looseMs = 0;      // since when he has been on someone who isn't a tank; 0: he isn't
@@ -211,16 +212,28 @@ namespace
     std::mutex sDrakeLock;
     std::unordered_map<uint32, DrakeState> sDrakes;  // by instance id
 
+    // A record nobody has looked at for this long is from an earlier pull (a drake keeps his
+    // GUID through a wipe): the next look starts a new one.
+    constexpr uint32 DRAKE_STATE_STALE_MS = 10000;
+
     // The record for this drake. Call with the lock held.
     DrakeState& DrakeStateOf(Creature* drake)
     {
+        uint32 const now = getMSTime();
         DrakeState& state = sDrakes[drake->GetInstanceId()];
-        if (state.drake != drake->GetGUID())
+        if (state.drake != drake->GetGUID() || getMSTimeDiff(state.touchedMs, now) > DRAKE_STATE_STALE_MS)
         {
             state = DrakeState();
             state.drake = drake->GetGUID();
         }
+        state.touchedMs = now;
         return state;
+    }
+
+    uint8 FlameBuffetOn(Unit const* unit)
+    {
+        Aura const* buffet = unit ? unit->GetAura(SPELL_FLAME_BUFFET) : nullptr;
+        return buffet ? buffet->GetStackAmount() : 0;
     }
 
     // Keeps the loose clock: started when he is first seen on someone who isn't a tank, cleared
@@ -289,18 +302,25 @@ namespace
         if (second && keptHoldsAdd && keptAddMs && getMSTimeDiff(keptAddMs, now) >= DRAKE_SECOND_ADD_MS)
             second = nullptr;
 
+        // A new one: the free bot tank with the fewest Flame Buffet stacks (on Ebonroc and
+        // Flamegor, the first in group order).
         bool picked = false;
         if (!second)
         {
+            uint8 fewest = 0;
             for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
             {
                 Player* member = ref->GetSource();
                 if (!member || member == holders.first || member == mainTank || !MayHoldDrake(member, drake, true) ||
                     HoldsAnAdd(member, drake))
                     continue;
-                second = member;
-                picked = true;
-                break;
+                uint8 const stacks = FlameBuffetOn(member);
+                if (!second || stacks < fewest)
+                {
+                    second = member;
+                    fewest = stacks;
+                    picked = true;
+                }
             }
         }
 
@@ -761,6 +781,16 @@ namespace
 
 // --- The dragons: breath, tail, roar --------------------------------------
 
+bool RaidClear::BlackwingLair::InDragonsWay(Player* bot, Creature* boss, float x, float y)
+{
+    return bot && boss && DragonGap(ZoneOf(bot, boss), x, y) < 0.0f;
+}
+
+bool RaidClear::BlackwingLair::DragonBreathing(Creature* boss)
+{
+    return boss && ConeCast(boss) != 0;
+}
+
 bool RcBwlDragonPositionTrigger::IsActive()
 {
     // A bot that is feared, or rooted in front of him by the rogue call, isn't going anywhere.
@@ -1213,18 +1243,12 @@ namespace
         return std::max(cap, 0.0f);
     }
 
-    uint8 BuffetStacksOf(Unit const* unit)
-    {
-        Aura const* buffet = unit ? unit->GetAura(SPELL_FLAME_BUFFET) : nullptr;
-        return buffet ? buffet->GetStackAmount() : 0;
-    }
-
     // Firemaw: this tank, one of his two, has so many fewer Flame Buffet stacks than the tank he
     // is on that it should have him.
     bool FresherThanVictim(Player* bot, Creature* drake, uint8 victimAtLeast)
     {
-        uint8 const theirs = BuffetStacksOf(drake->GetVictim());
-        uint8 const mine = BuffetStacksOf(bot);
+        uint8 const theirs = FlameBuffetOn(drake->GetVictim());
+        uint8 const mine = FlameBuffetOn(bot);
         return theirs >= victimAtLeast && theirs >= mine + TANK_SWAP_GAP;
     }
 }
@@ -1300,7 +1324,18 @@ float RcBwlDrakeTauntMultiplier::GetValue(Action* action)
     else if (action->GetTarget() != drake)
         return 1.0f;
     if (HoldsDrake(bot, drake))
-        return 1.0f;
+    {
+        // Firemaw: the holder he isn't on, with more stacks than the tank he is on, stays under
+        // that one's threat. He was handed over to get him off it, and it would take him back at
+        // 110% in melee (and then nobody may taunt him off it: the gap rule).
+        Unit* victim = drake->GetVictim();
+        Player* onTank = victim ? victim->ToPlayer() : nullptr;
+        if (drake->GetEntry() != NPC_FIREMAW || !onTank || onTank == bot || !PlayerbotAI::IsTank(onTank) ||
+            FlameBuffetOn(bot) <= FlameBuffetOn(onTank))
+            return 1.0f;
+        float const theirs = drake->GetThreatMgr().GetThreat(onTank);
+        return theirs > 0.0f && drake->GetThreatMgr().GetThreat(bot) >= theirs * DRAKE_OFFTANK_SHARE ? 0.0f : 1.0f;
+    }
     float const cap = DrakeThreatCap(bot, drake);
     if (cap <= 0.0f)
         return 1.0f;
