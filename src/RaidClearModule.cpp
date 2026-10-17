@@ -214,6 +214,7 @@ public:
 
         // World thread, outside map updates: the same place mod-dungeon-clear reconciles its
         // strategies from.
+        TempleOfAhnQiraj::SweepParkedPets();
         for (auto const& [guid, player] : ObjectAccessor::GetPlayers())
         {
             Reconcile(player);

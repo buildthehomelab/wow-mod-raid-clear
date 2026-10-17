@@ -126,6 +126,18 @@ public:
         creators["rc aq40 leave poison cloud"] = &RaidClearActionContext::aq40_leave_poison_cloud;
         creators["rc aq40 skeram interrupt"] = &RaidClearActionContext::aq40_skeram_interrupt;
         creators["rc aq40 mortal wound taunt"] = &RaidClearActionContext::aq40_mortal_wound_taunt;
+        creators["rc aq40 kill glob"] = &RaidClearActionContext::aq40_kill_glob;
+        creators["rc aq40 nature resistance"] = &RaidClearActionContext::aq40_nature_resistance;
+        creators["rc aq40 destroy cleansing totem"] = &RaidClearActionContext::aq40_destroy_cleansing_totem;
+        creators["rc aq40 poison bolt keep away"] = &RaidClearActionContext::aq40_poison_bolt_keep_away;
+        creators["rc aq40 defender aoe move"] = &RaidClearActionContext::aq40_defender_aoe_move;
+        creators["rc aq40 plague move away"] = &RaidClearActionContext::aq40_plague_move_away;
+        creators["rc aq40 glob aoe"] = &RaidClearActionContext::aq40_glob_aoe;
+        creators["rc aq40 attack twin"] = &RaidClearActionContext::aq40_attack_twin;
+        creators["rc aq40 twins position"] = &RaidClearActionContext::aq40_twins_position;
+        creators["rc aq40 twins apart"] = &RaidClearActionContext::aq40_twins_apart;
+        creators["rc aq40 twins pet"] = &RaidClearActionContext::aq40_twins_pet;
+        creators["rc aq40 veklor tank threat"] = &RaidClearActionContext::aq40_veklor_tank_threat;
         creators["rc control charmed"] = &RaidClearActionContext::control_charmed;
         creators["rc leave charmed target"] = &RaidClearActionContext::leave_charmed_target;
     }
@@ -204,6 +216,18 @@ private:
     static Action* aq40_leave_poison_cloud(PlayerbotAI* botAI) { return new RcAq40LeavePoisonCloudAction(botAI); }
     static Action* aq40_skeram_interrupt(PlayerbotAI* botAI) { return new RcAq40SkeramInterruptAction(botAI); }
     static Action* aq40_mortal_wound_taunt(PlayerbotAI* botAI) { return new RcAq40MortalWoundTauntAction(botAI); }
+    static Action* aq40_kill_glob(PlayerbotAI* botAI) { return new RcAq40KillGlobAction(botAI); }
+    static Action* aq40_nature_resistance(PlayerbotAI* botAI) { return new RcAq40NatureResistanceAction(botAI); }
+    static Action* aq40_destroy_cleansing_totem(PlayerbotAI* botAI) { return new RcAq40DestroyCleansingTotemAction(botAI); }
+    static Action* aq40_poison_bolt_keep_away(PlayerbotAI* botAI) { return new RcAq40PoisonBoltKeepAwayAction(botAI); }
+    static Action* aq40_defender_aoe_move(PlayerbotAI* botAI) { return new RcAq40DefenderAoeMoveAction(botAI); }
+    static Action* aq40_plague_move_away(PlayerbotAI* botAI) { return new RcAq40PlagueMoveAwayAction(botAI); }
+    static Action* aq40_glob_aoe(PlayerbotAI* botAI) { return new RcAq40GlobAoeAction(botAI); }
+    static Action* aq40_attack_twin(PlayerbotAI* botAI) { return new RcAq40AttackTwinAction(botAI); }
+    static Action* aq40_twins_position(PlayerbotAI* botAI) { return new RcAq40TwinsPositionAction(botAI); }
+    static Action* aq40_twins_apart(PlayerbotAI* botAI) { return new RcAq40TwinsApartAction(botAI); }
+    static Action* aq40_twins_pet(PlayerbotAI* botAI) { return new RcAq40TwinsPetAction(botAI); }
+    static Action* aq40_veklor_tank_threat(PlayerbotAI* botAI) { return new RcAq40VeklorTankThreatAction(botAI); }
     static Action* control_charmed(PlayerbotAI* botAI) { return new RcControlCharmedAction(botAI); }
     static Action* leave_charmed_target(PlayerbotAI* botAI) { return new RcLeaveCharmedTargetAction(botAI); }
 };
@@ -285,6 +309,18 @@ public:
         creators["rc aq40 poison cloud"] = &RaidClearTriggerContext::aq40_poison_cloud;
         creators["rc aq40 skeram cast"] = &RaidClearTriggerContext::aq40_skeram_cast;
         creators["rc aq40 mortal wound"] = &RaidClearTriggerContext::aq40_mortal_wound;
+        creators["rc aq40 glob"] = &RaidClearTriggerContext::aq40_glob;
+        creators["rc aq40 nature resistance"] = &RaidClearTriggerContext::aq40_nature_resistance;
+        creators["rc aq40 cleansing totem"] = &RaidClearTriggerContext::aq40_cleansing_totem;
+        creators["rc aq40 poison bolt"] = &RaidClearTriggerContext::aq40_poison_bolt;
+        creators["rc aq40 defender aoe"] = &RaidClearTriggerContext::aq40_defender_aoe;
+        creators["rc aq40 plague"] = &RaidClearTriggerContext::aq40_plague;
+        creators["rc aq40 glob aoe"] = &RaidClearTriggerContext::aq40_glob_aoe;
+        creators["rc aq40 twin target"] = &RaidClearTriggerContext::aq40_twin_target;
+        creators["rc aq40 twins position"] = &RaidClearTriggerContext::aq40_twins_position;
+        creators["rc aq40 twins apart"] = &RaidClearTriggerContext::aq40_twins_apart;
+        creators["rc aq40 twins pet"] = &RaidClearTriggerContext::aq40_twins_pet;
+        creators["rc aq40 veklor tank threat"] = &RaidClearTriggerContext::aq40_veklor_tank_threat;
         creators["rc charmed member"] = &RaidClearTriggerContext::charmed_member;
         creators["rc charmed target"] = &RaidClearTriggerContext::charmed_target;
         creators["rc mage target reflects"] = &RaidClearTriggerContext::mage_target_reflects;
@@ -375,6 +411,18 @@ private:
     static Trigger* aq40_poison_cloud(PlayerbotAI* botAI) { return new RcAq40PoisonCloudTrigger(botAI); }
     static Trigger* aq40_skeram_cast(PlayerbotAI* botAI) { return new RcAq40SkeramCastTrigger(botAI); }
     static Trigger* aq40_mortal_wound(PlayerbotAI* botAI) { return new RcAq40MortalWoundTrigger(botAI); }
+    static Trigger* aq40_glob(PlayerbotAI* botAI) { return new RcAq40GlobTrigger(botAI); }
+    static Trigger* aq40_nature_resistance(PlayerbotAI* botAI) { return new RcAq40NatureResistanceTrigger(botAI); }
+    static Trigger* aq40_cleansing_totem(PlayerbotAI* botAI) { return new RcAq40CleansingTotemTrigger(botAI); }
+    static Trigger* aq40_poison_bolt(PlayerbotAI* botAI) { return new RcAq40PoisonBoltTrigger(botAI); }
+    static Trigger* aq40_defender_aoe(PlayerbotAI* botAI) { return new RcAq40DefenderAoeTrigger(botAI); }
+    static Trigger* aq40_plague(PlayerbotAI* botAI) { return new RcAq40PlagueTrigger(botAI); }
+    static Trigger* aq40_glob_aoe(PlayerbotAI* botAI) { return new RcAq40GlobAoeTrigger(botAI); }
+    static Trigger* aq40_twin_target(PlayerbotAI* botAI) { return new RcAq40TwinTargetTrigger(botAI); }
+    static Trigger* aq40_twins_position(PlayerbotAI* botAI) { return new RcAq40TwinsPositionTrigger(botAI); }
+    static Trigger* aq40_twins_apart(PlayerbotAI* botAI) { return new RcAq40TwinsApartTrigger(botAI); }
+    static Trigger* aq40_twins_pet(PlayerbotAI* botAI) { return new RcAq40TwinsPetTrigger(botAI); }
+    static Trigger* aq40_veklor_tank_threat(PlayerbotAI* botAI) { return new RcAq40VeklorTankThreatTrigger(botAI); }
     static Trigger* charmed_member(PlayerbotAI* botAI) { return new RcCharmedMemberTrigger(botAI); }
     static Trigger* charmed_target(PlayerbotAI* botAI) { return new RcCharmedTargetTrigger(botAI); }
     static Trigger* mage_target_reflects(PlayerbotAI* botAI)

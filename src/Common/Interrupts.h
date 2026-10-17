@@ -11,6 +11,8 @@
 #ifndef MOD_RAID_CLEAR_INTERRUPTS_H
 #define MOD_RAID_CLEAR_INTERRUPTS_H
 
+#include <string>
+
 class Player;
 class PlayerbotAI;
 class Unit;
@@ -25,6 +27,9 @@ namespace RaidClear
     // The first interrupt the bot has ready, paid for and in reach of the target (playerbots'
     // name), or nullptr. A tank only interrupts what it holds: it would turn its back on that.
     char const* ReadyInterrupt(PlayerbotAI* botAI, Player* bot, Unit* target);
+
+    // One of the interrupts above, by its playerbots name.
+    bool IsInterrupt(std::string const& name);
 }
 
 #endif
