@@ -7,6 +7,7 @@
 #include "SplashSpells.h"
 
 #include "Player.h"
+#include "Unit.h"
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
 #include "SpellInfo.h"
@@ -111,7 +112,12 @@ namespace RaidClear::Splash
             return reach;
         }
 
-        SpellInfo const* info = InfoOf(botAI, name);
+        return ReachOfSpell(bot, InfoOf(botAI, name));
+    }
+
+    Reach ReachOfSpell(Player* bot, SpellInfo const* info)
+    {
+        Reach reach;
         if (!info || info->IsPositive())
             return reach;
         for (SpellEffectInfo const& effect : info->Effects)
@@ -144,5 +150,52 @@ namespace RaidClear::Splash
                 reach.aroundTarget = std::max(reach.aroundTarget, radius);
         }
         return reach;
+    }
+
+    bool LandsOn(Player* bot, Reach const& reach, Unit* target, std::vector<Unit*> const& fighting,
+                 std::function<bool(Unit*)> const& pick)
+    {
+        // An area spell reaches a mob's edge, not its middle.
+        for (Unit* unit : fighting)
+        {
+            float const reachOf = unit->GetCombatReach();
+            bool const hit =
+                (reach.aroundCaster > 0.0f && bot->GetExactDist(unit) <= reach.aroundCaster + reachOf) ||
+                (target && reach.aroundTarget > 0.0f && target->GetExactDist(unit) <= reach.aroundTarget + reachOf);
+            if (hit && pick(unit))
+                return true;
+        }
+
+        if (!reach.chainHops || !target)
+            return false;
+        // A chain goes on a jump at a time, measured edge to edge.
+        std::vector<Unit*> from = { target };
+        std::vector<Unit*> left = fighting;
+        for (uint32 hop = 0; hop < reach.chainHops && !from.empty(); ++hop)
+        {
+            std::vector<Unit*> next;
+            for (auto it = left.begin(); it != left.end();)
+            {
+                bool reached = false;
+                for (Unit* source : from)
+                    if (source->GetExactDist(*it) <=
+                        reach.chainJump + source->GetCombatReach() + (*it)->GetCombatReach())
+                    {
+                        reached = true;
+                        break;
+                    }
+                if (!reached)
+                {
+                    ++it;
+                    continue;
+                }
+                if (pick(*it))
+                    return true;
+                next.push_back(*it);
+                it = left.erase(it);
+            }
+            from = std::move(next);
+        }
+        return false;
     }
 }

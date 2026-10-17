@@ -100,49 +100,9 @@ float RcSpellReflectMultiplier::GetValue(Action* action)
     RaidClear::Splash::Reach const reach = RaidClear::Splash::ReachOf(botAI, bot, cast->getSpell());
     if (!reach.Any())
         return 1.0f;
-
-    // Around the bot, around the target, and a chain's jumps on from the target.
-    for (Unit* unit : fighting)
-    {
-        // An area spell reaches a mob's edge, not its middle.
-        float const reachOf = unit->GetCombatReach();
-        bool const hit = (reach.aroundCaster > 0.0f && bot->GetExactDist(unit) <= reach.aroundCaster + reachOf) ||
-                         (target && reach.aroundTarget > 0.0f &&
-                          target->GetExactDist(unit) <= reach.aroundTarget + reachOf);
-        if (hit && Reflects(unit, info))
-            return 0.0f;
-    }
-
-    if (!reach.chainHops || !target)
-        return 1.0f;
-    // The core measures a jump edge to edge.
-    std::vector<Unit*> from = { target };
-    std::vector<Unit*> left = fighting;
-    for (uint32 hop = 0; hop < reach.chainHops && !from.empty(); ++hop)
-    {
-        std::vector<Unit*> next;
-        for (auto it = left.begin(); it != left.end();)
-        {
-            bool reached = false;
-            for (Unit* source : from)
-                if (source->GetExactDist(*it) <= reach.chainJump + source->GetCombatReach() + (*it)->GetCombatReach())
-                {
-                    reached = true;
-                    break;
-                }
-            if (!reached)
-            {
-                ++it;
-                continue;
-            }
-            if (Reflects(*it, info))
-                return 0.0f;
-            next.push_back(*it);
-            it = left.erase(it);
-        }
-        from = std::move(next);
-    }
-    return 1.0f;
+    return RaidClear::Splash::LandsOn(bot, reach, target, fighting, [info](Unit* unit) { return Reflects(unit, info); })
+               ? 0.0f
+               : 1.0f;
 }
 
 // --- Spells of the other school ---------------------------------------------

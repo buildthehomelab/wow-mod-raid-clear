@@ -9,6 +9,7 @@
 #include "RaidClearConfig.h"
 #include "Common/BossLookup.h"
 #include "Common/SpellReflect.h"
+#include "Common/SplashSpells.h"
 
 #include "AllSpellScript.h"
 #include "AttackAction.h"
@@ -17,16 +18,19 @@
 #include "Map.h"
 #include "MoveSpline.h"
 #include "Pet.h"
+#include "Spell.h"
 #include "GenericSpellActions.h"
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
 #include "ReachTargetActions.h"
+#include "RtiTargetValue.h"
 #include "LastMovementValue.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Timer.h"
 
 #include <array>
+#include <list>
 #include <cmath>
 #include <string>
 
@@ -106,6 +110,14 @@ void RaidClearMoltenCoreStrategy::InitTriggers(std::vector<TriggerNode*>& trigge
         new TriggerNode("rc mc living bomb", { NextAction("rc mc carry living bomb", ACTION_EMERGENCY + 6) }));
 
     triggers.push_back(new TriggerNode("rc mc garr gather", { NextAction("rc mc garr gather", ACTION_RAID + 1) }));
+
+    triggers.push_back(
+        new TriggerNode("rc mc splash trash", { NextAction("rc mc leave splash trash", ACTION_RAID + 1) }));
+
+    // Above playerbots' hound marking (ACTION_RAID).
+    triggers.push_back(new TriggerNode("rc mc finish hounds", { NextAction("rc mc mark hound", ACTION_RAID + 3) }));
+    triggers.push_back(
+        new TriggerNode("rc mc play dead target", { NextAction("rc mc leave play dead", ACTION_RAID + 2) }));
     triggers.push_back(
         new TriggerNode("rc mc anxious firesworn", { NextAction("rc mc leave firesworn", ACTION_RAID + 2) }));
 }
@@ -119,6 +131,7 @@ void RaidClearMoltenCoreStrategy::InitMultipliers(std::vector<Multiplier*>& mult
     multipliers.push_back(new RcMcReflectionMultiplier(botAI));
     multipliers.push_back(new RcMcAnxiousFireswornMultiplier(botAI));
     multipliers.push_back(new RcSpellReflectMultiplier(botAI));
+    multipliers.push_back(new RcMcCoreHoundMultiplier(botAI));
 }
 
 // --- Magmadar -------------------------------------------------------------
@@ -500,7 +513,7 @@ namespace
 
 bool RaidClear::MoltenCore::KillOrderSkips(Player* bot, Unit const* unit)
 {
-    return IsAnxiousFiresworn(bot, unit);
+    return IsAnxiousFiresworn(bot, unit) || (unit && unit->HasAura(SPELL_PLAY_DEAD));
 }
 
 bool RcMcGarrGatherTrigger::IsActive()
@@ -534,19 +547,107 @@ bool RcMcGarrGatherAction::Execute(Event /*event*/)
     return MoveTo(garr, GARR_GATHER_TARGET, MovementPriority::MOVEMENT_COMBAT);
 }
 
+namespace
+{
+    // The unit a spell the bot is casting or channelling is aimed at, or nullptr.
+    Unit* CastingAt(Player* bot, CurrentSpellTypes type)
+    {
+        Spell* spell = bot->GetCurrentSpell(type);
+        return spell ? spell->m_targets.GetUnitTarget() : nullptr;
+    }
+
+    // The living enemies in the bot's fight, but `except`.
+    std::vector<Unit*> Fighting(PlayerbotAI* botAI, Player* bot, Unit const* except)
+    {
+        std::vector<Unit*> fighting;
+        for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            if (unit && unit != except && unit->IsAlive() && unit->IsInMap(bot))
+                fighting.push_back(unit);
+        }
+        return fighting;
+    }
+
+    bool AnyFiresworn(std::vector<Unit*> const& units)
+    {
+        for (Unit* unit : units)
+            if (unit->GetEntry() == NPC_FIRESWORN)
+                return true;
+        return false;
+    }
+
+    // An anxious Firesworn low enough that a tank's hits would finish it before it is back with Garr.
+    bool AnxiousAndLow(Player* bot, Unit const* unit)
+    {
+        return IsAnxiousFiresworn(bot, unit) && unit->GetHealthPct() < GARR_TANK_SPARES_BELOW_PCT;
+    }
+
+    // A spell the bot is casting or channelling that reaches more than its target (a Blizzard or a
+    // Volley on the ground, a Chain Lightning at Garr) and would land on an anxious Firesworn.
+    bool RunningSplashHitsAnxious(PlayerbotAI* botAI, Player* bot, CurrentSpellTypes type)
+    {
+        Spell* spell = bot->GetCurrentSpell(type);
+        if (!spell || !spell->GetSpellInfo())
+            return false;
+        RaidClear::Splash::Reach const reach = RaidClear::Splash::ReachOfSpell(bot, spell->GetSpellInfo());
+        if (!reach.Any())
+            return false;
+        Unit* target = spell->m_targets.GetUnitTarget();
+        if (target == bot)
+            target = nullptr;
+        std::vector<Unit*> const fighting = Fighting(botAI, bot, target);
+        if (!AnyFiresworn(fighting))
+            return false;
+        Player* const self = bot;
+        auto const anxious = [self](Unit* unit) { return IsAnxiousFiresworn(self, unit); };
+        if (RaidClear::Splash::LandsOn(bot, reach, target, fighting, anxious))
+            return true;
+        // Aimed at the ground: what it hits is around that spot.
+        if (!target && reach.aroundTarget > 0.0f && spell->m_targets.HasDst())
+        {
+            WorldLocation const* dest = spell->m_targets.GetDstPos();
+            for (Unit* unit : fighting)
+                if (dest->GetExactDist(unit) <= reach.aroundTarget + unit->GetCombatReach() && anxious(unit))
+                    return true;
+        }
+        return false;
+    }
+}
+
 bool RcMcAnxiousFireswornTrigger::IsActive()
 {
     // The multiplier keeps a bot from starting on one; this is for a bot that was already on it
-    // when it ran out of Garr's range. Auto-attack, Auto Shot and wands need no action to go on.
-    if (!bot->IsInCombat() || PlayerbotAI::IsTank(bot))
+    // when it ran out of Garr's range: a swing, an Auto Shot or a wand goes on by itself, and so
+    // does a cast or a channel (Arcane Missiles, or a Blizzard it has walked into). A tank only
+    // lets go of one that is low: it holds it with taunts until Separation Anxiety is gone.
+    if (!bot->IsInCombat() || bot->GetMapId() != MAP_ID)
         return false;
-    return IsAnxiousFiresworn(bot, bot->GetVictim());
+    if (PlayerbotAI::IsTank(bot))
+        return AnxiousAndLow(bot, bot->GetVictim());
+    if (IsAnxiousFiresworn(bot, bot->GetVictim()) ||
+        IsAnxiousFiresworn(bot, CastingAt(bot, CURRENT_GENERIC_SPELL)) ||
+        IsAnxiousFiresworn(bot, CastingAt(bot, CURRENT_CHANNELED_SPELL)) ||
+        RunningSplashHitsAnxious(botAI, bot, CURRENT_GENERIC_SPELL) ||
+        RunningSplashHitsAnxious(botAI, bot, CURRENT_CHANNELED_SPELL))
+        return true;
+    Pet* pet = bot->GetPet();
+    return pet && IsAnxiousFiresworn(bot, pet->GetVictim());
 }
 
 bool RcMcLeaveFireswornAction::Execute(Event /*event*/)
 {
-    bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
-    bot->AttackStop();
+    bool const tank = PlayerbotAI::IsTank(bot);
+    if (tank ? AnxiousAndLow(bot, bot->GetVictim()) : IsAnxiousFiresworn(bot, bot->GetVictim()))
+    {
+        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+        bot->AttackStop();
+    }
+    if (tank)
+        return true;
+    for (CurrentSpellTypes type : { CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL })
+        if (IsAnxiousFiresworn(bot, CastingAt(bot, type)) || RunningSplashHitsAnxious(botAI, bot, type))
+            bot->InterruptSpell(type);
     if (Pet* pet = bot->GetPet())
         if (IsAnxiousFiresworn(bot, pet->GetVictim()))
             pet->AttackStop();
@@ -555,16 +656,229 @@ bool RcMcLeaveFireswornAction::Execute(Event /*event*/)
 
 float RcMcAnxiousFireswornMultiplier::GetValue(Action* action)
 {
-    // Tanks keep hitting it: they are the ones bringing it back to Garr.
-    if (!action || !bot->IsInCombat() || PlayerbotAI::IsTank(bot))
+    if (!action || !bot->IsInCombat() || bot->GetMapId() != MAP_ID)
         return 1.0f;
     if (!dynamic_cast<CastSpellAction*>(action) && !dynamic_cast<AttackAction*>(action))
         return 1.0f;
 
+    bool const tank = PlayerbotAI::IsTank(bot);
     Unit* target = action->GetTarget();
-    if (!target || target->GetEntry() != NPC_FIRESWORN || !bot->IsValidAttackTarget(target))
+    if (target == bot || (target && !bot->IsValidAttackTarget(target)))
+        target = nullptr;  // self casts (Consecration, Arcane Explosion), heals
+
+    // Tanks keep hitting one: they are the ones bringing it back to Garr. Not one that is low:
+    // that one they only taunt, and their swings wait until Separation Anxiety is gone.
+    if (target && IsAnxiousFiresworn(bot, target))
+    {
+        if (!tank)
+            return 0.0f;
+        if (AnxiousAndLow(bot, target) && !RaidClear::Tanks::IsTauntAction(action))
+            return 0.0f;
+    }
+
+    // Nor does a spell that hits more than its target land on one: a Multi-Shot or a Cleave at
+    // the Firesworn next to it, a Chain Lightning that jumps from Garr to one behind him, a
+    // Consecration under it. A tank's area spells only spare one that is low.
+    CastSpellAction* cast = dynamic_cast<CastSpellAction*>(action);
+    if (!cast)
         return 1.0f;
-    return IsAnxiousFiresworn(bot, target) ? 0.0f : 1.0f;
+    std::vector<Unit*> const fighting = Fighting(botAI, bot, target);
+    if (!AnyFiresworn(fighting))
+        return 1.0f;
+    RaidClear::Splash::Reach const reach = RaidClear::Splash::ReachOf(botAI, bot, cast->getSpell());
+    if (!reach.Any())
+        return 1.0f;
+    Player* const self = bot;
+    auto const spare = [self, tank](Unit* unit)
+    { return tank ? AnxiousAndLow(self, unit) : IsAnxiousFiresworn(self, unit); };
+    return RaidClear::Splash::LandsOn(bot, reach, target, fighting, spare) ? 0.0f : 1.0f;
+}
+
+// --- Molten Giants and Destroyers ---------------------------------------------
+
+namespace
+{
+    struct Blast
+    {
+        Position centre;
+        float radius;
+    };
+
+    // Where the Giants and Destroyers in the fight stand, with how far their AoE reaches. Empty
+    // for a bot that belongs in it (tanks, melee).
+    std::vector<Blast> SplashTrashFor(PlayerbotAI* botAI, Player* bot)
+    {
+        std::vector<Blast> blasts;
+        if (bot->GetMapId() != MAP_ID || !bot->IsInCombat() || PlayerbotAI::IsTank(bot) ||
+            (PlayerbotAI::IsMelee(bot) && !PlayerbotAI::IsHeal(bot)))
+            return blasts;
+        for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || !unit->IsAlive() || !unit->IsInCombat() || !unit->IsInMap(bot))
+                continue;
+            if (unit->GetEntry() == NPC_MOLTEN_GIANT)
+                blasts.push_back({ unit->GetPosition(), SMASH_RADIUS });
+            else if (unit->GetEntry() == NPC_MOLTEN_DESTROYER)
+                blasts.push_back({ unit->GetPosition(), MASSIVE_TREMOR_RADIUS });
+        }
+        return blasts;
+    }
+
+    // Yards from (x, y, z) to the edge of the nearest of them (negative inside one).
+    float SplashTrashGap(std::vector<Blast> const& blasts, float x, float y, float z)
+    {
+        float gap = 1000.0f;
+        for (Blast const& blast : blasts)
+            gap = std::min(gap, blast.centre.GetExactDist(x, y, z) - blast.radius);
+        return gap;
+    }
+}
+
+bool RcMcSplashTrashTrigger::IsActive()
+{
+    if (!bot->IsAlive() || !botAI->CanMove())
+        return false;
+    std::vector<Blast> const blasts = SplashTrashFor(botAI, bot);
+    return !blasts.empty() &&
+           SplashTrashGap(blasts, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) <
+               SPLASH_TRASH_KEEP_AWAY;
+}
+
+bool RcMcLeaveSplashTrashAction::Execute(Event /*event*/)
+{
+    std::vector<Blast> const blasts = SplashTrashFor(botAI, bot);
+    if (blasts.empty())
+        return false;
+    auto const gapAt = [&blasts](float x, float y, float z) { return SplashTrashGap(blasts, x, y, z); };
+    if (gapAt(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) >= SPLASH_TRASH_KEEP_AWAY)
+        return false;
+    return _walk.Go(gapAt, SPLASH_TRASH_KEEP_AWAY, SPLASH_TRASH_SPOT, SPLASH_TRASH_WORTH_IT, SPLASH_TRASH_SEARCH);
+}
+
+// --- Core Hounds -----------------------------------------------------------
+
+namespace
+{
+    bool PlayingDead(Unit const* unit)
+    {
+        return unit && unit->GetEntry() == NPC_CORE_HOUND && unit->IsAlive() && unit->HasAura(SPELL_PLAY_DEAD);
+    }
+
+    // The Core Hounds in the fight, and whether one of them is playing dead.
+    struct Hounds
+    {
+        std::vector<Unit*> standing;
+        std::vector<Unit*> down;
+    };
+
+    Hounds HoundsInFight(PlayerbotAI* botAI, Player* bot)
+    {
+        Hounds hounds;
+        if (bot->GetMapId() != MAP_ID)
+            return hounds;
+        for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
+        {
+            Unit* unit = botAI->GetUnit(guid);
+            if (!unit || unit->GetEntry() != NPC_CORE_HOUND || !unit->IsAlive() || !unit->IsInCombat() ||
+                !unit->IsInMap(bot))
+                continue;
+            (unit->HasAura(SPELL_PLAY_DEAD) ? hounds.down : hounds.standing).push_back(unit);
+        }
+        return hounds;
+    }
+
+    // The standing hound that keeps one playing dead from dying and has the least health: the
+    // one to put down next. Looked for the way the core decides (spell_mc_play_dead_aura): any
+    // Core Hound within 80 yd of the one playing dead and in its line of sight, alive, in combat
+    // and not playing dead itself, whether or not anyone in the group has it on its list.
+    Unit* NextHound(Player* bot, Hounds const& hounds)
+    {
+        Unit* best = nullptr;
+        for (Unit* down : hounds.down)
+        {
+            std::list<Creature*> near;
+            down->GetCreaturesWithEntryInRange(near, CORE_HOUND_LINK_RANGE, NPC_CORE_HOUND);
+            for (Creature* hound : near)
+            {
+                if (hound == down || !hound->IsAlive() || !hound->IsInCombat() || hound->HasAura(SPELL_PLAY_DEAD) ||
+                    !down->IsWithinLOSInMap(hound) || !bot->IsValidAttackTarget(hound))
+                    continue;
+                if (!best || hound->GetHealth() < best->GetHealth())
+                    best = hound;
+            }
+        }
+        return best;
+    }
+}
+
+bool RaidClear::MoltenCore::KillOrderSuspended(Player* bot)
+{
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    return botAI && !HoundsInFight(botAI, bot).down.empty();
+}
+
+bool RcMcPlayDeadTargetTrigger::IsActive()
+{
+    if (!bot->IsInCombat() || bot->GetMapId() != MAP_ID)
+        return false;
+    if (PlayingDead(bot->GetVictim()) || PlayingDead(CastingAt(bot, CURRENT_GENERIC_SPELL)) ||
+        PlayingDead(CastingAt(bot, CURRENT_CHANNELED_SPELL)))
+        return true;
+    Pet* pet = bot->GetPet();
+    return pet && PlayingDead(pet->GetVictim());
+}
+
+bool RcMcLeavePlayDeadAction::Execute(Event /*event*/)
+{
+    if (PlayingDead(bot->GetVictim()))
+    {
+        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+        bot->AttackStop();
+    }
+    for (CurrentSpellTypes type : { CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL })
+        if (PlayingDead(CastingAt(bot, type)))
+            bot->InterruptSpell(type);
+    if (Pet* pet = bot->GetPet())
+        if (PlayingDead(pet->GetVictim()))
+            pet->AttackStop();
+    return true;
+}
+
+bool RcMcFinishHoundsTrigger::IsActive()
+{
+    if (!bot->IsInCombat() || RaidClear::KillOrderMarker(bot->GetGroup()) != bot)
+        return false;
+    Hounds const hounds = HoundsInFight(botAI, bot);
+    if (hounds.down.empty())
+        return false;
+    Unit* next = NextHound(bot, hounds);
+    return next && bot->GetGroup()->GetTargetIcon(RtiTargetValue::skullIndex) != next->GetGUID();
+}
+
+bool RcMcMarkHoundAction::Execute(Event /*event*/)
+{
+    Group* group = bot->GetGroup();
+    Unit* next = group ? NextHound(bot, HoundsInFight(botAI, bot)) : nullptr;
+    if (!next)
+        return false;
+    group->SetTargetIcon(RtiTargetValue::skullIndex, bot->GetGUID(), next->GetGUID());
+    return true;
+}
+
+float RcMcCoreHoundMultiplier::GetValue(Action* action)
+{
+    if (!action || !bot->IsInCombat() || bot->GetMapId() != MAP_ID)
+        return 1.0f;
+
+    // Playerbots' marking (most health first) waits while the pack is being finished.
+    if (action->getName() == "mc core hound mark")
+        return HoundsInFight(botAI, bot).down.empty() ? 1.0f : 0.0f;
+
+    if (!dynamic_cast<CastSpellAction*>(action) && !dynamic_cast<AttackAction*>(action))
+        return 1.0f;
+    // A spell that also hits other hounds is fine; one aimed at a hound playing dead is wasted.
+    return PlayingDead(action->GetTarget()) ? 0.0f : 1.0f;
 }
 
 // --- Ragnaros -------------------------------------------------------------

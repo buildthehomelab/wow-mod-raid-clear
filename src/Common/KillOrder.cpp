@@ -64,8 +64,9 @@ namespace RaidClear
     {
         switch (bot->GetMapId())
         {
-            case ZulGurub::MAP_ID: return ZulGurub::KillOrderSuspended(bot);
-            default:               return false;
+            case MoltenCore::MAP_ID: return MoltenCore::KillOrderSuspended(bot);
+            case ZulGurub::MAP_ID:   return ZulGurub::KillOrderSuspended(bot);
+            default:                 return false;
         }
     }
 
