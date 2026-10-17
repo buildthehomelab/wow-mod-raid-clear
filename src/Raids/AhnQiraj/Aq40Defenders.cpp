@@ -10,7 +10,10 @@
  *     only those 25 yd or more from it: once it has shown that, they come in closer than that.
  *     Its first cast, 5-8 s into the pull, shows which; nothing does before.
  *   - Plague. Whoever has it walks clear of every other raid member and doesn't walk back toward
- *     an enemy while it lasts (40 s): every 3 s it hits everyone within 5 yd of them.
+ *     an enemy while it lasts (40 s): every 3 s it hits everyone within 5 yd of them. A plagued
+ *     ranged bot or healer walks by both rules at once, so the two don't send it back and forth.
+ *     A Defender pulled again rolls again: what it showed is forgotten as its reflect goes up
+ *     (it casts that as it is pulled).
  *   - Not done: Meteor, split among everyone within 8 yd of its second on threat, and the
  *     Anubisath Warriors and Swarmguards it calls, which the tanks pick up like any add.
  *
@@ -51,6 +54,13 @@ namespace
         if (sAoe.size() >= AOE_MEMORY_MAX)
             sAoe.clear();
         sAoe[{ defender->GetInstanceId(), defender->GetGUID() }] = spellId;
+    }
+
+    // Pulled again (after a wipe or an evade): it rolls its abilities anew.
+    void ForgetAoe(Unit const* defender)
+    {
+        std::lock_guard<std::mutex> guard(sAoeLock);
+        sAoe.erase({ defender->GetInstanceId(), defender->GetGUID() });
     }
 
     uint32 AoeOf(Unit const* defender)
@@ -152,25 +162,69 @@ namespace
     }
 }
 
+// --- Where to stand ---------------------------------------------------------
+
+namespace
+{
+    // Both rules a bot has at once, read once per look: a plagued ranged bot next to a Shadow
+    // Storm Defender has to be inside its dead zone and clear of everyone, and walking for one
+    // rule alone would take it straight out of the other.
+    struct DefenderRules
+    {
+        std::vector<DefenderZone> zones;  // empty: no area rule
+        std::vector<Member> others;       // empty: not plagued
+        bool plagued = false;
+        float botReach = 0.0f;
+    };
+
+    DefenderRules ReadDefenderRules(PlayerbotAI* botAI, Player* bot)
+    {
+        DefenderRules rules;
+        rules.botReach = bot->GetObjectSize();
+        if (MindsDefenderAoe(bot))
+            rules.zones = Zones(botAI, bot);
+        rules.plagued = bot->HasAura(SPELL_DEFENDER_PLAGUE);
+        if (rules.plagued)
+            rules.others = OthersNear(bot);
+        return rules;
+    }
+
+    float RulesGap(DefenderRules const& rules, float x, float y, float z)
+    {
+        float gap = 1000.0f;
+        if (!rules.zones.empty())
+            gap = AoeGap(rules.zones, rules.botReach, x, y, z);
+        if (rules.plagued)
+            gap = std::min(gap, PlagueGap(rules.others, x, y, z));
+        return gap;
+    }
+
+    bool BreaksRules(DefenderRules const& rules, Player* bot)
+    {
+        return RulesGap(rules, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) < 0.0f;
+    }
+
+    bool WalkByRules(RaidClear::WayOutWalk& walk, DefenderRules const& rules)
+    {
+        auto const gapAt = [&rules](float x, float y, float z) { return RulesGap(rules, x, y, z); };
+        return walk.Go(gapAt, 0.0f, DEFENDER_SPOT, DEFENDER_WORTH_IT, DEFENDER_SEARCH);
+    }
+}
+
 // --- Thunderclap and Shadow Storm -------------------------------------------
 
 bool RcAq40DefenderAoeTrigger::IsActive()
 {
     if (!bot->IsAlive() || !bot->IsInCombat() || !botAI->CanMove() || !MindsDefenderAoe(bot))
         return false;
-    std::vector<DefenderZone> const zones = Zones(botAI, bot);
-    return !zones.empty() &&
-           AoeGap(zones, bot->GetObjectSize(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) < 0.0f;
+    DefenderRules const rules = ReadDefenderRules(botAI, bot);
+    return !rules.zones.empty() && BreaksRules(rules, bot);
 }
 
 bool RcAq40DefenderAoeMoveAction::Execute(Event /*event*/)
 {
-    std::vector<DefenderZone> const zones = Zones(botAI, bot);
-    float const botReach = bot->GetObjectSize();
-    if (zones.empty() || AoeGap(zones, botReach, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) >= 0.0f)
-        return false;
-    auto const gapAt = [&zones, botReach](float x, float y, float z) { return AoeGap(zones, botReach, x, y, z); };
-    return _walk.Go(gapAt, 0.0f, DEFENDER_SPOT, DEFENDER_WORTH_IT, DEFENDER_SEARCH);
+    DefenderRules const rules = ReadDefenderRules(botAI, bot);
+    return !rules.zones.empty() && BreaksRules(rules, bot) && WalkByRules(_walk, rules);
 }
 
 // --- Plague -----------------------------------------------------------------
@@ -179,18 +233,13 @@ bool RcAq40PlagueTrigger::IsActive()
 {
     if (!bot->IsAlive() || !bot->IsInCombat() || !botAI->CanMove() || !bot->HasAura(SPELL_DEFENDER_PLAGUE))
         return false;
-    return PlagueGap(OthersNear(bot), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) < 0.0f;
+    return BreaksRules(ReadDefenderRules(botAI, bot), bot);
 }
 
 bool RcAq40PlagueMoveAwayAction::Execute(Event /*event*/)
 {
-    if (!bot->HasAura(SPELL_DEFENDER_PLAGUE))
-        return false;
-    std::vector<Member> const others = OthersNear(bot);
-    if (PlagueGap(others, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) >= 0.0f)
-        return false;
-    auto const gapAt = [&others](float x, float y, float z) { return PlagueGap(others, x, y, z); };
-    return _walk.Go(gapAt, 0.0f, DEFENDER_SPOT, DEFENDER_WORTH_IT, DEFENDER_SEARCH);
+    DefenderRules const rules = ReadDefenderRules(botAI, bot);
+    return rules.plagued && BreaksRules(rules, bot) && WalkByRules(_walk, rules);
 }
 
 float RcAq40DefenderHoldMultiplier::GetValue(Action* action)
@@ -215,6 +264,10 @@ public:
             return;
         if (spellInfo->Id == SPELL_DEFENDER_THUNDERCLAP || spellInfo->Id == SPELL_DEFENDER_SHADOW_STORM)
             NoteAoe(caster, spellInfo->Id);
+        // Its reflect goes up as it is pulled, when it rolls its abilities: whatever it showed in
+        // an earlier pull no longer holds.
+        else if (spellInfo->Id == SPELL_DEFENDER_SHADOW_FROST_REFLECT || spellInfo->Id == SPELL_DEFENDER_FIRE_ARCANE_REFLECT)
+            ForgetAoe(caster);
     }
 };
 

@@ -62,14 +62,29 @@ namespace
         ObjectGuid veknilash;
         ObjectGuid veklorTank;
         ObjectGuid veknilashTank;
+        bool landing = false;
         std::vector<Blizzard> blizzards;
     };
+
+    uint32 MsSinceTeleport(Unit const* veklor);
+
+    // The two are still landing after a teleport (TWINS_LANDING_MS).
+    bool Landing(Creature const* veklor, Creature const* veknilash)
+    {
+        for (Creature const* twin : { veklor, veknilash })
+            if (twin->HasAura(SPELL_TWIN_TELEPORT_STUN) || twin->HasUnitState(UNIT_STATE_ROOT) ||
+                twin->HasReactState(REACT_PASSIVE))
+                return true;
+        return MsSinceTeleport(veklor) < TWINS_LANDING_MS;
+    }
 
     // The two tanks that hold the twins: the first two living tank bots of the raid in group order,
     // paladins first. Holy is the only school both twins take, and the one of the two tanks that
     // holds Vek'lor has nothing else to hurt him with (a warrior can't touch him). Vek'nilash's is
-    // the one he is on, else the one nearer him; Vek'lor's is the other. A teleport swaps them by
-    // itself: Vek'nilash lands where Vek'lor's tank stands and takes the nearest.
+    // the one he is on, else the one nearer him; Vek'lor's is the other. A teleport swaps them:
+    // Vek'nilash lands where Vek'lor's tank stands and takes the nearest. While they land, their
+    // victims are still the old ones (a passive creature keeps its victim), so it goes by distance
+    // alone then.
     void PickTwinTanks(Player* bot, Creature* veknilash, TwinsView& view)
     {
         Group* group = bot->GetGroup();
@@ -92,7 +107,7 @@ namespace
 
         Player* first = paladins[0];
         Player* second = paladins.size() > 1 ? paladins[1] : nullptr;
-        Unit* onNilash = veknilash->GetVictim();
+        Unit* onNilash = view.landing ? nullptr : veknilash->GetVictim();
         bool firstHasNilash = onNilash == first;
         if (second && onNilash != first && onNilash != second)
             firstHasNilash = first->GetExactDist(veknilash) <= second->GetExactDist(veknilash);
@@ -145,6 +160,7 @@ namespace
         {
             tView.veklor = veklor->GetGUID();
             tView.veknilash = veknilash->GetGUID();
+            tView.landing = Landing(veklor, veknilash);
             PickTwinTanks(bot, veknilash, tView);
             FindBlizzards(veklor, tView);
         }
@@ -239,8 +255,17 @@ namespace
         ClockOf(veklor, now).lastTeleportMs = now ? now : 1;
     }
 
+    uint32 MsSinceTeleport(Unit const* veklor)
+    {
+        uint32 const now = getMSTime();
+        std::lock_guard<std::mutex> guard(sClockLock);
+        TeleportClock const& clock = ClockOf(veklor, now);
+        return clock.lastTeleportMs ? getMSTimeDiff(clock.lastTeleportMs, now) : 0xFFFFFFFF;
+    }
+
     // From TWINS_TELEPORT_LEAD_MS before the earliest the next teleport can come until it comes,
-    // or until TWINS_TELEPORT_LATE_MS after the latest (one this clock missed).
+    // or until TWINS_TELEPORT_LATE_MS after the latest (one this clock missed): melee wait at
+    // most the 10 s the script leaves open, plus a second each side.
     bool TeleportDue(Unit const* veklor)
     {
         uint32 const now = getMSTime();
@@ -265,10 +290,12 @@ namespace
         float veknilashY = 0.0f;
         float veknilashReach = 0.0f;
         float veknilashKeep = 0.0f;  // 0: no rule
+        bool hold = false;           // a tank standing still while the twins land
         std::vector<Blizzard> const* blizzards = nullptr;
+        std::vector<RaidClear::AhnQiraj::LitBlast> blasts;
     };
 
-    bool ReadRules(Player* bot, TwinsView const& view, Rules& rules)
+    bool ReadRules(PlayerbotAI* botAI, Player* bot, TwinsView const& view, Rules& rules)
     {
         Creature* veklor = ObjectAccessor::GetCreature(*bot, view.veklor);
         Creature* veknilash = ObjectAccessor::GetCreature(*bot, view.veknilash);
@@ -283,6 +310,10 @@ namespace
         rules.veknilashY = veknilash->GetPositionY();
         rules.veknilashReach = veknilash->GetCombatReach();
         rules.blizzards = &view.blizzards;
+        // Bugs about to blow: the explode walk goes first, but this one mustn't walk back in.
+        rules.blasts = RaidClear::AhnQiraj::LitBlasts(botAI);
+        // Each tank is where its new twin will look for the nearest: it stays there.
+        rules.hold = view.landing && rules.role != TwinRole::None;
         if (rules.role == TwinRole::None)
         {
             // Ranged bots and healers out of his Uppercut; while a teleport is due, everyone else
@@ -299,6 +330,8 @@ namespace
     // Yards a spot has to spare on the bot's every rule (less than 0: it breaks one), edge to edge.
     float RulesGap(Rules const& rules, float x, float y)
     {
+        if (rules.hold)
+            return 1000.0f;
         float const toVeklor = std::hypot(x - rules.veklorX, y - rules.veklorY) - rules.veklorReach - rules.botReach;
         float gap = rules.role == TwinRole::VeklorTank
                         ? std::min(toVeklor - VEKLOR_TANK_NEAR, VEKLOR_TANK_FAR - toVeklor)
@@ -312,6 +345,9 @@ namespace
         for (Blizzard const& blizzard : *rules.blizzards)
             gap = std::min(gap, std::hypot(x - blizzard.x, y - blizzard.y) - blizzard.radius - rules.botReach -
                                     BLIZZARD_KEEP);
+        for (RaidClear::AhnQiraj::LitBlast const& blast : rules.blasts)
+            gap = std::min(gap, std::hypot(x - blast.x, y - blast.y) - blast.radius -
+                                    RaidClear::AhnQiraj::EXPLODE_KEEP_AWAY_EXTRA);
         return gap;
     }
 
@@ -326,7 +362,7 @@ namespace
     // The bot is the tank Vek'nilash is on, he can follow it, and he is in Vek'lor's heal range.
     bool MustWalkApart(Player* bot, TwinsView const& view, Creature*& veklor, Creature*& veknilash)
     {
-        if (RoleOf(bot, view) != TwinRole::VeknilashTank)
+        if (view.landing || RoleOf(bot, view) != TwinRole::VeknilashTank)
             return false;
         veklor = ObjectAccessor::GetCreature(*bot, view.veklor);
         veknilash = ObjectAccessor::GetCreature(*bot, view.veknilash);
@@ -435,7 +471,7 @@ bool RcAq40TwinsPositionTrigger::IsActive()
         return false;
     TwinsView const* view = Twins(bot);
     Rules rules;
-    if (!view || !ReadRules(bot, *view, rules))
+    if (!view || !ReadRules(botAI, bot, *view, rules))
         return false;
     return RulesGap(rules, bot->GetPositionX(), bot->GetPositionY()) < 0.0f;
 }
@@ -444,7 +480,7 @@ bool RcAq40TwinsPositionAction::Execute(Event /*event*/)
 {
     TwinsView const* view = Twins(bot);
     Rules rules;
-    if (!view || !ReadRules(bot, *view, rules))
+    if (!view || !ReadRules(botAI, bot, *view, rules))
         return false;
     // A copy: the view is looked up again while the walk is planned.
     std::vector<Blizzard> const blizzards = view->blizzards;
@@ -460,14 +496,17 @@ float RcAq40TwinsHoldMultiplier::GetValue(Action* action)
     // Pure walks: a spell with a reach of its own (Judgement) stops at its range.
     if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action))
         return 1.0f;
-    Unit* target = RaidClear::AhnQiraj::WalkTarget(action, bot);
-    if (!target)
-        return 1.0f;
     TwinsView const* view = Twins(bot);
-    if (!view || !IsTwin(target, *view))
+    if (!view || !bot->IsInCombat())
+        return 1.0f;
+    TwinRole const role = RoleOf(bot, *view);
+    // While they land, each tank stands where its new twin will find it nearest.
+    if (view->landing && role != TwinRole::None)
+        return 0.0f;
+    Unit* target = RaidClear::AhnQiraj::WalkTarget(action, bot);
+    if (!target || !IsTwin(target, *view))
         return 1.0f;
 
-    TwinRole const role = RoleOf(bot, *view);
     if (target->GetGUID() == view->veklor)
     {
         // His tank holds its band by "rc aq40 twins position"; a ranged bot's walk into casting
@@ -522,8 +561,13 @@ namespace
 {
     // Pets kept by their owner's side, with the react state each had, by pet. Shared and locked
     // like the teleport clock.
+    struct ParkedPet
+    {
+        ObjectGuid owner;
+        ReactStates react;
+    };
     std::mutex sParkLock;
-    std::map<ObjectGuid, ReactStates> sParked;
+    std::map<ObjectGuid, ParkedPet> sParked;
 
     bool IsParked(Unit const* pet)
     {
@@ -543,8 +587,10 @@ namespace
         bool const ownerOnVeklor = HitsTwin(bot, role, NPC_VEKLOR);
         if (ownerOnVeklor && !IsCasterPet(pet))
             return true;
+        // Through the landing too: a pet let go at the teleport is a unit the twin can find nearer
+        // than its tank.
         Creature* veklor = ObjectAccessor::GetCreature(*bot, view->veklor);
-        return !ownerOnVeklor && veklor && TeleportDue(veklor);
+        return !ownerOnVeklor && veklor && (view->landing || TeleportDue(veklor));
     }
 }
 
@@ -570,19 +616,56 @@ bool RcAq40TwinsPetAction::Execute(Event /*event*/)
     if (!stay)
     {
         // Back to what it was: a defensive pet goes for its owner's target by itself.
-        pet->SetReactState(it->second);
+        pet->SetReactState(it->second.react);
         sParked.erase(it);
         return true;
     }
 
     // As the pet bar's Follow, and passive so that it doesn't pick its owner's target again.
-    sParked[pet->GetGUID()] = pet->GetReactState();
+    sParked[pet->GetGUID()] = { bot->GetGUID(), pet->GetReactState() };
     pet->SetReactState(REACT_PASSIVE);
     pet->AttackStop();
     pet->InterruptNonMeleeSpells(false);
     pet->GetMotionMaster()->MoveFollow(bot, PET_FOLLOW_DIST, pet->GetFollowAngle());
     pet->GetCharmInfo()->SetCommandState(COMMAND_FOLLOW);
     pet->GetCharmInfo()->SetIsCommandAttack(false);
+    return true;
+}
+
+void RaidClear::TempleOfAhnQiraj::SweepParkedPets()
+{
+    // The trigger above only runs in combat: a pet parked when the twins died, the raid wiped or
+    // its hunter feigned death would stay passive, and playerbots never sends a passive pet in.
+    std::lock_guard<std::mutex> guard(sParkLock);
+    for (auto it = sParked.begin(); it != sParked.end();)
+    {
+        Player* owner = ObjectAccessor::FindPlayer(it->second.owner);
+        Pet* pet = owner ? owner->GetPet() : nullptr;
+        if (!pet || pet->GetGUID() != it->first)
+        {
+            it = sParked.erase(it);
+            continue;
+        }
+        if (owner->IsAlive() && owner->IsInCombat() && PetStaysBack(owner, pet))
+        {
+            ++it;
+            continue;
+        }
+        pet->SetReactState(it->second.react);
+        it = sParked.erase(it);
+    }
+}
+
+bool RaidClear::TempleOfAhnQiraj::VeklorKeepOut(Player* bot, float& x, float& y, float& reach, float& keep)
+{
+    TwinsView const* view = Twins(bot);
+    Creature* veklor = view ? ObjectAccessor::GetCreature(*bot, view->veklor) : nullptr;
+    if (!veklor)
+        return false;
+    x = veklor->GetPositionX();
+    y = veklor->GetPositionY();
+    reach = veklor->GetCombatReach();
+    keep = RoleOf(bot, *view) == TwinRole::VeklorTank ? VEKLOR_TANK_NEAR : VEKLOR_KEEP;
     return true;
 }
 
@@ -642,12 +725,15 @@ float RcAq40VeklorThreatMultiplier::GetValue(Action* action)
         return 1.0f;
     if (!RaidClear::Tanks::HeldByThreatCap(botAI, action))
         return 1.0f;
-    Player* tank = ObjectAccessor::GetPlayer(*bot, view->veklorTank);
-    // With no tank for him there is nobody to stay under.
-    if (!tank || !tank->IsAlive())
+    // Under whoever he is on, his tank or not: what matters is that he doesn't turn. Not while
+    // that is the bot itself, or nobody has built threat to speak of yet.
+    Unit* victim = target->GetVictim();
+    if (!victim || victim == bot)
         return 1.0f;
-    float const tankThreat = target->GetThreatMgr().GetThreat(tank);
-    return target->GetThreatMgr().GetThreat(bot) >= tankThreat * VEKLOR_THREAT_SHARE ? 0.0f : 1.0f;
+    float const victimThreat = target->GetThreatMgr().GetThreat(victim);
+    if (victimThreat < VEKLOR_THREAT_FLOOR)
+        return 1.0f;
+    return target->GetThreatMgr().GetThreat(bot) >= victimThreat * VEKLOR_THREAT_SHARE ? 0.0f : 1.0f;
 }
 
 // --- The server side --------------------------------------------------------

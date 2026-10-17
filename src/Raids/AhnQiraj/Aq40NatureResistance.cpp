@@ -80,6 +80,9 @@ bool RcAq40NatureResistanceTrigger::IsActive()
         return false;
     if (bot->getClass() == CLASS_SHAMAN)
         return !AI_VALUE2(bool, "has totem", "nature resistance") && botAI->CanCastSpell("nature resistance totem", bot);
+    // Out of mana on Viper: back to the Wild once there is enough.
+    if (botAI->HasAura("aspect of the viper", bot) && bot->GetPowerPct(POWER_MANA) < WILD_MANA_PCT)
+        return false;
     return !botAI->HasAura("aspect of the wild", bot) && botAI->CanCastSpell("aspect of the wild", bot);
 }
 
@@ -109,6 +112,9 @@ float RcAq40NatureResistanceMultiplier::GetValue(Action* action)
     bool const blocked = cls == CLASS_SHAMAN ? std::any_of(AIR_SLOT.begin(), AIR_SLOT.end(), named)
                                              : std::any_of(OTHER_ASPECTS.begin(), OTHER_ASPECTS.end(), named);
     if (!blocked)
+        return 1.0f;
+    // A hunter out of mana does nothing at all: Viper is let through then.
+    if (name == "aspect of the viper" && bot->GetPowerPct(POWER_MANA) < VIPER_MANA_PCT)
         return 1.0f;
     Creature* boss = NatureBoss(bot);
     return boss && IsNatureHelper(bot, boss) ? 0.0f : 1.0f;

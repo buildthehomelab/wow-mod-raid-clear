@@ -8,13 +8,18 @@
  *     poison cure goes to anyone with the sting (Cure Poison, Cleanse, Purify, Cure Toxins,
  *     Cleanse Spirit: whatever dispels poison), and no Abolish Poison or Cleansing Totem goes out
  *     at all while she is fighting: both take a poison off seconds later, on their own. A shaman
- *     that has a Cleansing Totem down destroys it (as a player would right-click it away).
+ *     that has a Cleansing Totem down destroys it (as a player would right-click it away), and
+ *     one whose water totem is Cleansing places its totems one by one rather than with Call of
+ *     the Elements. Her other poisons (Noxious Poison, Acid Spit) can't be dispelled at all
+ *     (Spell.dbc: no dispel type), so a cure held back from a sting holder misses nothing.
  *   - Berserk (26068). From 30% (or after 5 minutes) Poison Bolt hits the 15 raid members nearest
  *     to her every 2 s for about 1,500 nature (the script sorts the targets by distance). Tanks
  *     and players in plate (warriors, paladins, death knights) stay with her and take it; every
- *     other bot stands POISON_BOLT_KEEP away from her middle (still in reach of its spells and
- *     heals), from HUHURAN_BERSERK_PCT on so that nobody is caught walking, and walks no closer.
- *     With fewer than 15 near her the farthest still get hit, but the fewest of them.
+ *     ranged bot and healer not in plate stands POISON_BOLT_KEEP away from her middle (still in
+ *     reach of its spells and heals), from HUHURAN_BERSERK_PCT on so that nobody is caught
+ *     walking, and walks no closer. Melee damage dealers not in plate stand off too while 15
+ *     tanks and plate stand round her (POISON_BOLT_NEAR); with fewer they would be among the 15
+ *     anyway, and stay and hit her.
  *   - Not done: Noxious Poison (26053) silences and poisons everyone within 15 yd of a random
  *     raid member; spreading 40 bots out 15 yd apart doesn't fit around her. Frenzy is playerbots'
  *     Tranquilizing Shot (Common/RaidDiscipline.h teaches it).
@@ -28,6 +33,7 @@
 
 #include "Creature.h"
 #include "GenericSpellActions.h"
+#include "Group.h"
 #include "Playerbots.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
@@ -84,11 +90,45 @@ namespace
         return nullptr;
     }
 
-    // Poison Bolt goes to the nearest: these take it.
-    bool StaysWithHer(Player* bot)
+    bool InPlate(Player* player)
     {
-        uint8 const cls = bot->getClass();
-        return PlayerbotAI::IsTank(bot) || cls == CLASS_WARRIOR || cls == CLASS_PALADIN || cls == CLASS_DEATH_KNIGHT;
+        uint8 const cls = player->getClass();
+        return PlayerbotAI::IsTank(player) || cls == CLASS_WARRIOR || cls == CLASS_PALADIN ||
+               cls == CLASS_DEATH_KNIGHT;
+    }
+
+    // How many tanks and players in plate stand round her (within POISON_BOLT_NEAR).
+    uint32 PlateNearHer(Player* bot, Creature const* boss)
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return 0;
+        uint32 plate = 0;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (member && member->IsAlive() && member->IsInMap(bot) && InPlate(member) &&
+                member->GetExactDist(boss) <= POISON_BOLT_NEAR)
+                ++plate;
+        }
+        return plate;
+    }
+
+    // Poison Bolt goes to the nearest: these take it. Tanks and plate always; melee damage
+    // dealers too while fewer tanks and plate than it has targets stand round her: those would
+    // be hit anyway, and standing off they would do nothing for the burn.
+    bool StaysWithHer(Player* bot, Creature const* boss)
+    {
+        if (InPlate(bot))
+            return true;
+        if (PlayerbotAI::IsRanged(bot))
+            return false;
+        static uint32 const targets = []
+        {
+            SpellInfo const* info = sSpellMgr->GetSpellInfo(SPELL_HUHURAN_POISON_BOLT);
+            return info && info->MaxAffectedTargets ? info->MaxAffectedTargets : 15u;
+        }();
+        return PlateNearHer(bot, boss) < targets;
     }
 
     bool PoisonBoltTime(Creature const* boss)
@@ -107,6 +147,11 @@ namespace
 
 float RcAq40WyvernStingMultiplier::GetValue(Action* action)
 {
+    // Call of the Elements puts down the totems on the shaman's bar, a Cleansing Totem among them
+    // for one whose water totem is "cleansing": that one places its totems one by one meanwhile.
+    if (action && action->getName() == "call of the elements" && bot->getClass() == CLASS_SHAMAN &&
+        bot->IsInCombat() && botAI->HasStrategy("cleansing", BOT_STATE_COMBAT) && FightingHuhuran(bot))
+        return 0.0f;
     CastSpellAction* cast = dynamic_cast<CastSpellAction*>(action);
     if (!cast || !bot->IsInCombat() || !FightingHuhuran(bot))
         return 1.0f;
@@ -142,16 +187,18 @@ bool RcAq40DestroyCleansingTotemAction::Execute(Event /*event*/)
 
 bool RcAq40PoisonBoltTrigger::IsActive()
 {
-    if (!bot->IsAlive() || !bot->IsInCombat() || !botAI->CanMove() || StaysWithHer(bot))
+    if (!bot->IsAlive() || !bot->IsInCombat() || !botAI->CanMove())
         return false;
     Creature* boss = FightingHuhuran(bot);
-    return boss && PoisonBoltTime(boss) && BoltGap(boss, bot->GetPositionX(), bot->GetPositionY()) < 0.0f;
+    return boss && PoisonBoltTime(boss) && BoltGap(boss, bot->GetPositionX(), bot->GetPositionY()) < 0.0f &&
+           !StaysWithHer(bot, boss);
 }
 
 bool RcAq40PoisonBoltKeepAwayAction::Execute(Event /*event*/)
 {
     Creature* boss = FightingHuhuran(bot);
-    if (!boss || !PoisonBoltTime(boss) || BoltGap(boss, bot->GetPositionX(), bot->GetPositionY()) >= 0.0f)
+    if (!boss || !PoisonBoltTime(boss) || BoltGap(boss, bot->GetPositionX(), bot->GetPositionY()) >= 0.0f ||
+        StaysWithHer(bot, boss))
         return false;
     auto const gapAt = [boss](float x, float y, float /*z*/) { return BoltGap(boss, x, y); };
     return _walk.Go(gapAt, 0.0f, POISON_BOLT_SPOT, POISON_BOLT_WORTH_IT, POISON_BOLT_SEARCH, true);
@@ -160,13 +207,13 @@ bool RcAq40PoisonBoltKeepAwayAction::Execute(Event /*event*/)
 float RcAq40PoisonBoltHoldMultiplier::GetValue(Action* action)
 {
     Unit* target = RaidClear::AhnQiraj::WalkTarget(action, bot);
-    if (!target || target->GetEntry() != NPC_HUHURAN || StaysWithHer(bot))
+    if (!target || target->GetEntry() != NPC_HUHURAN)
         return 1.0f;
     Creature* boss = FightingHuhuran(bot);
     if (!boss || boss != target || !PoisonBoltTime(boss))
         return 1.0f;
     // Only walks: a spell with a reach of its own is cast from where the bot stands, or not at all.
-    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action))
+    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) || StaysWithHer(bot, boss))
         return 1.0f;
     return BoltGap(boss, bot->GetPositionX(), bot->GetPositionY()) < POISON_BOLT_HOLD_EXTRA ? 0.0f : 1.0f;
 }

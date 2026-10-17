@@ -345,6 +345,23 @@ namespace
         return ExplodeGap(lit, pos->GetPositionX(), pos->GetPositionY(), pos->GetPositionZ());
     }
 
+    // Vek'lor's keep-out as a gap from his edge (less than 0 inside it), or none.
+    struct VeklorRule
+    {
+        bool any = false;
+        float x = 0.0f;
+        float y = 0.0f;
+        float reach = 0.0f;
+        float keep = 0.0f;
+    };
+
+    float VeklorGap(VeklorRule const& rule, float botReach, float x, float y)
+    {
+        if (!rule.any)
+            return 1000.0f;
+        return std::hypot(x - rule.x, y - rule.y) - rule.reach - botReach - rule.keep;
+    }
+
     bool IsAhnQiraj(uint32 mapId) { return mapId == MAP_AQ20 || mapId == MAP_AQ40; }
 }
 
@@ -364,10 +381,25 @@ bool RcAqExplodeMoveAwayAction::Execute(Event /*event*/)
     float widest = 0.0f;
     for (LitMob const& one : lit)
         widest = std::max(widest, one.radius);
-    auto const gapAt = [&lit](float x, float y, float z) { return ExplodeGap(lit, x, y, z); };
+    // At the Twin Emperors, not out of a bug's blast into Vek'lor's Arcane Burst: a spot counts as
+    // good enough only outside his keep-out as well.
+    VeklorRule veklor;
+    using namespace RaidClear::TempleOfAhnQiraj;
+    veklor.any = VeklorKeepOut(bot, veklor.x, veklor.y, veklor.reach, veklor.keep);
+    float const botReach = bot->GetCombatReach();
+    auto const gapAt = [&lit, &veklor, botReach](float x, float y, float z)
+    { return std::min(ExplodeGap(lit, x, y, z), VeklorGap(veklor, botReach, x, y) + EXPLODE_SPOT_EXTRA); };
     // Up to the whole blast across from the middle of it.
     return _walk.Go(gapAt, EXPLODE_KEEP_AWAY_EXTRA, EXPLODE_SPOT_EXTRA, EXPLODE_WORTH_IT,
                     widest + EXPLODE_SPOT_EXTRA + 3.0f, lit.size() == 1);
+}
+
+std::vector<RaidClear::AhnQiraj::LitBlast> RaidClear::AhnQiraj::LitBlasts(PlayerbotAI* botAI)
+{
+    std::vector<LitBlast> blasts;
+    for (LitMob const& one : LitMobs(botAI))
+        blasts.push_back({ one.mob->GetPositionX(), one.mob->GetPositionY(), one.mob->GetPositionZ(), one.radius });
+    return blasts;
 }
 
 float RcAqExplodeHoldMultiplier::GetValue(Action* action)

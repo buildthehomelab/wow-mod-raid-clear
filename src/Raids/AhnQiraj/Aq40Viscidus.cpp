@@ -440,7 +440,8 @@ float RcAq40GlobMultiplier::GetValue(Action* action)
     if (!bot->IsInCombat() || !Hunts(bot))
         return 1.0f;
     Creature* boss = ShatteredViscidus(bot);
-    if (!boss || Globs(bot, boss).empty())
+    // Only while there is a glob it can attack: with none, it fights on as usual.
+    if (!boss || Globs(bot, boss).empty() || LivingGlobs(bot, boss).empty())
         return 1.0f;
     // On a glob: stays on it (the skull would pull everyone onto the same one). On none: only a
     // glob.

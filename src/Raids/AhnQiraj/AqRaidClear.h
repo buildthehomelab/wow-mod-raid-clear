@@ -153,7 +153,8 @@
  * Temple of Ahn'Qiraj, nature damage (Viscidus, Princess Huhuran, the Bug Trio):
  *   - One shaman keeps Nature Resistance Totem down and one hunter keeps Aspect of the Wild up
  *     (raid auras, 30 yd, that don't stack with each other); that shaman places nothing else in
- *     the air slot and that hunter switches to no other aspect.
+ *     the air slot and that hunter switches to no other aspect but Viper, below 20% mana (and
+ *     back to the Wild above 60%).
  *
  * Temple of Ahn'Qiraj, Princess Huhuran: see Aq40Huhuran.cpp (no cures on Wyvern Sting; out of
  * Poison Bolt's 15 nearest from Berserk).
@@ -177,23 +178,28 @@
  *         is all a tank has for Vek'lor). Vek'nilash's is the one he is on, else the nearer; the
  *         other holds Vek'lor from 6.5-9.5 yd edge to edge (Judgement's reach, out of the Burst)
  *         and casts Avenger's Shield and Exorcism at him besides. Neither picks another target.
+ *         For 2.5 s after a teleport (or while either twin is still rooted or passive, keeping
+ *         its old victim) the two are told apart by who is nearer which twin, and both stand
+ *         still: each is then the nearest unit its new twin finds.
  *       - The tank Vek'nilash is on walks him away from Vek'lor whenever they are within his
  *         heal range. Vek'lor himself only moves when his victim is 45 yd away, and a teleport
  *         swaps the two without bringing them closer: held where they land, they stay apart.
  *       - Melee bots, the other tanks and hunters hit Vek'nilash only; casters and healers Vek'lor
  *         only (a skull on the wrong one is passed over). Casters keep their threat on Vek'lor
- *         under 115% of his tank's: away from him he only turns to someone with 130% of his
- *         victim's.
+ *         under 115% of his victim's (his tank or not): away from him he only turns to someone
+ *         with 130% of it. Not while his victim has under 1,500 (the pull).
  *       - Nobody but his tank comes within 12 yd of Vek'lor (edge to edge); ranged bots and
  *         healers stay 8 yd from Vek'nilash; everyone walks out of a Blizzard.
- *       - The teleport clock (from Vek'lor's cast, the first 30 s in): from 2.5 s before the
- *         earliest one is due until it comes, melee bots and other tanks step 6 yd back from
- *         Vek'nilash and stay, and pets that would be there are called to their owners
- *         (passive until the teleport is over). Vek'lor then lands on Vek'nilash's tank, the
+ *       - The teleport clock (from Vek'lor's cast, the first 30 s in): from 1 s before the
+ *         earliest one can come until it comes (at most 1 s past the latest), melee bots and
+ *         other tanks but the one Vek'nilash is on step 6 yd back from him and stay, and pets
+ *         are called to their owners (passive until the twins have landed; the module's sweep
+ *         gives a pet back its react state once its owner is out of the fight). Vek'lor then lands on Vek'nilash's tank, the
  *         nearest, which becomes his tank; Vek'nilash lands next to Vek'lor's tank, nearer than
  *         anyone else, which becomes his. A pet that could only hit Vek'lor (all but an Imp or a
  *         Water Elemental) stays by its owner all fight.
- *       - Bugs Vek'lor sets to explode are kept away from as an Anubisath's Explode.
+ *       - Bugs Vek'lor sets to explode are kept away from as an Anubisath's Explode; that walk
+ *         keeps out of Vek'lor's 12 yd and the twins' walks keep out of the blast.
  *     Not solved: the pull itself (both run to the puller; the first teleport sorts it out), a
  *     twin landing on a pet or totem that is nearer than its tank, and Vek'nilash's mutated
  *     bugs, left to the off-tanks.
@@ -248,6 +254,17 @@ namespace RaidClear::AhnQiraj
     float ExplodeRadius();
     // An exploding bug's blast, the same way (15 yd).
     float ExplodeBugRadius();
+
+    // A blast about to go off among the mobs fighting the raid (an Explode fuse, an exploding
+    // bug): where, and how far it reaches, centre to centre.
+    struct LitBlast
+    {
+        float x;
+        float y;
+        float z;
+        float radius;
+    };
+    std::vector<LitBlast> LitBlasts(PlayerbotAI* botAI);
 
     // An area spell's reach from its effect 0, or `fallback` when the spell data has none.
     float SpellRadius(uint32 spellId, float fallback);
@@ -534,8 +551,12 @@ namespace RaidClear::TempleOfAhnQiraj
     // VEKNILASH_DUE_KEEP (edge to edge, out of the Burst's reach), so his tank is the nearest.
     constexpr uint32 TWINS_TELEPORT_MS = 30000;
     constexpr uint32 TWINS_TELEPORT_MAX_MS = 40000;
-    constexpr uint32 TWINS_TELEPORT_LEAD_MS = 2500;
-    constexpr uint32 TWINS_TELEPORT_LATE_MS = 5000;
+    constexpr uint32 TWINS_TELEPORT_LEAD_MS = 1000;
+    constexpr uint32 TWINS_TELEPORT_LATE_MS = 1000;
+    // For this long after a teleport (and while either is still rooted or passive) the two are
+    // landing: they keep their old victims until they turn to the nearest unit. The two tanks
+    // are then told apart by who is nearer which twin, and stand still.
+    constexpr uint32 TWINS_LANDING_MS = 2500;
     constexpr float VEKNILASH_DUE_KEEP = 6.0f;
     // Out of a Blizzard: the gap from the bot's edge to the cloud's.
     constexpr float BLIZZARD_KEEP = 1.0f;
@@ -543,11 +564,22 @@ namespace RaidClear::TempleOfAhnQiraj
     constexpr float TWINS_SPOT = 1.0f;
     constexpr float TWINS_WORTH_IT = 1.0f;
     constexpr float TWINS_SEARCH = 24.0f;
-    // A bot's damage on Vek'lor stays under this share of his tank's threat: out of melee range
-    // he only turns to someone with 130% of his victim's.
+    // A bot's damage on Vek'lor stays under this share of his victim's threat: out of melee range
+    // he only turns to someone with 130% of it. Not while his victim has less than
+    // VEKLOR_THREAT_FLOOR (the pull, nobody has built any): under the 2,000 the script gives
+    // whoever he lands on, so that grant is still kept.
     constexpr float VEKLOR_THREAT_SHARE = 1.15f;
+    constexpr float VEKLOR_THREAT_FLOOR = 1500.0f;
 
     void AddTwinEmperorsScripts();
+
+    // While the Twin Emperors fight: where Vek'lor stands and how close to him (edge to edge) this
+    // bot may come, for other rules' walks to respect. False outside the fight.
+    bool VeklorKeepOut(Player* bot, float& x, float& y, float& reach, float& keep);
+
+    // Gives pets parked for a teleport back their react state once their owner is out of the
+    // fight, and forgets pets that are gone. World thread (the module's sweep).
+    void SweepParkedPets();
 
     // --- Princess Huhuran -------------------------------------------------
     enum : uint32
@@ -567,6 +599,8 @@ namespace RaidClear::TempleOfAhnQiraj
     constexpr float POISON_BOLT_SEARCH = 30.0f;
     // Bots within this much more than POISON_BOLT_KEEP walk toward her no further.
     constexpr float POISON_BOLT_HOLD_EXTRA = 10.0f;
+    // Who counts as standing round her, centre to centre, for the melee to stand off.
+    constexpr float POISON_BOLT_NEAR = 15.0f;
 
     // --- Anubisath Defender ----------------------------------------------
     // Each Defender rolls its abilities as it is pulled, and nothing on it shows which until it
@@ -581,6 +615,8 @@ namespace RaidClear::TempleOfAhnQiraj
         SPELL_DEFENDER_SHADOW_STORM = 26555,
         SPELL_DEFENDER_PLAGUE = 26556,
         SPELL_DEFENDER_PLAGUE_HIT = 26557,
+        SPELL_DEFENDER_SHADOW_FROST_REFLECT = 19595,  // one of the two, cast as it is pulled
+        SPELL_DEFENDER_FIRE_ARCANE_REFLECT = 13022,
     };
     // Ranged bots and healers stand outside Thunderclap by this much (the gap from their edge to
     // its reach), or inside Shadow Storm's dead zone by this much (centre to centre, flat, as the
@@ -608,6 +644,10 @@ namespace RaidClear::TempleOfAhnQiraj
     constexpr uint32 SPELL_NATURE_RESISTANCE_TOTEM_RANK_1 = 10595;
     constexpr uint32 ASPECT_OF_THE_WILD_RANKS[] = { 20043, 20190, 27045, 49071 };
     constexpr float NATURE_HELPER_RANGE = 50.0f;
+    // That hunter may take Aspect of the Viper below VIPER_MANA_PCT mana, and only goes back to
+    // the Wild above WILD_MANA_PCT.
+    constexpr float VIPER_MANA_PCT = 20.0f;
+    constexpr float WILD_MANA_PCT = 60.0f;
 
     std::vector<KillOrderEntry> const& KillOrder();
 
