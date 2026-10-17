@@ -90,7 +90,7 @@ std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitCoTankBosses()
     // Broodlord: Knock Away (25778) halves his victim's threat. The drakes: Wing Buffet takes 75%.
     // Ebonroc also needs a second tank for Shadow of Ebonroc. Vaelastrasz can't be taunted, so
     // whoever is next on threat when Burning Adrenaline kills his tank gets him. Chromaggus can't
-    // be taunted either, and Time Lapse stuns and halves the threat of whoever it hits.
+    // be taunted either, and Time Lapse stuns his tank for 6 s.
     static std::vector<uint32> const bosses = {
         NPC_BROODLORD, NPC_FIREMAW, NPC_EBONROC, NPC_FLAMEGOR, NPC_VAELASTRASZ, NPC_CHROMAGGUS, NPC_NEFARIAN,
     };
@@ -201,6 +201,10 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
 
     triggers.push_back(
         new TriggerNode("rc bwl chromaggus breath", { NextAction("rc bwl chromaggus hide", ACTION_RAID + 4) }));
+    // A role's fixed spot (Firemaw, Chromaggus): under the hiding and the dodges, over the rest.
+    triggers.push_back(new TriggerNode("rc bwl boss spot", { NextAction("rc bwl boss spot", ACTION_RAID) }));
+    // Firemaw's tanks trade him; like the Ebonroc swap.
+    triggers.push_back(new TriggerNode("rc bwl drake swap", { NextAction("rc bwl drake swap", ACTION_RAID + 3) }));
 
     // The dragons. Out of the front (and Nefarian's tail and roar) as a standing rule; out of a
     // breath that is being cast before anything else, heals included: it one-shots a non-tank.
@@ -239,6 +243,7 @@ void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& m
 {
     multipliers.push_back(new RcBwlShadowOfEbonrocMultiplier(botAI));
     multipliers.push_back(new RcBwlHoldCoverMultiplier(botAI));
+    multipliers.push_back(new RcBwlSpotHoldMultiplier(botAI));
     multipliers.push_back(new RcBwlDetonationHoldMultiplier(botAI));
     multipliers.push_back(new RcBwlCaptainMainTankMultiplier(botAI));
     multipliers.push_back(new RcBwlCorruptedHealingMultiplier(botAI));
@@ -329,7 +334,7 @@ namespace
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->GetSource();
-            if (!member || member == bot || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+            if (!member || member == bot || !member->IsAlive() || !member->IsInMap(bot))
                 continue;
 
             float const dist = bot->GetExactDist2d(member);
@@ -418,292 +423,6 @@ bool RcBwlTechnicianSpreadAction::Execute(Event /*event*/)
     return false;
 }
 
-// --- Line-of-sight cover (Firemaw, Chromaggus) ----------------------------
-
-namespace
-{
-    // Eye height used for the boss-to-spot line of sight.
-    constexpr float COVER_EYE_HEIGHT = 2.0f;
-    // A spot more than this above or below the bot is a ledge or a pit.
-    constexpr float COVER_MAX_HEIGHT_DIFF = 5.0f;
-    // How long a found spot is trusted before searching again, and how long to wait after a
-    // search found nothing (each one is up to ~150 line-of-sight checks and paths).
-    constexpr uint64 COVER_REUSE_MS = 15000;
-    constexpr uint64 COVER_RETRY_MS = 3000;
-
-    bool SeesSpot(Unit* from, float x, float y, float z)
-    {
-        return from->IsWithinLOS(x, y, z + COVER_EYE_HEIGHT);
-    }
-
-    // The nearest spot (by walking distance, at most `maxPath`) within `range` that `from` can't
-    // see. Rings of candidates from close to far; the first ring with any cover wins.
-    bool FindCover(Player* bot, Unit* from, float range, float maxPath, Position& out)
-    {
-        Map* map = bot->GetMap();
-        float const botZ = bot->GetPositionZ();
-        constexpr int ANGLES = 16;
-
-        for (float radius = 4.0f; radius <= range; radius += 3.0f)
-        {
-            float bestLength = 0.0f;
-            bool found = false;
-            for (int i = 0; i < ANGLES; ++i)
-            {
-                float const angle = float(i) * 2.0f * float(M_PI) / ANGLES;
-                float const x = bot->GetPositionX() + std::cos(angle) * radius;
-                float const y = bot->GetPositionY() + std::sin(angle) * radius;
-                float const z = map->GetHeight(bot->GetPhaseMask(), x, y, botZ + COVER_MAX_HEIGHT_DIFF);
-                if (z <= INVALID_HEIGHT || std::fabs(z - botZ) > COVER_MAX_HEIGHT_DIFF)
-                    continue;
-                if (SeesSpot(from, x, y, z))
-                    continue;
-
-                // Cover is usually around a corner, so the walk is checked, not the straight line.
-                PathGenerator path(bot);
-                if (!path.CalculatePath(x, y, z) || !(path.GetPathType() & PATHFIND_NORMAL))
-                    continue;
-                float const length = path.getPathLength();
-                if (length > maxPath)
-                    continue;
-
-                if (!found || length < bestLength)
-                {
-                    out.Relocate(x, y, z);
-                    bestLength = length;
-                    found = true;
-                }
-            }
-            if (found)
-                return true;
-        }
-        return false;
-    }
-
-    bool IsAvoidableBreath(uint32 spellId)
-    {
-        switch (spellId)
-        {
-            case SPELL_INCINERATE:
-            case SPELL_CORROSIVE_ACID:
-            case SPELL_IGNITE_FLESH:
-            case SPELL_FROST_BURN:
-                return true;
-            default:
-                return false;  // Time Lapse included: everyone should take it
-        }
-    }
-
-    bool IsBreath(uint32 spellId)
-    {
-        return spellId == SPELL_TIME_LAPSE || IsAvoidableBreath(spellId);
-    }
-
-    // The breath Chromaggus is casting right now, or 0.
-    uint32 ChromaggusBreath(Unit* boss)
-    {
-        Spell* spell = boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        if (!spell || !spell->GetSpellInfo())
-            return 0;
-        uint32 const id = spell->GetSpellInfo()->Id;
-        return IsAvoidableBreath(id) ? id : 0;
-    }
-
-    // His breath clock. The core schedules one breath 30s into the fight and the other at 60s,
-    // each then every 60s: one every 30s, taking turns. Two seconds of cast are not enough to
-    // reach cover in, so the bots go by the clock: when the fight was first seen, and what he
-    // breathed last and before that (which is what comes next).
-    struct BreathClock
-    {
-        ObjectGuid boss;
-        uint32 engagedMs = 0;     // when a bot first saw him in this fight
-        uint32 seenMs = 0;        // when a bot last saw him fighting
-        uint32 lastBreathMs = 0;  // 0: none yet in this fight
-        uint32 lastBreath = 0;
-        uint32 breathBefore = 0;
-    };
-    // A fight nobody has looked at for this long is over: the next look starts a new one.
-    constexpr uint32 BREATH_CLOCK_STALE_MS = 10000;
-
-    std::mutex sBreathLock;
-    std::unordered_map<uint32, BreathClock> sBreathClocks;  // by instance id
-
-    // The clock for this boss in this fight. Call with the lock held.
-    BreathClock& ClockOf(Creature* boss, uint32 now)
-    {
-        BreathClock& clock = sBreathClocks[boss->GetInstanceId()];
-        if (clock.boss != boss->GetGUID() || getMSTimeDiff(clock.seenMs, now) > BREATH_CLOCK_STALE_MS)
-        {
-            clock = BreathClock();
-            clock.boss = boss->GetGUID();
-            clock.engagedMs = now;
-        }
-        clock.seenMs = now;
-        return clock;
-    }
-
-    // A breath worth hiding from is due within `leadMs`, or overdue by less than a few seconds.
-    bool BreathDue(Creature* boss, uint32 leadMs)
-    {
-        uint32 const now = getMSTime();
-        std::lock_guard<std::mutex> guard(sBreathLock);
-        BreathClock const& clock = ClockOf(boss, now);
-
-        // The one that comes next is the one before the last. Unknown for his first two.
-        if (clock.lastBreathMs && clock.breathBefore && !IsAvoidableBreath(clock.breathBefore))
-            return false;
-        uint32 const since = getMSTimeDiff(clock.lastBreathMs ? clock.lastBreathMs : clock.engagedMs, now);
-        return since + leadMs >= CHROMAGGUS_BREATH_INTERVAL_MS &&
-               since <= CHROMAGGUS_BREATH_INTERVAL_MS + CHROMAGGUS_BREATH_LATE_MS;
-    }
-
-    // Time for this bot to be behind something: he is breathing, or about to.
-    bool HideFromChromaggus(Player* bot, Creature* boss)
-    {
-        if (ChromaggusBreath(boss))
-            return true;
-        return BreathDue(boss, PlayerbotAI::IsHeal(bot) ? CHROMAGGUS_HEALER_HIDE_LEAD_MS : CHROMAGGUS_HIDE_LEAD_MS);
-    }
-}
-
-void RaidClear::BlackwingLair::NoteChromaggusBreath(Creature* boss, uint32 spellId)
-{
-    if (!boss || !IsBreath(spellId))
-        return;
-    uint32 const now = getMSTime();
-    std::lock_guard<std::mutex> guard(sBreathLock);
-    BreathClock& clock = ClockOf(boss, now);
-    clock.breathBefore = clock.lastBreath;
-    clock.lastBreath = spellId;
-    clock.lastBreathMs = now ? now : 1;
-}
-
-bool RcBwlHideAction::Execute(Event /*event*/)
-{
-    Unit* from = HideFrom();
-    if (!from)
-        return false;
-
-    // Already out of sight: nothing to do. RcBwlHoldCoverMultiplier keeps other movement from
-    // walking the bot back into view, while heals and casts at targets it can see go on.
-    if (!from->IsWithinLOSInMap(bot))
-        return false;
-
-    uint64 const now = GameTime::GetGameTimeMS().count();
-    bool const cached = _coverFrom == from->GetGUID() && now - _coverFoundMs < COVER_REUSE_MS &&
-                        !SeesSpot(from, _cover.GetPositionX(), _cover.GetPositionY(), _cover.GetPositionZ());
-    if (!cached)
-    {
-        if (now < _noCoverUntilMs)
-            return false;
-        if (!FindCover(bot, from, _range, _maxPath, _cover))
-        {
-            _noCoverUntilMs = now + COVER_RETRY_MS;
-            return false;  // nowhere to hide: fight on
-        }
-        _coverFrom = from->GetGUID();
-        _coverFoundMs = now;
-    }
-
-    return MoveTo(bot->GetMapId(), _cover.GetPositionX(), _cover.GetPositionY(), _cover.GetPositionZ(), false, false,
-                  false, false, MovementPriority::MOVEMENT_FORCED);
-}
-
-namespace
-{
-    // Hidden from Firemaw while Flame Buffet wears off, or from Chromaggus mid-breath.
-    bool HoldingCover(Player* bot)
-    {
-        if (bot->HasAura(SPELL_FLAME_BUFFET))
-            if (Creature* boss = FightingBoss(bot, NPC_FIREMAW))
-                if (!boss->IsWithinLOSInMap(bot))
-                    return true;
-
-        if (Creature* boss = FightingBoss(bot, NPC_CHROMAGGUS))
-            if (HideFromChromaggus(bot, boss) && !boss->IsWithinLOSInMap(bot))
-                return true;
-        return false;
-    }
-
-    // Firemaw stack threshold for this bot: 5 to 7, so the raid doesn't all leave together.
-    uint8 FlameBuffetThreshold(Player* bot)
-    {
-        return FLAME_BUFFET_HIDE_STACKS + uint8(bot->GetGUID().GetCounter() % FLAME_BUFFET_HIDE_SPREAD);
-    }
-
-    // Healers may hide only while enough of the others are still healing.
-    bool HealerMayHide(Player* bot, Unit* boss)
-    {
-        Group* group = bot->GetGroup();
-        if (!group)
-            return true;
-
-        uint32 healers = 0;
-        uint32 hidden = 0;
-        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
-        {
-            Player* member = ref->GetSource();
-            if (!member || !member->IsAlive() || member->GetMapId() != bot->GetMapId() || !PlayerbotAI::IsHeal(member))
-                continue;
-            ++healers;
-            if (member != bot && member->HasAura(SPELL_FLAME_BUFFET) && !boss->IsWithinLOSInMap(member))
-                ++hidden;
-        }
-        return hidden < std::max<uint32>(1, healers / FIREMAW_HEALER_HIDE_SHARE);
-    }
-}
-
-float RcBwlHoldCoverMultiplier::GetValue(Action* action)
-{
-    if (!action || dynamic_cast<RcBwlHideAction*>(action) || !dynamic_cast<MovementAction*>(action) ||
-        PlayerbotAI::IsTank(bot))
-        return 1.0f;
-    return HoldingCover(bot) ? 0.0f : 1.0f;
-}
-
-bool RcBwlFiremawHideTrigger::IsActive()
-{
-    if (PlayerbotAI::IsTank(bot))
-        return false;
-
-    Aura* buffet = bot->GetAura(SPELL_FLAME_BUFFET);
-    if (!buffet)
-        return false;
-
-    Creature* boss = FightingBoss(bot, NPC_FIREMAW);
-    if (!boss)
-        return false;
-
-    // Once hidden, stay hidden until the last stack is gone.
-    if (!boss->IsWithinLOSInMap(bot))
-        return true;
-
-    // Thresholds are staggered per bot, and healers take turns, so the tanks always have heals.
-    if (buffet->GetStackAmount() < FlameBuffetThreshold(bot))
-        return false;
-    return !PlayerbotAI::IsHeal(bot) || HealerMayHide(bot, boss);
-}
-
-Unit* RcBwlFiremawHideAction::HideFrom()
-{
-    return FightingBoss(bot, NPC_FIREMAW);
-}
-
-bool RcBwlChromaggusBreathTrigger::IsActive()
-{
-    if (PlayerbotAI::IsTank(bot))
-        return false;
-
-    Creature* boss = FightingBoss(bot, NPC_CHROMAGGUS);
-    return boss && HideFromChromaggus(bot, boss);
-}
-
-Unit* RcBwlChromaggusHideAction::HideFrom()
-{
-    Creature* boss = FightingBoss(bot, NPC_CHROMAGGUS);
-    return boss && HideFromChromaggus(bot, boss) ? boss : nullptr;
-}
-
 // --- Keep out of a boss's AoE (Broodlord, Nefarian) -----------------------
 
 namespace
@@ -769,18 +488,6 @@ bool RcBwlKeepOutAction::Execute(Event /*event*/)
 
 // --- Ebonroc --------------------------------------------------------------
 
-namespace
-{
-    // Every tank class's single-target taunt, by its playerbots spell name.
-    constexpr std::array<char const*, 4> TAUNTS = { "taunt", "growl", "hand of reckoning", "dark command" };
-
-    // The other taunt-like actions a tank strategy can pick.
-    constexpr std::array<char const*, 8> TAUNT_ACTIONS = {
-        "taunt", "growl", "hand of reckoning", "dark command",
-        "mocking blow", "righteous defense", "challenging shout", "challenging roar",
-    };
-}
-
 bool RcBwlEbonrocTauntTrigger::IsActive()
 {
     if (!PlayerbotAI::IsTank(bot) || bot->HasAura(SPELL_SHADOW_OF_EBONROC))
@@ -802,10 +509,7 @@ bool RcBwlEbonrocTauntAction::Execute(Event /*event*/)
     if (!boss)
         return false;
 
-    for (char const* taunt : TAUNTS)
-        if (botAI->CanCastSpell(taunt, boss) && botAI->CastSpell(taunt, boss))
-            return true;
-    return false;
+    return RaidClear::Tanks::Taunt(botAI, boss);
 }
 
 float RcBwlShadowOfEbonrocMultiplier::GetValue(Action* action)
@@ -813,11 +517,8 @@ float RcBwlShadowOfEbonrocMultiplier::GetValue(Action* action)
     if (!action || !bot->HasAura(SPELL_SHADOW_OF_EBONROC) || !FightingBoss(bot, NPC_EBONROC))
         return 1.0f;
 
-    std::string const name = action->getName();
-    for (char const* taunt : TAUNT_ACTIONS)
-        if (name == taunt)
-            return 0.0f;
-    return 1.0f;
+    // Death Grip included: it pulls him back as surely as a taunt.
+    return RaidClear::Tanks::IsTauntAction(action) ? 0.0f : 1.0f;
 }
 
 // --- Death Talon packs ----------------------------------------------------
@@ -993,7 +694,7 @@ float RcBwlDetonationHoldMultiplier::GetValue(Action* action)
 
 float RcBwlCaptainMainTankMultiplier::GetValue(Action* action)
 {
-    bool const taunt = std::find(TAUNT_ACTIONS.begin(), TAUNT_ACTIONS.end(), action->getName()) != TAUNT_ACTIONS.end();
+    bool const taunt = RaidClear::Tanks::IsTauntAction(action);
     if (!taunt && !dynamic_cast<AttackAction*>(action))
         return 1.0f;
     if (dynamic_cast<RcBwlCaptainHandOffAction*>(action) || !PlayerbotAI::IsTank(bot))
