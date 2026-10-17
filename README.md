@@ -68,6 +68,11 @@ pile. In any raid:
   tank who would catch the boss next. Curses, Hunter's Mark and Tranquilizing Shot still go out.
 - **Endless adds are ignored.** Off-tanks don't chase adds that respawn faster than anyone can
   tank them (Blackwing Lair's Suppression Room whelps).
+- **Packs tanked in one heap.** Some packs only die together (Molten Core's Core Hounds). An
+  off-tank never takes one of those off the main tank and never drags one away; one it picks up
+  off a healer it walks over to the tank holding the pack, so area spells hit them all. That
+  tank is the main tank, or, when the main tank is busy with something else (a boss pulled
+  along), the first off-tank holding one.
 
 ### Aggro leash (all raids)
 
@@ -215,13 +220,13 @@ Core Rager tank split (the off-tank split stays out of that fight), Core Hound p
 | Lucifron, Gehennas, Garr | Kill the Flamewaker Protectors, Flamewalkers and Firesworn before the boss. |
 | Garr | A **Firesworn** more than 40 yards from Garr gets **Separation Anxiety** (four times the damage), and every Firesworn erupts when it dies: about 2,000 fire damage to everyone within 15 yards, or 8,000 with Separation Anxiety. So the fight stays with Garr. A bot more than 30 yards from him walks back to 22, and the Firesworn on it follows (a tank only comes when a Firesworn is on it, so trash pulled with the boss stays where its tank holds it). Nobody but the tanks hits a Firesworn that has Separation Anxiety or is far enough out to get it: bots already attacking one stop, pets and Auto Shot included, a cast or channel at one (Arcane Missiles) or a running area spell it walks into (Blizzard, Volley) is broken off, no area or chain spell (Multi-Shot, Cleave, Chain Lightning through Garr, Consecration) is cast where it would land on one, a tank holds one below 40% with taunts only until Separation Anxiety is gone, and the skull never goes on one. |
 | Molten Giant, Molten Destroyer | **Smash** hits everyone within 10 yards of a giant, **Massive Tremor** everyone within 13 yards of a destroyer. Ranged and healers inside either walk out to 5 yards past its edge. |
-| Lucifron, Magmadar (Core Hounds) | A Core Hound brought to 0 health **plays dead** for 10 seconds and takes no damage, then gets up at full health unless every other Core Hound within 80 yards in the fight is down too. Nobody hits a hound that is playing dead (bots on one switch, pets too), and from the moment one plays dead the skull goes to the standing hound with the least health, so the rest go down inside its 10 seconds. |
+| Lucifron, Magmadar (Core Hounds) | A Core Hound brought to 0 health **plays dead** for 10 seconds and takes no damage, then gets up at full health unless every other Core Hound within 80 yards in the fight is down too, so a pack (or two or three) has to come down together. The tanks keep every hound in one heap. The skull sits on the healthiest hound, and nobody but a tank single-targets a hound more than 10% of its health below that one, while area and chain spells keep hitting them all, so they stay even. Nobody hits a hound that is playing dead (bots on one switch, pets too), and from the moment one plays dead the skull goes to the standing hound with the least health, so the rest go down inside its 10 seconds. |
 | Magmadar | Every shaman keeps **Tremor Totem** down against **Panic**, and places no other earth totem while he is near: playerbots keeps Stoneskin or Strength of Earth down the same way, and left alone the two replace each other every second and a half. |
 | Baron Geddon | **Inferno** burns everyone within 20 yards of him for 8 seconds, harder with every pulse, and he stands still for it. Playerbots walks its bots out, but only the ones that have threat on him: a tank holding an add, a bot on the trash that came with him or one revived mid-fight stands in all of it. Here every bot within 23 yards of him drops its spell and walks to the nearest spot 25 yards out, his tank included; nobody walks back toward anything that close to him until it is over, and a bot still inside casts nothing it has to stand still for. |
 | Baron Geddon | **Living Bomb** goes off after 8 seconds and hits every raid member within 18 yards of its carrier. Playerbots moves the carrier away from the middle of the raid by as many yards as its nearest neighbour is short of 20, which gets a bot at the edge of the group clear and leaves one in the middle (where the healers stand) surrounded. Here the carrier walks to the nearest spot 24.5 yards from everyone else and out of Inferno's reach, looked for up to 40 yards away, or to the emptiest spot there is. |
 | Sulfuron Harbinger | Kill the Flamewaker Priests first. |
 | Majordomo Executus | Healers first, then Elites. No spells into **Magic Reflection**; melee stop swinging into **Damage Reflection** (tanks keep going). The **Hot Coal** in the middle of his room (where his Teleport throws players) burns everyone within 10 yards for about 750 a second while anyone stands within 7 yards of it. In combat a bot that has stopped within 12 yards of it walks out, on the side its target is on (one only crossing the pit is left alone). A tank with a mob on it goes 22 yards out, so the mob follows it out of reach. Melee whose target stands in it stay on that target. |
-| Ragnaros | Ranged and healers stay out of **Wrath of Ragnaros**, which reaches 25 yards from his middle. He is 20 yards wide himself, so the distance is measured centre to centre: a bot closer than 27.5 yards to his middle walks to the nearest dry spot 29.5 yards out and doesn't walk back toward anything that close to him. Not while he is under the lava. Kill the **Sons of Flame** when he submerges. |
+| Ragnaros | **Lava Burst** erupts at three of eight fixed places every 10 seconds or so, seven of them on the rock 30 to 45 yards from him, and an eruption hits most of the raid around it. Each ranged bot and healer takes a spot of its own 30 to 42 yards from him, as far from all eight as the rock allows (the west side of the room), dry, in his line of sight and 3.5 yards from the next; healers pick first, within 36 yards of the main tank. While he is up they walk back to their spot when more than 4 yards off and don't wander away from it. Ranged and healers stay out of **Wrath of Ragnaros**, which reaches 25 yards from his middle. He is 20 yards wide himself, so the distance is measured centre to centre: a bot closer than 27.5 yards to his middle walks to the nearest dry spot 29.5 yards out and doesn't walk back toward anything that close to him. Not while he is under the lava. Kill the **Sons of Flame** when he submerges. |
 
 ### Blackwing Lair
 
@@ -513,6 +518,11 @@ Category: Raids
   channelling into one stops.
 - Core Hounds: bots stop hitting a hound that is playing dead (a quarter of their hits went
   there) and finish the rest of the pack before it gets up again.
+- Core Hounds: the tanks keep the whole pack in one place instead of splitting it up, and the
+  damage dealers bring the hounds down evenly so they all die together. Two or three packs at
+  once are fine.
+- Ragnaros: ranged bots and healers each take a spot on the west side of the room, away from
+  where **Lava Burst** erupts, and stay there.
 - Molten Core: ranged bots and healers step out of a Molten Giant's **Smash** and a Molten
   Destroyer's **Massive Tremor**.
 

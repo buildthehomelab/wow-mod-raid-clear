@@ -839,15 +839,24 @@ namespace
 
     // While none plays dead, a standing hound further than the band below the healthiest one is
     // left alone: hitting it would bring it down while the others still have a long way to go.
-    bool HeldHound(Hounds const& hounds, Unit const* unit)
+    // Never the skull, which is what everyone is sent to.
+    bool HeldHound(Player* bot, Hounds const& hounds, Unit const* unit)
     {
         if (!unit || unit->GetEntry() != NPC_CORE_HOUND || !hounds.down.empty() || hounds.standing.size() < 2 ||
             unit->HasAura(SPELL_PLAY_DEAD))
             return false;
-        float highest = 0.0f;
-        for (Unit* hound : hounds.standing)
-            highest = std::max(highest, hound->GetHealthPct());
-        return unit->GetHealthPct() < highest - CORE_HOUND_HEALTH_BAND;
+        Group* group = bot->GetGroup();
+        if (group && group->GetTargetIcon(RtiTargetValue::skullIndex) == unit->GetGUID())
+            return false;
+        Unit* healthiest = HealthiestHound(bot, hounds);
+        return healthiest && unit->GetHealthPct() < healthiest->GetHealthPct() - CORE_HOUND_HEALTH_BAND;
+    }
+
+    // Some hound is held back: the pack is out of step (one got up again at full health).
+    bool PackUneven(Player* bot, Hounds const& hounds)
+    {
+        return std::any_of(hounds.standing.begin(), hounds.standing.end(),
+                           [bot, &hounds](Unit* hound) { return HeldHound(bot, hounds, hound); });
     }
 
     // Where skull should be: with one playing dead, the hound that keeps it from dying with the
@@ -879,10 +888,16 @@ namespace
         return healthiest;
     }
 
-    // A hound nobody but a tank should be hitting right now.
+    // A tank keeps hitting a hound that is on it: that is its threat.
+    bool HoldsHound(Player* bot, Unit const* unit)
+    {
+        return PlayerbotAI::IsTank(bot) && unit && unit->GetVictim() == bot;
+    }
+
+    // A hound nobody but the tank holding it should be hitting right now.
     bool LeaveHound(Player* bot, Hounds const& hounds, Unit const* unit)
     {
-        return PlayingDead(unit) || (!PlayerbotAI::IsTank(bot) && HeldHound(hounds, unit));
+        return PlayingDead(unit) || (!HoldsHound(bot, unit) && HeldHound(bot, hounds, unit));
     }
 }
 
@@ -957,15 +972,25 @@ float RcMcCoreHoundMultiplier::GetValue(Action* action)
     if (!dynamic_cast<CastSpellAction*>(action) && !dynamic_cast<AttackAction*>(action))
         return 1.0f;
     Unit* target = action->GetTarget();
-    if (!target || target->GetEntry() != NPC_CORE_HOUND)
-        return 1.0f;
+    bool const atHound = target && target->GetEntry() == NPC_CORE_HOUND;
     // A spell aimed at a hound playing dead is wasted.
-    if (PlayingDead(target))
+    if (atHound && PlayingDead(target))
         return 0.0f;
-    // One that also hits the hounds beside it evens them out, which is the point.
-    if (PlayerbotAI::IsTank(bot) || RaidClear::Splash::IsSplashSpell(botAI, action->getName()))
+    if (HoldsHound(bot, target))
         return 1.0f;
-    return HeldHound(HoundsInFight(botAI, bot), target) ? 0.0f : 1.0f;
+
+    // An area or chain spell at the heap (or round the caster) keeps an even pack even, which is
+    // the point; on a pack out of step it would bring the low ones down first again.
+    if (dynamic_cast<CastSpellAction*>(action) && RaidClear::Splash::IsSplashSpell(botAI, action->getName()))
+    {
+        if (PlayerbotAI::IsTank(bot) || (target && target != bot && !atHound))
+            return 1.0f;
+        Hounds const hounds = HoundsInFight(botAI, bot);
+        return hounds.standing.empty() || !PackUneven(bot, hounds) ? 1.0f : 0.0f;
+    }
+    if (!atHound)
+        return 1.0f;
+    return HeldHound(bot, HoundsInFight(botAI, bot), target) ? 0.0f : 1.0f;
 }
 
 // --- Ragnaros -------------------------------------------------------------
@@ -1005,24 +1030,19 @@ namespace
     {
         float x, y, z, gap;
     };
-    using RagnarosSpots = std::shared_ptr<std::vector<RagnarosSpot> const>;
+
+    bool DryAt(Map* map, uint32 phaseMask, float x, float y, float z)
+    {
+        LiquidData const liquid = map->GetLiquidData(phaseMask, x, y, z, 2.0f, {});
+        return !(liquid.Status & MAP_LIQUID_STATUS_IN_CONTACT);
+    }
 
     // Every spot on the rock round him a ranged bot could hold, furthest from the eruptions
-    // first: on the rings, a spacing apart, on dry ground near his height and in his line of
-    // sight. He doesn't move, so it is worked out once per Ragnaros (map updates run on several
-    // threads, hence the lock).
-    RagnarosSpots SpotsRound(Creature* boss)
+    // first: on the rings, a spacing apart, on dry ground (a couple of yards round it too, so a
+    // bot that stops a step short isn't in the lava), near his height and in his line of sight.
+    std::vector<RagnarosSpot> SpotsRound(Creature* boss)
     {
-        static std::mutex lock;
-        static std::map<uint32, std::pair<ObjectGuid, RagnarosSpots>> cache;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            auto const it = cache.find(boss->GetInstanceId());
-            if (it != cache.end() && it->second.first == boss->GetGUID())
-                return it->second.second;
-        }
-
-        auto spots = std::make_shared<std::vector<RagnarosSpot>>();
+        std::vector<RagnarosSpot> spots;
         Map* map = boss->GetMap();
         uint32 const phaseMask = boss->GetPhaseMask();
         for (float const ring : RAGNAROS_RINGS)
@@ -1036,32 +1056,62 @@ namespace
                 float const z = map->GetHeight(phaseMask, x, y, boss->GetPositionZ() + 10.0f);
                 if (z <= INVALID_HEIGHT || z < boss->GetPositionZ() - 4.0f || z > boss->GetPositionZ() + 8.0f)
                     continue;
-                LiquidData const liquid = map->GetLiquidData(phaseMask, x, y, z, 2.0f, {});
-                if (liquid.Status & MAP_LIQUID_STATUS_IN_CONTACT)
+                bool dry = DryAt(map, phaseMask, x, y, z);
+                for (float const side : { 0.0f, 0.5f, 1.0f, 1.5f })
+                {
+                    float const a = side * float(M_PI);
+                    dry = dry && DryAt(map, phaseMask, x + std::cos(a) * RAGNAROS_SPOT_DRY,
+                                       y + std::sin(a) * RAGNAROS_SPOT_DRY, z);
+                }
+                if (!dry || !boss->IsWithinLOS(x, y, z + 2.0f))
                     continue;
-                if (!boss->IsWithinLOS(x, y, z + 2.0f))
-                    continue;
-                spots->push_back({ x, y, z, GapToLavaBurst(x, y) });
+                spots.push_back({ x, y, z, GapToLavaBurst(x, y) });
             }
         }
-        std::stable_sort(spots->begin(), spots->end(),
+        std::stable_sort(spots.begin(), spots.end(),
                          [](RagnarosSpot const& a, RagnarosSpot const& b) { return a.gap > b.gap; });
-
-        std::lock_guard<std::mutex> guard(lock);
-        cache[boss->GetInstanceId()] = { boss->GetGUID(), spots };
         return spots;
     }
 
-    // This bot's spot: the group's ranged bots and healers take theirs in turn, healers first and
-    // each in group order, every one the spot furthest from the eruptions that is a spacing clear
-    // of those already taken; a healer's within reach of the main tank if any is.
-    bool WorkOutSpot(Player* bot, Creature* boss, RagnarosSpot& out)
+    // Who holds which spot, per Ragnaros. Handed out once and kept, also for a bot that dies (it
+    // may be rezzed), so a death or a tank thrown back by his Wrath doesn't move everyone else.
+    struct RagnarosLayout
     {
+        ObjectGuid boss;
+        std::vector<RagnarosSpot> spots;
+        std::map<ObjectGuid, std::size_t> holder;
+    };
+
+    // This bot's spot. The first time a bot of the group has none, every ranged bot and healer
+    // still without one gets one: healers first and each in group order, every one the spot
+    // furthest from the eruptions that is a spacing clear of those already held; a healer's
+    // within reach of where the main tank stands then, if any is. Map updates run on several
+    // threads, hence the lock.
+    bool SpotFor(Player* bot, Creature* boss, RagnarosSpot& out)
+    {
+        static std::mutex lock;
+        static std::map<uint32, RagnarosLayout> layouts;
+
         Group* group = bot->GetGroup();
         if (!group)
             return false;
-        RagnarosSpots const spots = SpotsRound(boss);
-        if (spots->empty())
+
+        std::lock_guard<std::mutex> guard(lock);
+        RagnarosLayout& layout = layouts[boss->GetInstanceId()];
+        if (layout.boss != boss->GetGUID())
+        {
+            layout.boss = boss->GetGUID();
+            layout.spots = SpotsRound(boss);
+            layout.holder.clear();
+        }
+
+        auto const held = layout.holder.find(bot->GetGUID());
+        if (held != layout.holder.end())
+        {
+            out = layout.spots[held->second];
+            return true;
+        }
+        if (layout.spots.empty())
             return false;
 
         std::vector<Player*> healers;
@@ -1070,31 +1120,34 @@ namespace
         {
             Player* member = ref->GetSource();
             if (!member || !member->IsAlive() || !member->IsInMap(bot) || !GET_PLAYERBOT_AI(member) ||
-                !KeepsOutOfWrath(member))
+                !KeepsOutOfWrath(member) || layout.holder.count(member->GetGUID()))
                 continue;
             (PlayerbotAI::IsHeal(member) ? healers : ranged).push_back(member);
         }
 
         Player* mainTank = RaidClear::Tanks::ActingMainTank(group);
-        std::vector<RagnarosSpot const*> taken;
-        auto const clear = [&taken](RagnarosSpot const& spot)
+        auto const clear = [&layout](RagnarosSpot const& spot)
         {
-            for (RagnarosSpot const* other : taken)
-                if (std::hypot(spot.x - other->x, spot.y - other->y) < RAGNAROS_SPOT_SPACING - 0.1f)
+            for (auto const& [guid, index] : layout.holder)
+            {
+                RagnarosSpot const& other = layout.spots[index];
+                if (std::hypot(spot.x - other.x, spot.y - other.y) < RAGNAROS_SPOT_SPACING - 0.1f)
                     return false;
+            }
             return true;
         };
-        auto const pick = [&](bool healer) -> RagnarosSpot const*
+        auto const pick = [&](bool healer) -> std::size_t
         {
-            RagnarosSpot const* fallback = nullptr;
-            for (RagnarosSpot const& spot : *spots)
+            std::size_t fallback = layout.spots.size();
+            for (std::size_t i = 0; i < layout.spots.size(); ++i)
             {
+                RagnarosSpot const& spot = layout.spots[i];
                 if (!clear(spot))
                     continue;
                 if (!healer || !mainTank || mainTank->GetExactDist2d(spot.x, spot.y) <= RAGNAROS_HEAL_REACH)
-                    return &spot;
-                if (!fallback)
-                    fallback = &spot;
+                    return i;
+                if (fallback == layout.spots.size())
+                    fallback = i;
             }
             return fallback;
         };
@@ -1102,79 +1155,18 @@ namespace
         for (bool const healer : { true, false })
             for (Player* member : healer ? healers : ranged)
             {
-                RagnarosSpot const* spot = pick(healer);
-                if (!spot)
-                    return false;
-                if (member == bot)
-                {
-                    out = *spot;
-                    return true;
-                }
-                taken.push_back(spot);
+                std::size_t const index = pick(healer);
+                if (index == layout.spots.size())
+                    break;
+                layout.holder[member->GetGUID()] = index;
             }
-        return false;
+
+        auto const mine = layout.holder.find(bot->GetGUID());
+        if (mine == layout.holder.end())
+            return false;
+        out = layout.spots[mine->second];
+        return true;
     }
-
-    // The same, looked at again at most once a second: the multiplier asks for it on every walk.
-    bool SpotFor(Player* bot, Creature* boss, RagnarosSpot& out)
-    {
-        struct Known
-        {
-            uint32 atMs;
-            bool found;
-            RagnarosSpot spot;
-        };
-        static std::mutex lock;
-        static std::map<ObjectGuid, Known> known;
-        uint32 const now = getMSTime();
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            auto const it = known.find(bot->GetGUID());
-            if (it != known.end() && getMSTimeDiff(it->second.atMs, now) < RAGNAROS_SPOT_RECHECK_MS)
-            {
-                out = it->second.spot;
-                return it->second.found;
-            }
-        }
-        RagnarosSpot spot{};
-        bool const found = WorkOutSpot(bot, boss, spot);
-        std::lock_guard<std::mutex> guard(lock);
-        known[bot->GetGUID()] = { now, found, spot };
-        out = spot;
-        return found;
-    }
-}
-
-bool RcMcRagnarosRangedTrigger::IsActive()
-{
-    if (!bot->IsAlive() || !KeepsOutOfWrath(bot) || !botAI->CanMove())
-        return false;
-
-    // From his middle: the spell measures from there, and he is 20 yd wide.
-    Creature* boss = EmergedRagnaros(bot);
-    return boss && bot->GetExactDist(boss) < RAGNAROS_KEEP_AWAY;
-}
-
-bool RcMcRagnarosMoveOutAction::Execute(Event /*event*/)
-{
-    Creature* boss = EmergedRagnaros(bot);
-    if (!boss || bot->GetExactDist(boss) >= RAGNAROS_KEEP_AWAY)
-        return false;
-
-    // He sits in the lava in the middle of the room and the raid stands on the rock round it:
-    // a spot further from him only counts when it is dry.
-    Position const centre = boss->GetPosition();
-    Map* map = bot->GetMap();
-    uint32 const phaseMask = bot->GetPhaseMask();
-    float const height = bot->GetCollisionHeight();
-    auto const gapAt = [&centre, map, phaseMask, height](float x, float y, float z)
-    {
-        LiquidData const liquid = map->GetLiquidData(phaseMask, x, y, z, height, {});
-        return liquid.Status & MAP_LIQUID_STATUS_IN_CONTACT ? 0.0f : centre.GetExactDist(x, y, z);
-    };
-    // A bot knocked into the lava scores 0 where it stands: every ring is worth a look then.
-    bool const dry = gapAt(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) > 0.0f;
-    return _walk.Go(gapAt, RAGNAROS_KEEP_AWAY, RAGNAROS_SPOT, RAGNAROS_WORTH_IT, RAGNAROS_SEARCH, dry);
 }
 
 bool RcMcRagnarosSpotTrigger::IsActive()
@@ -1207,8 +1199,10 @@ float RcMcRagnarosHoldMultiplier::GetValue(Action* action)
     if (!KeepsOutOfWrath(bot))
         return 1.0f;
 
-    // On its spot, a bot doesn't walk off it for anything but this module's own way out.
-    if (walks && action->getName().rfind("rc ", 0) != 0)
+    // On its spot, a bot doesn't walk off it for anything but this module's own way out, or out
+    // of the lava.
+    if (walks && action->getName().rfind("rc ", 0) != 0 && action->getName() != "mc move from lava" &&
+        DryAt(bot->GetMap(), bot->GetPhaseMask(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
         if (Creature* boss = EmergedRagnaros(bot))
         {
             RagnarosSpot spot;

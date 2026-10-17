@@ -40,9 +40,10 @@
  *     no ranged bot or healer at all). Ranged bots and healers each take a spot of their own on
  *     the rock 30 to 42 yd from him, as far from all eight as there is, dry and in his line of
  *     sight, 3.5 yd apart: the west side of the room. Healers pick first, among spots within
- *     36 yd of the main tank so he stays in reach of their heals. While he is up a bot walks
- *     back to its spot when it is more than 4 yd off, and doesn't walk away from it for
- *     anything else (a heal out of reach is somebody else's).
+ *     36 yd of the main tank so he stays in reach of their heals. Spots are handed out once and
+ *     kept, a dead bot's too, so a death or the tank thrown back doesn't move everyone. While he
+ *     is up a bot walks back to its spot when it is more than 4 yd off, and doesn't walk away
+ *     from it for anything else but the lava (a heal out of reach is somebody else's).
  *   - Ragnaros: ranged and healers stay out of Wrath of Ragnaros (20566), which reaches 25 yd
  *     from his middle. He is 20 yd wide himself (his combat reach), so this is measured centre
  *     to centre: 27.5 yd from his middle is only 6 yd from his edge. A bot closer than that
@@ -69,9 +70,10 @@
  *     heap (the raid's stack adds, see Common/TankRoles.h) and:
  *       - skull sits on the healthiest standing hound in the fight, and stays there until
  *         another has more than half the band (CORE_HOUND_HEALTH_BAND) more health;
- *       - nobody but a tank aims a single-target attack at a hound more than the band below
- *         the healthiest (bots already on one turn away, pets too); area and chain spells
- *         still go out, they even the pack out;
+ *       - nobody but the tank holding it aims a single-target attack at a hound more than the
+ *         band below the healthiest (bots already on one turn away, pets too); area and chain
+ *         spells still go out while no hound is that far behind, they even the pack out, and
+ *         wait while one is (a hound that got up again at full health);
  *       - nobody hits a hound that is playing dead (a log of 2026-10-16: a quarter of all
  *         hits on hounds landed on those, for nothing), and from the moment one plays dead
  *         skull goes to the standing hound with the least health, so the rest, all within the
@@ -216,7 +218,8 @@ namespace RaidClear::MoltenCore
     // A bot further than this from its spot walks back to it; one this close holds it.
     constexpr float RAGNAROS_SPOT_LEAVE = 4.0f;
     constexpr float RAGNAROS_SPOT_HOLD = 6.0f;
-    constexpr uint32 RAGNAROS_SPOT_RECHECK_MS = 1000;
+    // A spot has dry ground this far round it too.
+    constexpr float RAGNAROS_SPOT_DRY = 2.5f;
 
     // Garr checks his Firesworn once a second: more than 40 yd from him (edge to edge) and it
     // gets Separation Anxiety. A Firesworn this far out counts as having it already.

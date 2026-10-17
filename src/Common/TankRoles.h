@@ -126,8 +126,9 @@ namespace RaidClear::Tanks
     bool IsSpreadAdd(Unit const* unit);
 
     // A mob of a pack tanked in one heap (the raid lists them: MC's Core Hounds), and the tank the
-    // heap is on: the main tank, unless it is on something else (a boss pulled with the pack);
-    // then the first off-tank in group order that holds one, else the first free one.
+    // heap is on: the main tank, unless it is on something else (a boss pulled with the pack) and
+    // holds none of them; then the first off-tank in group order that holds one, else the first
+    // free one.
     bool IsStackAdd(Unit const* unit);
     Player* StackAnchor(PlayerbotAI* botAI, Player* mainTank, GuidVector const& attackers);
 

@@ -40,8 +40,9 @@ namespace RaidClear::Tanks
         constexpr float PICKUP_RANGE = 40.0f;
         // Re-separate only once the off-tank has drifted this far inside the wanted distance.
         constexpr float SEPARATION_SLACK = 3.0f;
-        // An off-tank with a stack add stands this close to the tank holding the pack.
-        constexpr float STACK_RANGE = 4.0f;
+        // An off-tank with a stack add walks to this close to the tank holding the pack (edge to
+        // edge, as MoveTo measures), and again once it is SLACK further off.
+        constexpr float STACK_RANGE = 2.0f;
         constexpr float STACK_SLACK = 3.0f;
         // After the separation search finds nowhere better, wait this long before searching again.
         constexpr uint32 SEPARATION_RETRY_MS = 2000;
@@ -402,6 +403,11 @@ namespace RaidClear::Tanks
         Unit* mainTarget = mainTank->GetVictim();
         if (!mainTarget || IsStackAdd(mainTarget))
             return mainTank;
+        // Holding any of them already: the heap is there, or the pack ends up in two.
+        for (ObjectGuid const& guid : attackers)
+            if (Unit* unit = botAI->GetUnit(guid))
+                if (unit->IsAlive() && IsStackAdd(unit) && unit->GetVictim() == mainTank)
+                    return mainTank;
 
         // The main tank is on something else (a boss pulled with the pack): the first off-tank in
         // group order that holds one, else the first that is free to take one.
@@ -1218,7 +1224,7 @@ namespace
 bool RcOffTankStackTrigger::IsActive()
 {
     Player* anchor = StackAnchorFor(botAI, bot);
-    return anchor && bot->GetExactDist2d(anchor) > STACK_RANGE + STACK_SLACK;
+    return anchor && bot->GetDistance(anchor) > STACK_RANGE + STACK_SLACK;
 }
 
 bool RcOffTankStackAction::Execute(Event /*event*/)
