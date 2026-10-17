@@ -268,6 +268,47 @@ RaidClear.MoltenCore.Enable = 1
 RaidClear.BlackwingLair.Enable = 1
 
 #
+#    RaidClear.BlackwingLair.Firemaw.<Role>Spot
+#    RaidClear.BlackwingLair.Chromaggus.<Role>Spot
+#        Description: Fixed spots for the Firemaw and Chromaggus fights, as "x y z" (or the
+#                     line .gps prints: the first three numbers are used). Empty: that role
+#                     has no spot, and bots search for cover round themselves as before.
+#                     Changes apply on .reload config.
+#                     TankSpot       - where the tank the boss is on holds him (back to a wall,
+#                                      so Wing Buffet throws nobody).
+#                     OffTankSpot    - Firemaw: where his second tank stands, beside TankSpot
+#                                      and in melee reach of him.
+#                     TankHideSpot   - Firemaw: where a tank drops its Flame Buffet stacks
+#                                      (empty: MeleeHideSpot).
+#                     MeleeHideSpot  - where melee hide (out of the boss's sight).
+#                     RangedSpot     - where ranged damage dealers fight from (in range and in
+#                                      sight of the boss at TankSpot).
+#                     RangedHideSpot - where ranged hide.
+#                     HealerSpot     - where healers heal from (in reach and sight of TankSpot
+#                                      and OffTankSpot; empty: RangedSpot).
+#                     HealerHideSpot - where healers hide (empty: RangedHideSpot).
+#                     Bots spread up to 3 yd round a spot. A hide spot the boss can see from
+#                     where he stands is skipped for a cover search.
+#        Default:     "" (no spot)
+#
+
+RaidClear.BlackwingLair.Firemaw.TankSpot = ""
+RaidClear.BlackwingLair.Firemaw.OffTankSpot = ""
+RaidClear.BlackwingLair.Firemaw.TankHideSpot = ""
+RaidClear.BlackwingLair.Firemaw.MeleeHideSpot = ""
+RaidClear.BlackwingLair.Firemaw.RangedSpot = ""
+RaidClear.BlackwingLair.Firemaw.RangedHideSpot = ""
+RaidClear.BlackwingLair.Firemaw.HealerSpot = ""
+RaidClear.BlackwingLair.Firemaw.HealerHideSpot = ""
+
+RaidClear.BlackwingLair.Chromaggus.TankSpot = ""
+RaidClear.BlackwingLair.Chromaggus.MeleeHideSpot = ""
+RaidClear.BlackwingLair.Chromaggus.RangedSpot = ""
+RaidClear.BlackwingLair.Chromaggus.RangedHideSpot = ""
+RaidClear.BlackwingLair.Chromaggus.HealerSpot = ""
+RaidClear.BlackwingLair.Chromaggus.HealerHideSpot = ""
+
+#
 #    RaidClear.ZulGurub.Enable
 #        Description: Zul'Gurub strategy (map 309): High Priest Venoxis' Razzashi Cobras die first,
 #                     and while he is a troll (above 50%) everyone but the tanks stays about 16 yd

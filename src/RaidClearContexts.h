@@ -88,6 +88,8 @@ public:
         creators["rc bwl catch technician"] = &RaidClearActionContext::bwl_catch_technician;
         creators["rc bwl firemaw hide"] = &RaidClearActionContext::bwl_firemaw_hide;
         creators["rc bwl chromaggus hide"] = &RaidClearActionContext::bwl_chromaggus_hide;
+        creators["rc bwl boss spot"] = &RaidClearActionContext::bwl_boss_spot;
+        creators["rc bwl drake swap"] = &RaidClearActionContext::bwl_drake_swap;
         creators["rc bwl dragon move"] = &RaidClearActionContext::bwl_dragon_move;
         creators["rc bwl nefarian fear ward"] = &RaidClearActionContext::bwl_nefarian_fear_ward;
         creators["rc bwl wyrmguard stay clear"] = &RaidClearActionContext::bwl_wyrmguard_keep_away;
@@ -180,6 +182,8 @@ private:
     static Action* bwl_catch_technician(PlayerbotAI* botAI) { return new RcBwlCatchTechnicianAction(botAI); }
     static Action* bwl_firemaw_hide(PlayerbotAI* botAI) { return new RcBwlFiremawHideAction(botAI); }
     static Action* bwl_chromaggus_hide(PlayerbotAI* botAI) { return new RcBwlChromaggusHideAction(botAI); }
+    static Action* bwl_boss_spot(PlayerbotAI* botAI) { return new RcBwlBossSpotAction(botAI); }
+    static Action* bwl_drake_swap(PlayerbotAI* botAI) { return new RcBwlDrakeSwapAction(botAI); }
     static Action* bwl_dragon_move(PlayerbotAI* botAI) { return new RcBwlDragonMoveAction(botAI); }
     static Action* bwl_nefarian_fear_ward(PlayerbotAI* botAI) { return new RcBwlFearWardAction(botAI); }
     static Action* bwl_wyrmguard_keep_away(PlayerbotAI* botAI) { return new RcBwlWyrmguardKeepAwayAction(botAI); }
@@ -273,6 +277,8 @@ public:
         creators["rc bwl fleeing technician"] = &RaidClearTriggerContext::bwl_fleeing_technician;
         creators["rc bwl firemaw hide"] = &RaidClearTriggerContext::bwl_firemaw_hide;
         creators["rc bwl chromaggus breath"] = &RaidClearTriggerContext::bwl_chromaggus_breath;
+        creators["rc bwl boss spot"] = &RaidClearTriggerContext::bwl_boss_spot;
+        creators["rc bwl drake swap"] = &RaidClearTriggerContext::bwl_drake_swap;
         creators["rc bwl dragon position"] = &RaidClearTriggerContext::bwl_dragon_position;
         creators["rc bwl dragon breath"] = &RaidClearTriggerContext::bwl_dragon_breath;
         creators["rc bwl nefarian tremor"] = &RaidClearTriggerContext::bwl_nefarian_tremor;
@@ -377,6 +383,8 @@ private:
     static Trigger* bwl_fleeing_technician(PlayerbotAI* botAI) { return new RcBwlFleeingTechnicianTrigger(botAI); }
     static Trigger* bwl_firemaw_hide(PlayerbotAI* botAI) { return new RcBwlFiremawHideTrigger(botAI); }
     static Trigger* bwl_chromaggus_breath(PlayerbotAI* botAI) { return new RcBwlChromaggusBreathTrigger(botAI); }
+    static Trigger* bwl_boss_spot(PlayerbotAI* botAI) { return new RcBwlBossSpotTrigger(botAI); }
+    static Trigger* bwl_drake_swap(PlayerbotAI* botAI) { return new RcBwlDrakeSwapTrigger(botAI); }
     static Trigger* bwl_dragon_position(PlayerbotAI* botAI) { return new RcBwlDragonPositionTrigger(botAI); }
     static Trigger* bwl_dragon_breath(PlayerbotAI* botAI) { return new RcBwlDragonBreathTrigger(botAI); }
     static Trigger* bwl_nefarian_tremor(PlayerbotAI* botAI) { return new RcBwlNefarianTremorTrigger(botAI); }

@@ -41,8 +41,16 @@
  *     technician for five minutes. Every bot that isn't a healer hits one that is still
  *     running, each starting with a different one, and the damage dealers go after those out of
  *     reach; tanks stay where they are. Not once Vaelastrasz himself is in the fight.
- *   - Firemaw: Flame Buffet (23341) stacks on everyone in his line of sight every 5s. A non-tank
- *     at 5 stacks hides behind cover until it drops off.
+ *   - Firemaw: Flame Buffet (23341) stacks on everyone in his line of sight every 5s. A damage
+ *     dealer or spare tank at 5-7 stacks hides until it drops off; healers take turns, the most
+ *     stacks first, at most a third of them at once (any at 9 or more go anyway). His two tanks
+ *     trade him: the one he is on hands him to the other once it has 10 stacks and 7 more than
+ *     the other, and a holder he isn't on hides at 10 while a spare tank can stand in for it.
+ *     A bot that hides is "hiding" for everyone (BwlCover.cpp) until its last stack is gone.
+ *   - Firemaw and Chromaggus can have fixed spots, from the config (BwlCover.cpp): where the
+ *     tank he is on holds him, where Firemaw's second tank stands, where ranged and healers
+ *     fight from, and where each role hides. Without them, cover is searched for round the bot.
+ *     Sight is judged the way the core's spells judge it (small props don't block).
  *   - Firemaw, Ebonroc, Flamegor, Nefarian (BwlPositions.cpp): Shadow Flame is a 120-degree
  *     cone 45 yd long that kills a non-tank outright; Wing Buffet and Cleave go the same way.
  *     Everyone but the dragon's victim and the tank that takes it next stays out of the front,
@@ -50,9 +58,9 @@
  *     rule takes every non-victim to the flank at melee range, casters and healers included;
  *     for those it is switched off.
  *   - Chromaggus: he breathes every 30s from the pull, his two breaths taking turns, and a 2s
- *     cast is too short to reach cover in. Non-tanks go behind cover a few seconds before a
- *     breath is due (the clock is kept from his casts), except for Time Lapse, which
- *     everyone should take because it halves the threat of everyone it hits, tank included.
+ *     cast is too short to reach cover in. Everyone but the bot he is on goes behind cover a few
+ *     seconds before a breath is due (the clock is kept from his casts), Time Lapse included: it
+ *     only stuns (its threat cut was taken out in 2.0.1), and his tank is the one that takes it.
  *     Brood Affliction: Black (a curse that makes its target take more fire damage, which
  *     Incinerate and Ignite Flesh deal) is removed before anything else the curse removers would
  *     do: mages, druids and Cleanse Spirit shamans split the cursed players between them, tanks
@@ -189,7 +197,7 @@ namespace RaidClear::BlackwingLair
         SPELL_CHROMAGGUS_FRENZY = 23128,   // "Enrage" in the client; the one below 20% can't be removed
         SPELL_SHADOW_FLAME      = 22539,   // Firemaw, Ebonroc, Flamegor, Nefarian: 120 degrees, 45 yd
         SPELL_WING_BUFFET       = 23339,   // the three drakes: 120 degrees, 20 yd; throws 39 yd
-        SPELL_BROODLORD_KNOCK_AWAY = 18670,  // whoever he is on, 17 yd
+        SPELL_BROODLORD_KNOCK_AWAY = 25778,  // whoever he is on (boss_broodlord_lashlayer)
         SPELL_BROODLORD_BLAST_WAVE = 23331,  // everyone within 20 yd of him, 18 yd
         SPELL_FEAR_WARD         = 6346,
         SPELL_ROGUE_PARALYZE    = 23414,   // Nefarian's rogue call
@@ -248,16 +256,38 @@ namespace RaidClear::BlackwingLair
 
     // Firemaw: hide at 5-7 Flame Buffet stacks (each one adds fire damage taken), the exact
     // number varying per bot so the raid doesn't leave at once. At most a third of the healers
-    // hide at the same time.
+    // hide at the same time, those with the most stacks first; one with HEALER_MUST_HIDE_STACKS
+    // goes whatever the others do. (Last night's log, 2026-10-17: the same five healers took
+    // every turn and seven never dropped a stack, ending on 15 to 22.)
     constexpr uint8 FLAME_BUFFET_HIDE_STACKS = 5;
     constexpr uint8 FLAME_BUFFET_HIDE_SPREAD = 3;
     constexpr uint32 FIREMAW_HEALER_HIDE_SHARE = 3;
-    // Cover search radius and the longest walk accepted: anywhere around a corner in Firemaw's
-    // room; Chromaggus' breath gives 2s, about 14 yd of running.
+    constexpr uint8 HEALER_MUST_HIDE_STACKS = 9;
+    // His two tanks: the one he is on hands him to the other once it has TANK_SWAP_STACKS and at
+    // least TANK_SWAP_GAP more than that one; a holder he isn't on hides at TANK_REST_STACKS
+    // while another tank with at most TANK_SPARE_STACKS can stand in for it.
+    constexpr uint8 TANK_SWAP_STACKS = 10;
+    constexpr uint8 TANK_SWAP_GAP = 7;
+    constexpr uint8 TANK_REST_STACKS = 10;
+    constexpr uint8 TANK_SPARE_STACKS = 5;
+    // A bot that set off to hide and is still in his sight this long after gives up (nowhere to
+    // go: it fights on), and doesn't try again for HIDE_RETRY_MS. It would otherwise keep a
+    // healer's turn to itself.
+    constexpr uint32 HIDE_GIVE_UP_MS = 8000;
+    constexpr uint32 HIDE_RETRY_MS = 10000;
+    // Cover search radius and the longest walk accepted, when no spot is set: anywhere around a
+    // corner in Firemaw's room; Chromaggus' 7 s lead is some 45 yd of running.
     constexpr float FIREMAW_COVER_RANGE = 30.0f;
     constexpr float FIREMAW_COVER_PATH = 45.0f;
-    constexpr float CHROMAGGUS_COVER_RANGE = 25.0f;
-    constexpr float CHROMAGGUS_COVER_PATH = 40.0f;
+    constexpr float CHROMAGGUS_COVER_RANGE = 34.0f;
+    constexpr float CHROMAGGUS_COVER_PATH = 45.0f;
+    // Fixed spots (BwlCover.cpp). A tank holds within SPOT_TANK_NEAR of its spot, a caster or
+    // healer within SPOT_NEAR of its own place round the spot (bots spread up to SPOT_SCATTER
+    // round it). Within SPOT_HOLD nothing but the raid mechanics walks it away.
+    constexpr float SPOT_TANK_NEAR = 2.0f;
+    constexpr float SPOT_NEAR = 3.5f;
+    constexpr float SPOT_SCATTER = 3.0f;
+    constexpr float SPOT_HOLD = 8.0f;
     // Chromaggus breathes every 30s from the pull, his two breaths taking turns. Non-tanks go
     // for cover this long before one is due (healers much later, so the tank isn't left without
     // heals for the whole walk: a healer whose cover is further than a 3s run takes the breath),
@@ -373,6 +403,11 @@ namespace RaidClear::BlackwingLair
     constexpr float DRAKE_TAUNT_ARC = 0.8727f;  // 50 degrees
     constexpr float DRAKE_TAUNT_NEAR = 8.0f;
     constexpr float DRAKE_OFFTANK_SHARE = 0.8f;
+    // A drake on someone who isn't a tank for this long may be taunted by any tank, holder or
+    // not (2026-10-17: Firemaw spent 40 s on non-tanks because both holders "could" taunt).
+    constexpr uint32 DRAKE_LOOSE_TAUNT_MS = 1500;
+    // The second tank is kept for the fight; one that has held an add this long is replaced.
+    constexpr uint32 DRAKE_SECOND_ADD_MS = 5000;
 
     std::vector<KillOrderEntry> const& KillOrder();
 
@@ -407,6 +442,34 @@ namespace RaidClear::BlackwingLair
 
     // Chromaggus has started casting something: kept for the breath clock.
     void NoteChromaggusBreath(Creature* boss, uint32 spellId);
+
+    // Whether the boss sees this unit, or a spot a player could stand on, the way the core's
+    // spells judge it: small props (M2 models) don't block, and a spot is looked at from the
+    // boss's own eyes to a player's height above it.
+    bool SeenBy(Unit const* boss, WorldObject const* who);
+    bool SeesSpot(Unit const* boss, float x, float y, float z);
+
+    // The bot has set off to hide from Firemaw's Flame Buffet and holds there until the last
+    // stack is gone. One answer for every bot: healers' turns, his tanks and the front rule all
+    // go by it.
+    bool HidingFromFiremaw(Player* bot);
+
+    // Fixed spots for Firemaw and Chromaggus, from the config. A role's spot, or nullptr when it
+    // isn't set.
+    enum class Spot : uint8
+    {
+        Tank,        // where the tank he is on holds him
+        OffTank,     // Firemaw: where his second tank stands
+        TankHide,    // Firemaw: where a tank drops its stacks (else MeleeHide)
+        MeleeHide,
+        Ranged,      // where ranged damage dealers fight from
+        RangedHide,
+        Healer,      // where healers heal from (else Ranged)
+        HealerHide,  // (else RangedHide)
+        Count
+    };
+    Position const* BossSpot(uint32 bossEntry, Spot spot);
+    void LoadSpots();
 
     // Player hooks for Blackwing Lair (the Onyxia Scale Cloak aura on revived bots).
     void AddScripts();
@@ -508,10 +571,11 @@ public:
     float GetValue(Action* action) override;
 };
 
-// --- Line-of-sight cover (Firemaw, Chromaggus) ----------------------------
+// --- Line-of-sight cover and fixed spots (Firemaw, Chromaggus; BwlCover.cpp) --
 
-// Walks to the nearest reachable spot the boss can't see, and stays there while the trigger
-// holds. The spot is remembered so the search runs once per hide, not every tick.
+// Walks to the role's hide spot from the config, or without one (or with the boss seeing it)
+// to the nearest reachable spot the boss can't see, and stays there while the trigger holds.
+// A searched spot is remembered so the search runs once per hide, not every tick.
 class RcBwlHideAction : public MovementAction
 {
 public:
@@ -531,7 +595,9 @@ private:
     uint64 _noCoverUntilMs = 0;  // a search just found nothing; don't repeat it every tick
 };
 
-// While a bot is hidden, nothing else walks it back into view (its spells still go out).
+// While a bot is hidden, nothing else walks it back into view (its spells still go out). The
+// raid mechanics' own steps (out of a breath, a bomb, a fire) and playerbots' "avoid aoe" still
+// do.
 class RcBwlHoldCoverMultiplier : public Multiplier
 {
 public:
@@ -572,6 +638,36 @@ public:
 
 protected:
     Unit* HideFrom() override;
+};
+
+// The bot has a fixed spot for its role in this fight (the tank the boss is on, Firemaw's second
+// tank, ranged, healers) and isn't on it.
+class RcBwlBossSpotTrigger : public Trigger
+{
+public:
+    RcBwlBossSpotTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl boss spot") {}
+    bool IsActive() override;
+};
+
+class RcBwlBossSpotAction : public MovementAction
+{
+public:
+    RcBwlBossSpotAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl boss spot") {}
+    bool Execute(Event event) override;
+};
+
+// On its spot, nothing but the raid mechanics walks the bot off it: not playerbots' positioning
+// (tank face, rear flank, reach), not the knockback footing (a tank with its back to the wall
+// isn't thrown anywhere).
+class RcBwlSpotHoldMultiplier : public Multiplier
+{
+public:
+    RcBwlSpotHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl spot hold") {}
+    float GetValue(Action* action) override;
+
+private:
+    uint32 _checkedAtMs = 0;  // the answer below holds for a few ticks: every action asks
+    bool _holds = false;
 };
 
 // --- Keep out of a boss's AoE (Broodlord, Nefarian) -----------------------
@@ -875,8 +971,24 @@ public:
     bool Execute(Event event) override;
 };
 
+// Firemaw: the tank he is on has piled up Flame Buffet and this one, his other tank, hasn't.
+class RcBwlDrakeSwapTrigger : public Trigger
+{
+public:
+    RcBwlDrakeSwapTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl drake swap") {}
+    bool IsActive() override;
+};
+
+class RcBwlDrakeSwapAction : public Action
+{
+public:
+    RcBwlDrakeSwapAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl drake swap") {}
+    bool Execute(Event event) override;
+};
+
 // Only the drake's two tanks taunt it, from in front, not during Shadow Flame; every other tank
-// stays under their threat.
+// stays under their threat. On Firemaw one of them only takes him off the other when it has far
+// fewer stacks (the swap), so the two don't hand him back and forth.
 class RcBwlDrakeTauntMultiplier : public Multiplier
 {
 public:
