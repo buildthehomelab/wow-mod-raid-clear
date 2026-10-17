@@ -29,6 +29,7 @@
 #include "SpellMgr.h"
 #include "Timer.h"
 
+#include <algorithm>
 #include <array>
 #include <list>
 #include <cmath>
@@ -61,6 +62,14 @@ std::vector<uint32> const& RaidClear::MoltenCore::TankSplitSkipBosses()
 {
     static std::vector<uint32> const bosses = { NPC_GOLEMAGG };
     return bosses;
+}
+
+std::vector<uint32> const& RaidClear::MoltenCore::TankSplitStackAdds()
+{
+    // A pack has to come down inside one Play Dead (see the Core Hounds below): in one heap the
+    // area spells hit them all.
+    static std::vector<uint32> const stack = { NPC_CORE_HOUND };
+    return stack;
 }
 
 std::vector<RaidClear::Tanks::SplashRadius> const& RaidClear::MoltenCore::TankSplitSplashRadii()
@@ -114,10 +123,9 @@ void RaidClearMoltenCoreStrategy::InitTriggers(std::vector<TriggerNode*>& trigge
     triggers.push_back(
         new TriggerNode("rc mc splash trash", { NextAction("rc mc leave splash trash", ACTION_RAID + 1) }));
 
-    // Above playerbots' hound marking (ACTION_RAID).
-    triggers.push_back(new TriggerNode("rc mc finish hounds", { NextAction("rc mc mark hound", ACTION_RAID + 3) }));
-    triggers.push_back(
-        new TriggerNode("rc mc play dead target", { NextAction("rc mc leave play dead", ACTION_RAID + 2) }));
+    // Above playerbots' hound marking (ACTION_RAID), which the hound multiplier turns off.
+    triggers.push_back(new TriggerNode("rc mc hound skull", { NextAction("rc mc mark hound", ACTION_RAID + 3) }));
+    triggers.push_back(new TriggerNode("rc mc hound target", { NextAction("rc mc leave hound", ACTION_RAID + 2) }));
     triggers.push_back(
         new TriggerNode("rc mc anxious firesworn", { NextAction("rc mc leave firesworn", ACTION_RAID + 2) }));
 }
@@ -810,6 +818,64 @@ namespace
         }
         return best;
     }
+
+    // The healthiest standing hound, by share of its health.
+    Unit* HealthiestHound(Player* bot, Hounds const& hounds)
+    {
+        Unit* best = nullptr;
+        for (Unit* hound : hounds.standing)
+            if (bot->IsValidAttackTarget(hound) && (!best || hound->GetHealthPct() > best->GetHealthPct()))
+                best = hound;
+        return best;
+    }
+
+    // While none plays dead, a standing hound further than the band below the healthiest one is
+    // left alone: hitting it would bring it down while the others still have a long way to go.
+    bool HeldHound(Hounds const& hounds, Unit const* unit)
+    {
+        if (!unit || unit->GetEntry() != NPC_CORE_HOUND || !hounds.down.empty() || hounds.standing.size() < 2 ||
+            unit->HasAura(SPELL_PLAY_DEAD))
+            return false;
+        float highest = 0.0f;
+        for (Unit* hound : hounds.standing)
+            highest = std::max(highest, hound->GetHealthPct());
+        return unit->GetHealthPct() < highest - CORE_HOUND_HEALTH_BAND;
+    }
+
+    // Where skull should be: with one playing dead, the hound that keeps it from dying with the
+    // least health; otherwise the healthiest. Kept on the current skull while it is a standing
+    // hound within half the band of the healthiest, so the damage dealers don't switch on every
+    // swing. Nothing (leave skull alone) while it sits on something the kill order ranks.
+    Unit* WantedHoundSkull(PlayerbotAI* botAI, Player* bot, Hounds const& hounds)
+    {
+        if (hounds.standing.empty())
+            return nullptr;
+        if (!hounds.down.empty())
+            return NextHound(bot, hounds);
+
+        Group* group = bot->GetGroup();
+        Unit* skull = group ? botAI->GetUnit(group->GetTargetIcon(RtiTargetValue::skullIndex)) : nullptr;
+        if (skull && skull->IsAlive() && skull->IsInCombat() && skull->GetEntry() != NPC_CORE_HOUND)
+        {
+            std::vector<RaidClear::KillOrderEntry> const& order = RaidClear::MoltenCore::KillOrder();
+            if (std::any_of(order.begin(), order.end(),
+                            [skull](RaidClear::KillOrderEntry const& e) { return e.entry == skull->GetEntry(); }))
+                return nullptr;
+        }
+
+        Unit* healthiest = HealthiestHound(bot, hounds);
+        if (healthiest && skull && skull != healthiest && skull->GetEntry() == NPC_CORE_HOUND && skull->IsAlive() &&
+            skull->IsInCombat() && !skull->HasAura(SPELL_PLAY_DEAD) &&
+            skull->GetHealthPct() >= healthiest->GetHealthPct() - CORE_HOUND_HEALTH_BAND / 2.0f)
+            return skull;
+        return healthiest;
+    }
+
+    // A hound nobody but a tank should be hitting right now.
+    bool LeaveHound(Player* bot, Hounds const& hounds, Unit const* unit)
+    {
+        return PlayingDead(unit) || (!PlayerbotAI::IsTank(bot) && HeldHound(hounds, unit));
+    }
 }
 
 bool RaidClear::MoltenCore::KillOrderSuspended(Player* bot)
@@ -818,20 +884,27 @@ bool RaidClear::MoltenCore::KillOrderSuspended(Player* bot)
     return botAI && !HoundsInFight(botAI, bot).down.empty();
 }
 
-bool RcMcPlayDeadTargetTrigger::IsActive()
+bool RcMcHoundTargetTrigger::IsActive()
 {
     if (!bot->IsInCombat() || bot->GetMapId() != MAP_ID)
         return false;
-    if (PlayingDead(bot->GetVictim()) || PlayingDead(CastingAt(bot, CURRENT_GENERIC_SPELL)) ||
-        PlayingDead(CastingAt(bot, CURRENT_CHANNELED_SPELL)))
+    // Casts and channels at a hound playing dead are wasted; one at a hound that is only held
+    // back may finish.
+    if (PlayingDead(CastingAt(bot, CURRENT_GENERIC_SPELL)) || PlayingDead(CastingAt(bot, CURRENT_CHANNELED_SPELL)))
         return true;
+    Unit* victim = bot->GetVictim();
     Pet* pet = bot->GetPet();
-    return pet && PlayingDead(pet->GetVictim());
+    Unit* petVictim = pet ? pet->GetVictim() : nullptr;
+    if ((!victim || victim->GetEntry() != NPC_CORE_HOUND) && (!petVictim || petVictim->GetEntry() != NPC_CORE_HOUND))
+        return false;
+    Hounds const hounds = HoundsInFight(botAI, bot);
+    return LeaveHound(bot, hounds, victim) || (petVictim && LeaveHound(bot, hounds, petVictim));
 }
 
-bool RcMcLeavePlayDeadAction::Execute(Event /*event*/)
+bool RcMcLeaveHoundAction::Execute(Event /*event*/)
 {
-    if (PlayingDead(bot->GetVictim()))
+    Hounds const hounds = HoundsInFight(botAI, bot);
+    if (LeaveHound(bot, hounds, bot->GetVictim()))
     {
         bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
         bot->AttackStop();
@@ -840,29 +913,26 @@ bool RcMcLeavePlayDeadAction::Execute(Event /*event*/)
         if (PlayingDead(CastingAt(bot, type)))
             bot->InterruptSpell(type);
     if (Pet* pet = bot->GetPet())
-        if (PlayingDead(pet->GetVictim()))
+        if (LeaveHound(bot, hounds, pet->GetVictim()))
             pet->AttackStop();
     return true;
 }
 
-bool RcMcFinishHoundsTrigger::IsActive()
+bool RcMcHoundSkullTrigger::IsActive()
 {
     if (!bot->IsInCombat() || RaidClear::KillOrderMarker(bot->GetGroup()) != bot)
         return false;
-    Hounds const hounds = HoundsInFight(botAI, bot);
-    if (hounds.down.empty())
-        return false;
-    Unit* next = NextHound(bot, hounds);
-    return next && bot->GetGroup()->GetTargetIcon(RtiTargetValue::skullIndex) != next->GetGUID();
+    Unit* want = WantedHoundSkull(botAI, bot, HoundsInFight(botAI, bot));
+    return want && bot->GetGroup()->GetTargetIcon(RtiTargetValue::skullIndex) != want->GetGUID();
 }
 
 bool RcMcMarkHoundAction::Execute(Event /*event*/)
 {
     Group* group = bot->GetGroup();
-    Unit* next = group ? NextHound(bot, HoundsInFight(botAI, bot)) : nullptr;
-    if (!next)
+    Unit* want = group ? WantedHoundSkull(botAI, bot, HoundsInFight(botAI, bot)) : nullptr;
+    if (!want)
         return false;
-    group->SetTargetIcon(RtiTargetValue::skullIndex, bot->GetGUID(), next->GetGUID());
+    group->SetTargetIcon(RtiTargetValue::skullIndex, bot->GetGUID(), want->GetGUID());
     return true;
 }
 
@@ -871,14 +941,23 @@ float RcMcCoreHoundMultiplier::GetValue(Action* action)
     if (!action || !bot->IsInCombat() || bot->GetMapId() != MAP_ID)
         return 1.0f;
 
-    // Playerbots' marking (most health first) waits while the pack is being finished.
+    // Playerbots' own marking (the healthiest of the hounds on the main tank's threat list only)
+    // is replaced by "rc mc mark hound", which sees every hound in the fight.
     if (action->getName() == "mc core hound mark")
-        return HoundsInFight(botAI, bot).down.empty() ? 1.0f : 0.0f;
+        return 0.0f;
 
     if (!dynamic_cast<CastSpellAction*>(action) && !dynamic_cast<AttackAction*>(action))
         return 1.0f;
-    // A spell that also hits other hounds is fine; one aimed at a hound playing dead is wasted.
-    return PlayingDead(action->GetTarget()) ? 0.0f : 1.0f;
+    Unit* target = action->GetTarget();
+    if (!target || target->GetEntry() != NPC_CORE_HOUND)
+        return 1.0f;
+    // A spell aimed at a hound playing dead is wasted.
+    if (PlayingDead(target))
+        return 0.0f;
+    // One that also hits the hounds beside it evens them out, which is the point.
+    if (PlayerbotAI::IsTank(bot) || RaidClear::Splash::IsSplashSpell(botAI, action->getName()))
+        return 1.0f;
+    return HeldHound(HoundsInFight(botAI, bot), target) ? 0.0f : 1.0f;
 }
 
 // --- Ragnaros -------------------------------------------------------------

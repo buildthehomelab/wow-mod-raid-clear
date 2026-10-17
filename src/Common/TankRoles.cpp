@@ -40,6 +40,9 @@ namespace RaidClear::Tanks
         constexpr float PICKUP_RANGE = 40.0f;
         // Re-separate only once the off-tank has drifted this far inside the wanted distance.
         constexpr float SEPARATION_SLACK = 3.0f;
+        // An off-tank with a stack add stands this close to the tank holding the pack.
+        constexpr float STACK_RANGE = 4.0f;
+        constexpr float STACK_SLACK = 3.0f;
         // After the separation search finds nowhere better, wait this long before searching again.
         constexpr uint32 SEPARATION_RETRY_MS = 2000;
         // A spot more than this above or below the main tank is a ledge or a pit.
@@ -123,6 +126,19 @@ namespace RaidClear::Tanks
             {
                 case BlackwingLair::MAP_ID: return BlackwingLair::TankSplitSpreadAdds();
                 default:                    return none;
+            }
+        }
+
+        // Packs tanked in one heap (Molten Core's Core Hounds, which have to die together): no
+        // off-tank takes one off the tank holding the pack or drags one away, and an off-tank that
+        // picked one up off a healer brings it to that tank.
+        std::vector<uint32> const& StackAdds(uint32 mapId)
+        {
+            static std::vector<uint32> const none;
+            switch (mapId)
+            {
+                case MoltenCore::MAP_ID: return MoltenCore::TankSplitStackAdds();
+                default:                 return none;
             }
         }
 
@@ -371,6 +387,34 @@ namespace RaidClear::Tanks
             return false;
         std::vector<uint32> const& spread = SpreadAdds(unit->GetMapId());
         return std::find(spread.begin(), spread.end(), unit->GetEntry()) != spread.end();
+    }
+
+    bool IsStackAdd(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+        std::vector<uint32> const& stack = StackAdds(unit->GetMapId());
+        return std::find(stack.begin(), stack.end(), unit->GetEntry()) != stack.end();
+    }
+
+    Player* StackAnchor(PlayerbotAI* botAI, Player* mainTank, GuidVector const& attackers)
+    {
+        Unit* mainTarget = mainTank->GetVictim();
+        if (!mainTarget || IsStackAdd(mainTarget))
+            return mainTank;
+
+        // The main tank is on something else (a boss pulled with the pack): the first off-tank in
+        // group order that holds one, else the first that is free to take one.
+        std::vector<Player*> const offTanks = OffTanksInOrder(mainTank->GetGroup(), mainTank);
+        for (Player* offTank : offTanks)
+            for (ObjectGuid const& guid : attackers)
+                if (Unit* unit = botAI->GetUnit(guid))
+                    if (unit->IsAlive() && IsStackAdd(unit) && unit->GetVictim() == offTank)
+                        return offTank;
+        for (Player* offTank : offTanks)
+            if (offTank->IsAlive() && CanTakeOne(offTank, mainTank))
+                return offTank;
+        return mainTank;
     }
 
     namespace
@@ -641,6 +685,7 @@ namespace RaidClear::Tanks
         };
 
         Unit* current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        Player* const stackAnchor = StackAnchor(botAI, mainTank, attackers);
         Unit* best = nullptr;
         int bestRank = 99;
         float bestDist = 0.0f;
@@ -663,6 +708,10 @@ namespace RaidClear::Tanks
 
             int const rank = rankOf(unit);
             if (rank < 0)
+                continue;
+            // A stack add on the main tank is where it belongs, unless the main tank is busy with
+            // something else and this off-tank is the one holding the pack.
+            if (rank == 2 && IsStackAdd(unit) && stackAnchor != bot)
                 continue;
 
             // Keep what I'm holding unless something is loose on a non-tank.
@@ -954,6 +1003,7 @@ void RaidClearTanksStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         new TriggerNode("rc offtank target", { NextAction("rc offtank target", ACTION_RAID - 4) }));
     triggers.push_back(
         new TriggerNode("rc offtank separate", { NextAction("rc offtank separate", ACTION_RAID - 5) }));
+    triggers.push_back(new TriggerNode("rc offtank stack", { NextAction("rc offtank stack", ACTION_RAID - 5) }));
     // With the raid mechanics: a boss loose on a mage doesn't wait for anything.
     triggers.push_back(
         new TriggerNode("rc tank share threat", { NextAction("rc tank share threat", ACTION_RAID + 3) }));
@@ -1033,7 +1083,8 @@ bool RcOffTankSeparateTrigger::IsActive()
         return false;
 
     Unit* target = AI_VALUE(Unit*, "current target");
-    if (!target || !target->IsAlive() || target->GetVictim() != bot || target == mainTank->GetVictim())
+    if (!target || !target->IsAlive() || target->GetVictim() != bot || target == mainTank->GetVictim() ||
+        IsStackAdd(target))
         return false;
 
     GuidVector const& attackers = AI_VALUE(GuidVector, "attackers");
@@ -1139,6 +1190,44 @@ bool RcOffTankSeparateAction::Execute(Event /*event*/)
 bool RcOffTankSeparateAction::isUseful()
 {
     return (!lastFailMs || getMSTimeDiff(lastFailMs, getMSTime()) >= SEPARATION_RETRY_MS) && MovementAction::isUseful();
+}
+
+namespace
+{
+    // The tank this off-tank brings its stack add to, or nullptr when it holds none or is that tank.
+    Player* StackAnchorFor(PlayerbotAI* botAI, Player* bot)
+    {
+        if (!GetConfig().tankSplit || !bot->IsInCombat())
+            return nullptr;
+        Player* mainTank = ActingMainTank(bot->GetGroup());
+        if (!IsOffTank(bot, mainTank))
+            return nullptr;
+        Unit* target = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        if (!target || !target->IsAlive() || target->GetVictim() != bot || !IsStackAdd(target))
+            return nullptr;
+        GuidVector const& attackers = botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get();
+        if (SkipFight(botAI, bot, attackers))
+            return nullptr;
+        Player* anchor = StackAnchor(botAI, mainTank, attackers);
+        if (!anchor || anchor == bot || !anchor->IsAlive() || !anchor->IsInMap(bot) || bot->GetDistance(anchor) > PICKUP_RANGE)
+            return nullptr;
+        return anchor;
+    }
+}
+
+bool RcOffTankStackTrigger::IsActive()
+{
+    Player* anchor = StackAnchorFor(botAI, bot);
+    return anchor && bot->GetExactDist2d(anchor) > STACK_RANGE + STACK_SLACK;
+}
+
+bool RcOffTankStackAction::Execute(Event /*event*/)
+{
+    Player* anchor = StackAnchorFor(botAI, bot);
+    if (!anchor)
+        return false;
+    // Beside the tank holding the pack, on this side of it: the mob follows and ends up in the heap.
+    return MoveTo(anchor, STACK_RANGE, MovementPriority::MOVEMENT_COMBAT);
 }
 
 float RcOffTankMultiplier::GetValue(Action* action)

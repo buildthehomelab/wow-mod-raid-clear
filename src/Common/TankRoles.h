@@ -54,6 +54,11 @@
  *   - Packs where every tank should hold one (BWL's Wyrmguards, also listed by each raid): the
  *     main tank keeps one and each off-tank is handed another the moment the pack is pulled,
  *     taunts it off whoever has it and holds it.
+ *   - Packs that have to be tanked in one heap (MC's Core Hounds, which only die together; also
+ *     listed by each raid) are the opposite: an off-tank never takes one off the main tank and
+ *     never drags one away. One it picks up off a healer it walks to the tank holding the pack,
+ *     so area spells hit them all. That tank is the main tank, or, when the main tank is on
+ *     something else (a boss pulled with the pack), the first off-tank holding one.
  *   - On trash, an off-tank holding a mob drags it away from the main tank's mob, so cleaves
  *     and stomps don't hit both tanks, and from the mobs held by off-tanks ahead of it in group
  *     order (those don't move for it), so three or more mobs end up spread out instead of two
@@ -119,6 +124,12 @@ namespace RaidClear::Tanks
 
     // A mob of a pack where every tank takes one (the raid lists them: BWL's Wyrmguards).
     bool IsSpreadAdd(Unit const* unit);
+
+    // A mob of a pack tanked in one heap (the raid lists them: MC's Core Hounds), and the tank the
+    // heap is on: the main tank, unless it is on something else (a boss pulled with the pack);
+    // then the first off-tank in group order that holds one, else the first free one.
+    bool IsStackAdd(Unit const* unit);
+    Player* StackAnchor(PlayerbotAI* botAI, Player* mainTank, GuidVector const& attackers);
 
     // Which off-tank takes which spread add (those fighting the group within 60 yd of the main
     // tank, read from the world so every tank sees the same ones). Off-tanks keep the one they
@@ -225,6 +236,21 @@ public:
 
 private:
     uint32 lastFailMs = 0;
+};
+
+// An off-tank holding a stack add away from the tank the heap is on.
+class RcOffTankStackTrigger : public Trigger
+{
+public:
+    RcOffTankStackTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc offtank stack") {}
+    bool IsActive() override;
+};
+
+class RcOffTankStackAction : public MovementAction
+{
+public:
+    RcOffTankStackAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc offtank stack") {}
+    bool Execute(Event event) override;
 };
 
 class RcTankShareThreatTrigger : public Trigger

@@ -52,10 +52,21 @@
  *     nearest spot 5 yd clear of every one in the fight.
  *   - Core Hounds: one brought to 0 health plays dead for 10 s and takes no damage; then it
  *     dies if no other Core Hound within 80 yd is still standing in the fight, else it gets up
- *     at full health. Playerbots skulls the hound with the most health, which evens the pack
- *     out. Here nobody hits a hound that is playing dead (a log of 2026-10-16: a quarter of all
- *     hits on hounds landed on those, for nothing), and from the moment one plays dead skull
- *     goes to the standing hound with the least health, so the rest go down inside its 10 s.
+ *     at full health. So the pack has to come down together. Playerbots skulls the healthiest
+ *     hound, but only among those on the main tank's own threat list, and the off-tank split
+ *     spread the pack over four tanks and three pets (a log of 2026-10-16: ten hounds at
+ *     Lucifron went down one after another, two seconds apart, fourteen times each in 7.5
+ *     minutes; five at Magmadar's door took two minutes). Here the hounds are tanked in one
+ *     heap (the raid's stack adds, see Common/TankRoles.h) and:
+ *       - skull sits on the healthiest standing hound in the fight, and stays there until
+ *         another has more than half the band (CORE_HOUND_HEALTH_BAND) more health;
+ *       - nobody but a tank aims a single-target attack at a hound more than the band below
+ *         the healthiest (bots already on one turn away, pets too); area and chain spells
+ *         still go out, they even the pack out;
+ *       - nobody hits a hound that is playing dead (a log of 2026-10-16: a quarter of all
+ *         hits on hounds landed on those, for nothing), and from the moment one plays dead
+ *         skull goes to the standing hound with the least health, so the rest, all within the
+ *         band of each other, go down inside its 10 s.
  *   - Garr: a Firesworn more than 40 yd from him gets Separation Anxiety (23492, +300% damage),
  *     and a Firesworn erupts when it dies (Eruption, 19497: about 2,000 fire to everyone within
  *     15 yd). With the two together that is 8,000, which kills everyone around it. So the fight
@@ -196,6 +207,9 @@ namespace RaidClear::MoltenCore
     // A Core Hound's Play Dead ends in its death only if no other Core Hound within this of it
     // is still standing in the fight; otherwise it gets up at full health.
     constexpr float CORE_HOUND_LINK_RANGE = 80.0f;
+    // While none plays dead, a hound more than this many percent of health below the healthiest
+    // one is left to area spells and the tanks.
+    constexpr float CORE_HOUND_HEALTH_BAND = 10.0f;
 
     std::vector<KillOrderEntry> const& KillOrder();
     // Adds the kill order leaves alone for now (a Firesworn with Separation Anxiety, a Core Hound
@@ -210,6 +224,8 @@ namespace RaidClear::MoltenCore
 
     // Trash whose AoE needs more room than the default tank separation.
     std::vector<Tanks::SplashRadius> const& TankSplitSplashRadii();
+    // Adds tanked in one heap: off-tanks bring theirs to the tank holding the pack.
+    std::vector<uint32> const& TankSplitStackAdds();
 
     // The mobs that throw players about, with the spell they do it with (Common/Knockback.h).
     std::vector<Knockback::Thrower> const& Throwers();
@@ -423,27 +439,27 @@ private:
 
 // --- Core Hounds -----------------------------------------------------------
 
-// The bot is hitting, casting at or channelling into a Core Hound that is playing dead.
-class RcMcPlayDeadTargetTrigger : public Trigger
+// The bot (or its pet) is hitting a Core Hound that is playing dead or that is held back for the
+// rest of the pack to catch up, or is casting or channelling at one that is playing dead.
+class RcMcHoundTargetTrigger : public Trigger
 {
 public:
-    RcMcPlayDeadTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc play dead target") {}
+    RcMcHoundTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc hound target") {}
     bool IsActive() override;
 };
 
-class RcMcLeavePlayDeadAction : public Action
+class RcMcLeaveHoundAction : public Action
 {
 public:
-    RcMcLeavePlayDeadAction(PlayerbotAI* botAI) : Action(botAI, "rc mc leave play dead") {}
+    RcMcLeaveHoundAction(PlayerbotAI* botAI) : Action(botAI, "rc mc leave hound") {}
     bool Execute(Event event) override;
 };
 
-// The group's marker, with a Core Hound playing dead and skull not on the standing hound with the
-// least health.
-class RcMcFinishHoundsTrigger : public Trigger
+// The group's marker, with Core Hounds in the fight and skull not where the hounds' rule wants it.
+class RcMcHoundSkullTrigger : public Trigger
 {
 public:
-    RcMcFinishHoundsTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc finish hounds") {}
+    RcMcHoundSkullTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc hound skull") {}
     bool IsActive() override;
 };
 
@@ -454,8 +470,8 @@ public:
     bool Execute(Event event) override;
 };
 
-// Nothing is aimed at a hound playing dead, and playerbots' own hound marking (most health
-// first) waits while the pack is being finished.
+// Nothing is aimed at a hound playing dead, no single-target attack but a tank's at a hound held
+// back, and playerbots' own hound marking is off (rc mc mark hound does it).
 class RcMcCoreHoundMultiplier : public Multiplier
 {
 public:
