@@ -393,7 +393,7 @@ RaidClear.RuinsOfAhnQiraj.Enable = 1
 #                     whirlwinds and the guards in theirs; guards die first. Fankriss: each Spawn of
 #                     Fankriss gets an off-tank and skull first; two tanks take him in turns,
 #                     swapping at 4 stacks of Mortal Wound. Bug Trio: skull on the broods, then
-#                     Yauj, Kri, Vem; Yauj's Great Heal is interrupted, shamans keep Tremor Totem
+#                     Kri, Yauj, Vem; Yauj's Great Heal is interrupted, shamans keep Tremor Totem
 #                     down, bots leave Kri's Poison Cloud; Vekniss Guardians one at a time.
 #                     Viscidus globs: each damage dealer takes a glob of its own, area spells on
 #                     clusters. Nature fights (Viscidus, Huhuran, Bug Trio): one shaman keeps
@@ -405,11 +405,61 @@ RaidClear.RuinsOfAhnQiraj.Enable = 1
 #                     6.5-9.5 yd; melee hit only Vek'nilash, casters only Vek'lor (under his
 #                     victim's threat); nobody else within 12 yd of Vek'lor, ranged 8 yd from Vek'nilash,
 #                     out of Blizzard; melee step back and pets come back before each teleport.
-#                     Skeram: the last interrupt in reach waits for True Fulfillment. Anubisath
-#                     Defenders: ranged and healers outside Thunderclap or inside Shadow Storm's
-#                     25 yd, a plagued bot walks clear of everyone. Also: bots walk out of an
-#                     Anubisath Defender's Explode (20 yd) and Vek'lor's exploding bugs (15 yd).
+#                     Skeram: the last interrupt in reach waits for True Fulfillment; his tank
+#                     holds him on his own platform, the first two off-tanks wait on the other
+#                     two and take him when he blinks onto theirs. Anubisath Defenders and
+#                     Sentinels: ranged and healers outside Thunderclap or inside Shadow Storm's
+#                     25 yd, a plagued bot walks clear of everyone; skull on the Sentinels in the
+#                     raid guide's order of their abilities (reflects first, Thunderclap and
+#                     Shadow Storm last). Also: bots walk out of an Anubisath Defender's Explode
+#                     (20 yd) and Vek'lor's exploding bugs (15 yd).
 #        Default:     1
 #
 
 RaidClear.TempleOfAhnQiraj.Enable = 1
+
+#
+#    RaidClear.TempleOfAhnQiraj.Skeram.<Role>Spot
+#    RaidClear.TempleOfAhnQiraj.BugTrio.<Role>Spot
+#    RaidClear.TempleOfAhnQiraj.TwinEmperors.TankSpotA / TankSpotB
+#        Description: Fixed spots from the raid guide, as "x y z" (or the line .gps prints: the
+#                     first three numbers are used). Empty: that role has no spot. Changes
+#                     apply on .reload config.
+#                     Skeram.TankSpot    - where the tank he is on holds him (empty: his own
+#                                          platform, where he stands before the pull). His other
+#                                          two platforms come from the core (his Blink spells)
+#                                          and always have an off-tank each.
+#                     Skeram.RangedSpot  - where ranged damage dealers fight from (in range and
+#                                          sight of him).
+#                     Skeram.HealerSpot  - where healers heal from (empty: RangedSpot).
+#                     BugTrio.VemTankSpot  - where the tank Vem is on holds him: an alcove where
+#                                            only that tank is in his sight, so his Charge has
+#                                            nobody else to go to.
+#                     BugTrio.YaujTankSpot - where the tank Yauj is on holds her.
+#                     BugTrio.KriTankSpot  - where the tank Kri is on holds him.
+#                                            Keep the three well apart. A spot within 15 yd of
+#                                            the corridor out of their room (where the bugs
+#                                            evade) is ignored.
+#                     BugTrio.RangedSpot / BugTrio.HealerSpot - as for Skeram.
+#                     TwinEmperors.TankSpotA / TankSpotB - by the two torches, more than 60 yd
+#                                          apart. With both set, the tank Vek'nilash is on takes
+#                                          him to the one farther from Vek'lor and holds him
+#                                          there; after the first teleport the twins sit on the
+#                                          two spots.
+#                     Bots spread up to 3 yd round a ranged or healer spot, and drop it while
+#                     they couldn't reach their target from it.
+#        Default:     "" (no spot)
+#
+
+RaidClear.TempleOfAhnQiraj.Skeram.TankSpot = ""
+RaidClear.TempleOfAhnQiraj.Skeram.RangedSpot = ""
+RaidClear.TempleOfAhnQiraj.Skeram.HealerSpot = ""
+
+RaidClear.TempleOfAhnQiraj.BugTrio.VemTankSpot = ""
+RaidClear.TempleOfAhnQiraj.BugTrio.YaujTankSpot = ""
+RaidClear.TempleOfAhnQiraj.BugTrio.KriTankSpot = ""
+RaidClear.TempleOfAhnQiraj.BugTrio.RangedSpot = ""
+RaidClear.TempleOfAhnQiraj.BugTrio.HealerSpot = ""
+
+RaidClear.TempleOfAhnQiraj.TwinEmperors.TankSpotA = ""
+RaidClear.TempleOfAhnQiraj.TwinEmperors.TankSpotB = ""

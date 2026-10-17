@@ -9,6 +9,7 @@
 
 #include "Common/BossLookup.h"
 #include "Common/Charmed.h"
+#include "Common/FixedSpots.h"
 #include "Common/TankRoles.h"
 #include "RaidClearConfig.h"
 
@@ -20,6 +21,7 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
+#include "LastMovementValue.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
 #include "Pet.h"
@@ -359,7 +361,23 @@ namespace
         return TWINS_HEAL_RANGE + veklor->GetCombatReach() + veknilash->GetCombatReach() + TWINS_APART_MARGIN;
     }
 
-    // The bot is the tank Vek'nilash is on, he can follow it, and he is in Vek'lor's heal range.
+    // With both torch spots set (the raid guide's): the one Vek'nilash's tank holds him at, the one
+    // farther from Vek'lor. Vek'lor lands where Vek'nilash stood, so after a teleport the tank
+    // Vek'nilash lands on is at the other spot, and that one is then the farther.
+    Position const* VeknilashSpot(Creature const* veklor)
+    {
+        Position const* a = SpotOf(Spot::TwinsA);
+        Position const* b = SpotOf(Spot::TwinsB);
+        if (!a || !b)
+            return nullptr;
+        return veklor->GetExactDist2d(a->GetPositionX(), a->GetPositionY()) >=
+                       veklor->GetExactDist2d(b->GetPositionX(), b->GetPositionY())
+                   ? a
+                   : b;
+    }
+
+    // The bot is the tank Vek'nilash is on, he can follow it, and he is in Vek'lor's heal range;
+    // with the torch spots set, it isn't at his spot.
     bool MustWalkApart(Player* bot, TwinsView const& view, Creature*& veklor, Creature*& veknilash)
     {
         if (view.landing || RoleOf(bot, view) != TwinRole::VeknilashTank)
@@ -371,7 +389,22 @@ namespace
         // Landing after a teleport he is rooted and stunned for a moment: nothing follows then.
         if (veknilash->HasAura(SPELL_TWIN_TELEPORT_STUN) || veknilash->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED))
             return false;
+        if (Position const* spot = VeknilashSpot(veklor))
+            return bot->GetExactDist2d(spot->GetPositionX(), spot->GetPositionY()) > RaidClear::Spots::TANK_NEAR;
         return veknilash->GetExactDist2d(veklor) < ApartKeep(veklor, veknilash);
+    }
+
+    // The bot is the tank Vek'nilash is on and stands at his torch spot: it stays.
+    bool HoldsVeknilashSpot(Player* bot, TwinsView const& view)
+    {
+        if (view.landing || RoleOf(bot, view) != TwinRole::VeknilashTank)
+            return false;
+        Creature* veklor = ObjectAccessor::GetCreature(*bot, view.veklor);
+        Creature* veknilash = ObjectAccessor::GetCreature(*bot, view.veknilash);
+        if (!veklor || !veknilash || veknilash->GetVictim() != bot)
+            return false;
+        Position const* spot = VeknilashSpot(veklor);
+        return spot && bot->GetExactDist2d(spot->GetPositionX(), spot->GetPositionY()) <= RaidClear::Spots::HOLD;
     }
 }
 
@@ -503,6 +536,10 @@ float RcAq40TwinsHoldMultiplier::GetValue(Action* action)
     // While they land, each tank stands where its new twin will find it nearest.
     if (view->landing && role != TwinRole::None)
         return 0.0f;
+    // Vek'nilash's tank at his torch spot: only the fight's own walks (out of a Blizzard or a bug)
+    // take it off.
+    if (HoldsVeknilashSpot(bot, *view) && !RaidClear::Spots::IsDodge(action))
+        return 0.0f;
     Unit* target = RaidClear::AhnQiraj::WalkTarget(action, bot);
     if (!target || !IsTwin(target, *view))
         return 1.0f;
@@ -542,6 +579,16 @@ bool RcAq40TwinsApartAction::Execute(Event /*event*/)
     Creature* veknilash = nullptr;
     if (!view || !MustWalkApart(bot, *view, veklor, veknilash))
         return false;
+
+    if (Position const* spot = VeknilashSpot(veklor))
+    {
+        // He follows it there; a walk already on its way isn't sent again.
+        if (RaidClear::Spots::OnTheWay(bot, *spot))
+            return true;
+        AI_VALUE(LastMovement&, "last movement").clear();
+        return MoveTo(bot->GetMapId(), spot->GetPositionX(), spot->GetPositionY(), spot->GetPositionZ(), false, false,
+                      false, false, MovementPriority::MOVEMENT_FORCED);
+    }
 
     // He follows his victim and stops a melee reach short of it, in the worst case on Vek'lor's
     // side: a spot is as good as that much short of it.

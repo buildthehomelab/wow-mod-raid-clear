@@ -113,9 +113,14 @@
  * Temple of Ahn'Qiraj, the Bug Trio (Princess Yauj, Lord Kri, Vem):
  *   - Kill order. A bug that drops while another is alive is eaten by the others, who get their
  *     health back; Yauj leaves ten Yauj Broods, Kri a Poison Cloud, and Vem's death enrages the
- *     other two (Vengeance). Skull: Broods, then Yauj (she heals the others and fears), then Kri,
- *     then Vem. A bug that is being eaten can't be hurt and one on its way to eat gets its health
- *     back when it arrives: skull leaves both meanwhile.
+ *     other two (Vengeance). Skull: Broods, then Kri (his Toxic Volley needs the most cures),
+ *     then Yauj, then Vem: the raid guide's easiest order. A bug that is being eaten can't be hurt
+ *     and one on its way to eat gets its health back when it arrives: skull leaves both meanwhile.
+ *   - Fixed spots (config RaidClear.TempleOfAhnQiraj.BugTrio.*): the tank a bug is on holds it
+ *     at that bug's spot, so the three are tanked far apart and Vem sits in an alcove where only
+ *     his tank is in his sight (his Charge goes to a random player out of his melee reach that he
+ *     can see). Ranged bots and healers stand at their spots when those are set. No spot: as
+ *     before.
  *   - Great Heal. Yauj's heal (25807, 2 s) is interrupted by any bot that can reach her.
  *   - Fear. Every 20 s Yauj fears everyone within 45 yd and wipes her threat. Shamans keep
  *     Tremor Totem down while she is alive.
@@ -162,6 +167,18 @@
  * Temple of Ahn'Qiraj, Anubisath Defenders: see Aq40Defenders.cpp (out of Thunderclap, into
  * Shadow Storm's dead zone, a plagued bot walks clear of everyone).
  *
+ * Temple of Ahn'Qiraj, the Prophet Skeram, by place (Aq40Spots.cpp):
+ *   - He blinks between three platforms (4801, 8195, 20449: their spots are in the core's
+ *     spell_target_position) and wipes his threat each time; whoever he is on and doesn't hit
+ *     him back takes an Earth Shock every 1.2 s. The raid guide has a tank on every platform.
+ *     The tank he is on holds him on his own platform (the one nearest his spawn, or
+ *     RaidClear.TempleOfAhnQiraj.Skeram.TankSpot), so after a blink he walks back to it. The
+ *     first two off-tanks in group order each stand on one of the other two platforms while
+ *     nothing is hitting them; the images that land there go to them as any loose mob does.
+ *     When Skeram himself lands on an off-tank's platform and isn't on a tank, that off-tank
+ *     taunts him and brings him back to the middle. Ranged bots and healers stand at
+ *     Skeram.RangedSpot / Skeram.HealerSpot when those are set.
+ *
  * Temple of Ahn'Qiraj, the Twin Emperors (Vek'lor, Vek'nilash):
  *   - Each takes the other's damage as a share of health (Twin Empathy), and within 60 yd of each
  *     other each heals the other (Heal Brother, every 3.6 s). Every 30-40 s Vek'lor teleports the
@@ -200,9 +217,28 @@
  *         Water Elemental) stays by its owner all fight.
  *       - Bugs Vek'lor sets to explode are kept away from as an Anubisath's Explode; that walk
  *         keeps out of Vek'lor's 12 yd and the twins' walks keep out of the blast.
+ *       - Fixed spots (RaidClear.TempleOfAhnQiraj.TwinEmperors.TankSpotA / TankSpotB, by the two
+ *         torches as in the raid guide, more than 60 yd apart): with both set, the tank
+ *         Vek'nilash is on walks him to the one farther from Vek'lor instead of just away from
+ *         him, and holds him there. Vek'lor lands where Vek'nilash stood, so after the first
+ *         teleport both twins sit on the two spots.
  *     Not solved: the pull itself (both run to the puller; the first teleport sorts it out), a
  *     twin landing on a pet or totem that is nearer than its tank, and Vek'nilash's mutated
  *     bugs, left to the off-tanks.
+ *
+ * Temple of Ahn'Qiraj, the Anubisath Sentinels (the four before Skeram, and the rest):
+ *   - Each one rolls one of nine abilities as the pack is pulled (an aura on it, so it shows at
+ *     once), and as one dies the others get its ability and half their health back. The raid
+ *     guide kills them in an order that passes the dangerous abilities on last: Fire/Arcane
+ *     reflect, Shadow/Frost reflect, Mending, Knock Away, Thorns, Mortal Strike, Mana Burn,
+ *     Thunderclap, Shadow Storm. Skull goes by the worst ability each one has: the one whose
+ *     worst comes first in that list dies first.
+ *   - Thunderclap (8732, 25 yd) and Shadow Storm (26546: everyone within 45 yd but the ones
+ *     within 25) are the Defenders' spells: ranged bots and healers stand outside a Thunderclap
+ *     Sentinel's reach and inside a Shadow Storm one's dead zone, as at the Defenders, from the
+ *     pull on. One that has both (a death passed one on) is left alone: no spot is out of both.
+ *   - Not done: Mana Burn (40 yd round it, nowhere to stand), Thorns and Knock Away (melee and
+ *     tanks fight them as they are).
  *
  * Released under the MIT License.
  */
@@ -466,7 +502,15 @@ namespace RaidClear::TempleOfAhnQiraj
         NPC_SKERAM = 15263,  // his images too
         SPELL_SKERAM_ARCANE_EXPLOSION = 26192,
         SPELL_TRUE_FULFILLMENT = 785,
+        // His Blink, one per platform (spell_target_position).
+        SPELL_SKERAM_BLINK_1 = 4801,
+        SPELL_SKERAM_BLINK_2 = 8195,
+        SPELL_SKERAM_BLINK_3 = 20449,
     };
+    // An off-tank counts as on its platform within POST_NEAR of the spot, and takes Skeram himself
+    // there when he is within PICKUP_RANGE of it and on someone who isn't a tank.
+    constexpr float SKERAM_POST_NEAR = 6.0f;
+    constexpr float SKERAM_PICKUP_RANGE = 15.0f;
     // One interrupt per cast: after a bot sends one, the rest leave that Skeram alone this long.
     constexpr uint32 SKERAM_INTERRUPT_SPREAD_MS = 400;
     // Bots this close to him when he starts a cast are woken to interrupt it (the farthest
@@ -633,6 +677,31 @@ namespace RaidClear::TempleOfAhnQiraj
     // Defenders are looked at this far round the bot.
     constexpr float DEFENDER_SEARCH_RANGE = 60.0f;
 
+    // --- Anubisath Sentinel ----------------------------------------------
+    // Its ability is an aura it has from the pull (mob_anubisath_sentinel.cpp), passed on to the
+    // others as it dies.
+    enum : uint32
+    {
+        NPC_ANUBISATH_SENTINEL = 15264,
+        SPELL_SENTINEL_FIRE_ARCANE_REFLECT = 13022,
+        SPELL_SENTINEL_SHADOW_FROST_REFLECT = 19595,
+        SPELL_SENTINEL_MENDING = 2147,
+        SPELL_SENTINEL_KNOCK_AWAY = 21737,
+        SPELL_SENTINEL_THORNS = 25777,
+        SPELL_SENTINEL_MORTAL_STRIKE = 9347,
+        SPELL_SENTINEL_MANA_BURN = 812,
+        SPELL_SENTINEL_THUNDERCLAP_AURA = 2834,  // casts
+        SPELL_SENTINEL_THUNDERCLAP = 8732,       // 25 yd round it
+        SPELL_SENTINEL_SHADOW_STORM_AURA = 2148, // casts
+        SPELL_SENTINEL_SHADOW_STORM = 26546,     // the Defenders' 25 yd dead zone (spell_aq_shadow_storm)
+    };
+    // Skull rank of a Sentinel: this plus the place of its worst ability in the guide's list.
+    constexpr uint8 SENTINEL_RANK_BASE = 6;
+
+    // A unit's rank in the kill order, from its rank in the table (Sentinels go by their
+    // abilities).
+    uint8 KillOrderRank(Unit const* unit, uint8 rank);
+
     void AddDefenderScripts();
 
     // --- Nature resistance -------------------------------------------------
@@ -648,6 +717,25 @@ namespace RaidClear::TempleOfAhnQiraj
     // the Wild above WILD_MANA_PCT.
     constexpr float VIPER_MANA_PCT = 20.0f;
     constexpr float WILD_MANA_PCT = 60.0f;
+
+    // --- Fixed spots (Aq40Spots.cpp) ----------------------------------------
+    // From the config, RaidClear.TempleOfAhnQiraj.<Boss>.<Role>Spot. nullptr when not set.
+    enum class Spot : uint8
+    {
+        SkeramTank,    // else his own platform
+        SkeramRanged,
+        SkeramHealer,  // else SkeramRanged
+        VemTank,
+        YaujTank,
+        KriTank,
+        BugRanged,
+        BugHealer,     // else BugRanged
+        TwinsA,
+        TwinsB,
+        Count
+    };
+    Position const* SpotOf(Spot spot);
+    void LoadSpots();
 
     std::vector<KillOrderEntry> const& KillOrder();
 
@@ -1062,6 +1150,51 @@ public:
     float GetValue(Action* action) override;
 };
 
+// --- Fixed spots (Skeram, Bug Trio) ---------------------------------------
+
+// The bot has a fixed spot for its role in this fight (the tank a boss is on, a Skeram platform
+// off-tank, ranged, healers) and isn't on it.
+class RcAq40BossSpotTrigger : public Trigger
+{
+public:
+    RcAq40BossSpotTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 boss spot") {}
+    bool IsActive() override;
+};
+
+class RcAq40BossSpotAction : public MovementAction
+{
+public:
+    RcAq40BossSpotAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc aq40 boss spot") {}
+    bool Execute(Event event) override;
+};
+
+// On its spot, nothing but the raid mechanics walks the bot off it.
+class RcAq40SpotHoldMultiplier : public Multiplier
+{
+public:
+    RcAq40SpotHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 spot hold") {}
+    float GetValue(Action* action) override;
+
+private:
+    uint32 _checkedAtMs = 0;  // the answer below holds for a few ticks: every action asks
+    bool _holds = false;
+};
+
+// Skeram has landed on this off-tank's platform and is on someone who isn't a tank.
+class RcAq40SkeramPickupTrigger : public Trigger
+{
+public:
+    RcAq40SkeramPickupTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 skeram pickup") {}
+    bool IsActive() override;
+};
+
+class RcAq40SkeramPickupAction : public Action
+{
+public:
+    RcAq40SkeramPickupAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 skeram pickup") {}
+    bool Execute(Event event) override;
+};
+
 // --- Princess Huhuran ------------------------------------------------------
 
 // No poison cure goes to a raid member under Wyvern Sting, no Abolish Poison or Cleansing Totem
@@ -1246,7 +1379,8 @@ public:
     float GetValue(Action* action) override;
 };
 
-// The bot is the tank Vek'nilash is on, and he is close enough to Vek'lor to be healed.
+// The bot is the tank Vek'nilash is on, and he is close enough to Vek'lor to be healed (or, with
+// the torch spots set, it isn't on his).
 class RcAq40TwinsApartTrigger : public Trigger
 {
 public:
@@ -1254,10 +1388,10 @@ public:
     bool IsActive() override;
 };
 
-class RcAq40TwinsApartAction : public Action
+class RcAq40TwinsApartAction : public MovementAction
 {
 public:
-    RcAq40TwinsApartAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 twins apart"), _walk(botAI) {}
+    RcAq40TwinsApartAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc aq40 twins apart"), _walk(botAI) {}
     bool Execute(Event event) override;
 
 private:

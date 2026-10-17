@@ -30,7 +30,8 @@ namespace RaidClear
                 return RANK_NONE;
             for (KillOrderEntry const& e : table)
                 if (e.entry == unit->GetEntry())
-                    return e.rank;
+                    return unit->GetMapId() == TempleOfAhnQiraj::MAP_ID ? TempleOfAhnQiraj::KillOrderRank(unit, e.rank)
+                                                                        : e.rank;
             return RANK_NONE;
         }
     }

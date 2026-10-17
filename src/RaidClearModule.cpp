@@ -87,6 +87,7 @@ namespace RaidClear
             sConfig.raidEnabled[raid.mapId] =
                 sConfigMgr->GetOption<bool>(std::string("RaidClear.") + raid.confKey + ".Enable", true);
         BlackwingLair::LoadSpots();
+        TempleOfAhnQiraj::LoadSpots();
     }
 
     // Install the strategies for the bot's current raid, strip every other raid's.
