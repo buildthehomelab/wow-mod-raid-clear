@@ -53,7 +53,8 @@
  *     die and drags them by their own splash radius.
  *   - Packs where every tank should hold one (BWL's Wyrmguards, also listed by each raid): the
  *     main tank keeps one and each off-tank is handed another the moment the pack is pulled,
- *     taunts it off whoever has it and holds it.
+ *     taunts it off whoever has it and holds it where it took it: those aren't dragged apart
+ *     from each other, so their stomps make one circle the raid can stand outside of.
  *   - Packs that have to be tanked in one heap (MC's Core Hounds, which only die together; also
  *     listed by each raid) are the opposite: an off-tank never takes one off the main tank and
  *     never drags one away. One it picks up off a healer it walks to the tank holding the pack,
@@ -100,7 +101,8 @@ namespace RaidClear::Tanks
         float radius;
     };
 
-    // Yards the off-tank's mob should be kept from the main tank's mob.
+    // Yards the off-tank's mob should be kept from the main tank's mob (none between two of a
+    // pack where every tank takes one).
     float WantedSeparation(Unit const* mine, Unit const* theirs);
 
     // Flag the group's main tank if nobody has the flag. World thread only.

@@ -15,9 +15,13 @@
 #include "AllSpellScript.h"
 #include "AttackAction.h"
 #include "Creature.h"
+#include "FollowActions.h"
+#include "Formations.h"
 #include "GenericSpellActions.h"
 #include "Group.h"
+#include "LastMovementValue.h"
 #include "Map.h"
+#include "MoveSpline.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
@@ -158,6 +162,71 @@ namespace
             }
         }
         return best;
+    }
+
+    // --- Nefarian: Tremor Totem for his tanks ---------------------------------
+
+    // The tank whose Tremor Totem this shaman keeps down. Tremor only frees its shaman's own
+    // party, so a tank in the shaman's party: the one that should have Nefarian first (the same
+    // order as NefarianTank). One shaman per party, the first in group order that knows it;
+    // nullptr for the others, and in a party without a tank.
+    Player* TremorTankOf(Player* bot)
+    {
+        if (!bot->IsClass(CLASS_SHAMAN) || PlayerbotAI::IsTank(bot) || !bot->HasSpell(SPELL_TREMOR_TOTEM))
+            return nullptr;
+        Group* group = bot->GetGroup();
+        if (!group)
+            return nullptr;
+
+        uint8 const party = bot->GetSubGroup();
+        bool shamanSeen = false;
+        bool mine = false;
+        Player* tank = nullptr;
+        int tankRank = 0;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || !member->IsAlive() || !member->IsInMap(bot) || member->GetSubGroup() != party)
+                continue;
+            if (!shamanSeen && member->IsClass(CLASS_SHAMAN) && !PlayerbotAI::IsTank(member) &&
+                member->HasSpell(SPELL_TREMOR_TOTEM) && GET_PLAYERBOT_AI(member))
+            {
+                shamanSeen = true;
+                mine = member == bot;
+            }
+            if (!PlayerbotAI::IsTank(member))
+                continue;
+            int const rank = NefarianTankRank(member);
+            if (!tank || rank < tankRank)
+            {
+                tank = member;
+                tankRank = rank;
+            }
+        }
+        return mine ? tank : nullptr;
+    }
+
+    // The shaman's own Tremor Totem, while it stands.
+    Creature* TremorTotemOf(Player* shaman)
+    {
+        ObjectGuid const guid = shaman->m_SummonSlot[SUMMON_SLOT_TOTEM_EARTH];
+        Creature* totem = guid.IsEmpty() ? nullptr : shaman->GetMap()->GetCreature(guid);
+        return totem && totem->IsAlive() && totem->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SPELL_TREMOR_TOTEM
+                   ? totem
+                   : nullptr;
+    }
+
+    // The tank this shaman has to put Tremor Totem down for now: its tank has none of its
+    // totems in reach. nullptr while the one it put down still covers the tank.
+    Player* TremorToPlace(Player* bot, Creature* nefarian)
+    {
+        if (!nefarian || !bot->IsClass(CLASS_SHAMAN))
+            return nullptr;
+        Player* tank = TremorTankOf(bot);
+        if (!tank)
+            return nullptr;
+        Creature* totem = TremorTotemOf(bot);
+        return totem && totem->GetExactDist(tank) <= TREMOR_TANK_REACH ? nullptr : tank;
     }
 
     // --- The dragons: breath, tail, roar ----------------------------------
@@ -498,6 +567,12 @@ namespace
         zone.roar = KeepsBack(bot);
         if (zone.roar && PlayerbotAI::IsHeal(bot))
             zone.reach = ROAR_HEALER_REACH;
+        // A shaman putting Tremor Totem down by its tank goes in under the roar to do it.
+        if (zone.roar && TremorToPlace(bot, boss))
+        {
+            zone.roar = false;
+            zone.reach = 0.0f;
+        }
         if (boss->GetHealthPct() > CONSTRUCT_PHASE_PCT)
             return zone;
 
@@ -704,6 +779,13 @@ namespace
         Unit* mine = KeepsBack(bot) ? nullptr : botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
         if (mine && std::find(guards.begin(), guards.end(), mine) == guards.end())
             mine = nullptr;
+        // Only one a tank holds, and only while the bot can take a stomp.
+        if (mine)
+        {
+            Player* holder = mine->GetVictim() ? mine->GetVictim()->ToPlayer() : nullptr;
+            if (!holder || !PlayerbotAI::IsTank(holder) || bot->GetHealthPct() < WYRMGUARD_MELEE_HEALTH_PCT)
+                mine = nullptr;
+        }
         // Stop at the first one too close: the loop must not measure from mine once it is null.
         if (mine)
             for (Creature const* other : guards)
@@ -713,15 +795,48 @@ namespace
                     break;
                 }
 
+        bool running = false;
         for (Creature* guard : guards)
         {
             if (guard == mine)
                 continue;
             out.push_back(guard->GetPosition());
             Unit* victim = guard->GetVictim();
-            if (victim && victim != bot && guard->GetExactDist(victim) > WYRMGUARD_RUNNING)
-                out.push_back(victim->GetPosition());
+            if (victim && guard->GetExactDist(victim) > WYRMGUARD_RUNNING)
+            {
+                running = true;
+                if (victim != bot)
+                    out.push_back(victim->GetPosition());
+            }
         }
+        // While one is still on its way, the pack ends up on the main tank (where
+        // mod-dungeon-clear's camp waits): that spot is cleared before it gets there.
+        // Not for a melee bot on a guard it may stand by: it goes where that guard is held.
+        Player* mainTank = running && !mine ? RaidClear::Tanks::ActingMainTank(bot->GetGroup()) : nullptr;
+        if (mainTank && mainTank != bot && mainTank->IsAlive() && mainTank->IsInMap(bot))
+            out.push_back(mainTank->GetPosition());
+    }
+
+    // The stomps above, per bot for WYRMGUARD_STOMPS_FRESH_MS: the trigger, the way out and the
+    // hold below ask for them on every tick, the hold once for every action. One map thread
+    // updates a bot at a time.
+    std::vector<Position> const& CachedStomps(PlayerbotAI* botAI, Player* bot)
+    {
+        struct Entry
+        {
+            uint32 ms = 0;
+            std::vector<Position> stomps;
+        };
+        thread_local std::unordered_map<ObjectGuid, Entry> tStomps;
+        uint32 const now = getMSTime();
+        Entry& entry = tStomps[bot->GetGUID()];
+        if (!entry.ms || getMSTimeDiff(entry.ms, now) >= WYRMGUARD_STOMPS_FRESH_MS)
+        {
+            entry.stomps.clear();
+            WyrmguardStomps(botAI, bot, entry.stomps);
+            entry.ms = now ? now : 1;
+        }
+        return entry.stomps;
     }
 
     float StompGap(std::vector<Position> const& stomps, float x, float y, float z)
@@ -734,10 +849,20 @@ namespace
 
     // --- Nefarian: fear ------------------------------------------------
 
-    // Victor Nefarius' own Fear in phase one, Bellowing Roar after he lands.
-    bool InNefarianFight(Player* bot)
+    // Nefarian, in the middle of Bellowing Roar.
+    Creature* Roaring(Player* bot)
     {
-        return FightingBoss(bot, NPC_NEFARIAN) || FightingBoss(bot, NPC_VICTOR_NEFARIUS);
+        Creature* boss = FightingBoss(bot, NPC_NEFARIAN);
+        Spell const* spell = boss ? boss->GetCurrentSpell(CURRENT_GENERIC_SPELL) : nullptr;
+        return spell && spell->GetSpellInfo() && spell->GetSpellInfo()->Id == SPELL_BELLOWING_ROAR ? boss : nullptr;
+    }
+
+    // A warrior the roar would reach: Berserker Rage (fear immunity for 10 s) before it lands.
+    bool RagesThroughRoar(PlayerbotAI* botAI, Player* bot, Creature* boss)
+    {
+        return bot->IsClass(CLASS_WARRIOR) && bot->IsAlive() && !bot->HasAura(SPELL_BERSERKER_RAGE) &&
+               bot->GetExactDist(boss) <= ROAR_KEEP_AWAY + bot->GetObjectSize() &&
+               botAI->CanCastSpell("berserker rage", bot);
     }
 
     // The tank a priest's Fear Ward should be on and isn't: whoever should have Nefarian, or with
@@ -789,6 +914,34 @@ bool RaidClear::BlackwingLair::InDragonsWay(Player* bot, Creature* boss, float x
 bool RaidClear::BlackwingLair::DragonBreathing(Creature* boss)
 {
     return boss && ConeCast(boss) != 0;
+}
+
+bool RaidClear::BlackwingLair::WalksBack(PlayerbotAI* botAI, Action* action, Position& to, bool& known)
+{
+    known = false;
+    if (dynamic_cast<FollowAction*>(action))
+    {
+        // Follow walks to the bot's place in its formation.
+        Formation* formation = botAI->GetAiObjectContext()->GetValue<Formation*>("formation")->Get();
+        WorldLocation const place = formation ? formation->GetLocation() : Formation::NullLocation;
+        if (!Formation::IsNullLocation(place))
+        {
+            to.Relocate(place.GetPositionX(), place.GetPositionY(), place.GetPositionZ());
+            known = true;
+        }
+        return true;
+    }
+
+    // Their target is the bot itself: mod-dungeon-clear's camp hold, its follow, assist,
+    // regroup and transit walks, and playerbots' "stay". Not its healers' reposition: that one
+    // is how a healer gets back in range and sight of its tank, and holding it loses the tank.
+    static constexpr std::array<char const*, 8> WALKS_BACK = {
+        "dungeon clear hold at camp", "dungeon clear stay at camp", "dungeon clear assist camp",
+        "dungeon clear assist camp combat", "dungeon clear follow tank", "dungeon clear regroup combat",
+        "dungeon clear transit pack", "return to stay position",
+    };
+    std::string const name = action->getName();
+    return std::any_of(WALKS_BACK.begin(), WALKS_BACK.end(), [&name](char const* walk) { return name == walk; });
 }
 
 bool RcBwlDragonPositionTrigger::IsActive()
@@ -851,13 +1004,41 @@ float RcBwlDragonHoldMultiplier::GetValue(Action* action)
         Creature* drake = FightingDrake(bot);
         return drake && drake->GetVictim() != bot && HoldsDrake(bot, drake) ? 0.0f : 1.0f;
     }
+
+    // Walking back to its place (follow, formation, a camp) doesn't take a bot into the front,
+    // tail or roar it was just walked out of. Charge, Intercept and Feral Charge land on the
+    // dragon's near side, which for a bot in front of him is in front of him. Not the bots that
+    // stand in front, nor one on its way to Firemaw's cover.
+    if (Walks(action))
+    {
+        Creature* dragon = BreathingDragon(bot);
+        if (dragon && !StandsInFront(bot, dragon) && !GoingForCover(bot, dragon))
+        {
+            Position to;
+            bool known = false;
+            if (WalksBack(botAI, action, to, known))
+            {
+                if (known && DragonGap(ZoneOf(bot, dragon), to.GetPositionX(), to.GetPositionY()) < 0.0f)
+                    return 0.0f;
+            }
+            else if (dynamic_cast<CastReachTargetSpellAction*>(action) && action->GetTarget() == dragon)
+            {
+                float const angle = dragon->GetAngle(bot);
+                float const reach = dragon->GetCombatReach();
+                if (DragonGap(ZoneOf(bot, dragon), dragon->GetPositionX() + std::cos(angle) * reach,
+                              dragon->GetPositionY() + std::sin(angle) * reach) < 0.0f)
+                    return 0.0f;
+            }
+        }
+    }
     if (!KeepsBack(bot))
         return 1.0f;
 
     // Nefarian: nothing walks a bot that keeps back in under the roar. Everything on him and at
-    // his feet is in spell range from outside it; the walk to the tank for a Fear Ward is the
-    // one exception.
-    if (!Walks(action) || dynamic_cast<RcBwlFearWardAction*>(action))
+    // his feet is in spell range from outside it; the walks to the tank for a Fear Ward or a
+    // Tremor Totem, and a bot he is on walking to his tank, are the exceptions.
+    if (!Walks(action) || dynamic_cast<RcBwlFearWardAction*>(action) || dynamic_cast<RcBwlTremorTankAction*>(action) ||
+        dynamic_cast<RcBwlNefarianToTankAction*>(action))
         return 1.0f;
     Unit* target = action->GetTarget();
     if (!target || target == bot)
@@ -915,27 +1096,154 @@ float RcBwlNefarianTankMultiplier::GetValue(Action* action)
 
 bool RcBwlNefarianTremorTrigger::IsActive()
 {
-    if (bot->getClass() != CLASS_SHAMAN || !bot->IsInCombat() || !InNefarianFight(bot))
+    if (!bot->IsClass(CLASS_SHAMAN) || !bot->IsAlive() || !bot->IsInCombat() || !botAI->CanMove())
         return false;
-    return !AI_VALUE2(bool, "has totem", "tremor totem");
+    return TremorToPlace(bot, FightingBoss(bot, NPC_NEFARIAN)) != nullptr;
+}
+
+bool RcBwlTremorTankAction::Execute(Event /*event*/)
+{
+    Creature* boss = FightingBoss(bot, NPC_NEFARIAN);
+    Player* tank = TremorToPlace(bot, boss);
+    if (!tank)
+        return false;
+
+    // Without the roar: this walk goes in under it.
+    Zone const zone = ZoneOf(bot, boss);
+    float const botX = bot->GetPositionX();
+    float const botY = bot->GetPositionY();
+    if (bot->GetExactDist2d(tank) <= TREMOR_TANK_NEAR && DragonGap(zone, botX, botY) >= 0.0f)
+    {
+        if (bot->isMoving())
+        {
+            AI_VALUE(LastMovement&, "last movement").clear();
+            bot->StopMoving();
+        }
+        return botAI->CanCastSpell("tremor totem", bot) && botAI->CastSpell("tremor totem", bot);
+    }
+
+    // Already on the way to such a spot.
+    if (bot->isMoving() && !bot->movespline->Finalized())
+    {
+        G3D::Vector3 const dest = bot->movespline->FinalDestination();
+        if (tank->GetExactDist2d(dest.x, dest.y) <= TREMOR_TANK_NEAR && DragonGap(zone, dest.x, dest.y) >= DRAGON_SPOT_MIN)
+            return true;
+    }
+
+    // On rings round the tank, out of his front and tail, the nearest to the bot first; one the
+    // straight walk to doesn't cross his front before one it does.
+    struct Spot
+    {
+        float x, y, z, dist;
+        bool clear;
+    };
+    std::vector<Spot> spots;
+    Map* map = bot->GetMap();
+    constexpr int STEPS = 16;
+    for (float ring = TREMOR_RING; ring <= TREMOR_TANK_NEAR; ring += TREMOR_RING)
+        for (int i = 0; i < STEPS; ++i)
+        {
+            float const angle = float(i) * 2.0f * float(M_PI) / float(STEPS);
+            float const x = tank->GetPositionX() + std::cos(angle) * ring;
+            float const y = tank->GetPositionY() + std::sin(angle) * ring;
+            if (DragonGap(zone, x, y) < DRAGON_SPOT_MIN)
+                continue;
+            float const z = map->GetHeight(bot->GetPhaseMask(), x, y, tank->GetPositionZ() + RaidClear::WAY_OUT_UP);
+            if (z <= INVALID_HEIGHT || std::fabs(z - tank->GetPositionZ()) > RaidClear::WAY_OUT_DOWN)
+                continue;
+            spots.push_back({ x, y, z, bot->GetExactDist2d(x, y), WalkClear(zone, botX, botY, x, y) });
+        }
+    std::sort(spots.begin(), spots.end(), [](Spot const& a, Spot const& b)
+    {
+        return a.clear != b.clear ? a.clear : a.dist < b.dist;
+    });
+
+    uint32 tries = 0;
+    for (Spot const& spot : spots)
+    {
+        if (++tries > TREMOR_SPOT_TRIES)
+            break;
+        PathGenerator path(bot);
+        constexpr uint32 NOT_A_WALK = PATHFIND_INCOMPLETE | PATHFIND_NOPATH | PATHFIND_SHORTCUT |
+                                      PATHFIND_NOT_USING_PATH | PATHFIND_FARFROMPOLY;
+        if (!path.CalculatePath(spot.x, spot.y, spot.z) || !(path.GetPathType() & PATHFIND_NORMAL) ||
+            (path.GetPathType() & NOT_A_WALK))
+            continue;
+        return MoveTo(bot->GetMapId(), spot.x, spot.y, spot.z, false, false, false, false,
+                      MovementPriority::MOVEMENT_COMBAT);
+    }
+    return false;
 }
 
 float RcBwlNefarianTremorMultiplier::GetValue(Action* action)
 {
-    if (!action || bot->getClass() != CLASS_SHAMAN || !bot->IsInCombat())
+    if (!action || !bot->IsClass(CLASS_SHAMAN) || !bot->IsInCombat())
         return 1.0f;
 
-    // Playerbots' names for whatever puts a totem in the earth slot or takes this one away.
-    static constexpr std::array<char const*, 6> EARTH_SLOT = {
+    // Playerbots' names for whatever puts a totem in the earth slot or takes this one away,
+    // its own Tremor Totem included: that one goes down by the shaman, wherever the shaman is.
+    static constexpr std::array<char const*, 7> EARTH_SLOT = {
         "stoneskin totem", "strength of earth totem", "earthbind totem", "stoneclaw totem",
-        "call of the elements", "totemic recall",
+        "tremor totem", "call of the elements", "totemic recall",
     };
     std::string const name = action->getName();
     if (std::none_of(EARTH_SLOT.begin(), EARTH_SLOT.end(), [&name](char const* other) { return name == other; }))
         return 1.0f;
 
-    // A shaman without Tremor Totem keeps what it has.
-    return InNefarianFight(bot) && AI_VALUE2(uint32, "spell id", "tremor totem") ? 0.0f : 1.0f;
+    // Only the shaman that keeps a tank's Tremor; the others keep their own totems.
+    return FightingBoss(bot, NPC_NEFARIAN) && TremorTankOf(bot) ? 0.0f : 1.0f;
+}
+
+bool RcBwlBellowingRoarTrigger::IsActive()
+{
+    Creature* boss = bot->IsClass(CLASS_WARRIOR) ? Roaring(bot) : nullptr;
+    return boss && RagesThroughRoar(botAI, bot, boss);
+}
+
+bool RcBwlBerserkerRageAction::Execute(Event /*event*/)
+{
+    Creature* boss = Roaring(bot);
+    return boss && RagesThroughRoar(botAI, bot, boss) && botAI->CastSpell("berserker rage", bot);
+}
+
+// --- Nefarian on someone who isn't a tank -------------------------------------
+
+namespace
+{
+    // The tank a non-tank he is on walks to, or nullptr.
+    Player* LooseNefarianTank(PlayerbotAI* botAI, Player* bot)
+    {
+        if (!bot->IsAlive() || PlayerbotAI::IsTank(bot) || !botAI->CanMove())
+            return nullptr;
+        Creature* boss = FightingBoss(bot, NPC_NEFARIAN);
+        if (!boss || boss->GetVictim() != bot)
+            return nullptr;
+        Player* tank = NefarianTank(bot);
+        return tank && tank != bot && bot->GetExactDist2d(tank) > NEFARIAN_LOOSE_NEAR ? tank : nullptr;
+    }
+}
+
+bool RcBwlNefarianLooseTrigger::IsActive()
+{
+    return LooseNefarianTank(botAI, bot) != nullptr;
+}
+
+bool RcBwlNefarianToTankAction::Execute(Event /*event*/)
+{
+    Player* tank = LooseNefarianTank(botAI, bot);
+    if (!tank)
+        return false;
+    // Already on its way there.
+    if (bot->isMoving() && !bot->movespline->Finalized())
+    {
+        G3D::Vector3 const dest = bot->movespline->FinalDestination();
+        if (tank->GetExactDist2d(dest.x, dest.y) <= NEFARIAN_LOOSE_NEAR)
+            return true;
+    }
+    // His breath follows the bot: the cast it is in the middle of can wait.
+    AI_VALUE(LastMovement&, "last movement").clear();
+    bot->CastStop();
+    return MoveNear(tank, NEFARIAN_LOOSE_NEAR / 2.0f, MovementPriority::MOVEMENT_FORCED);
 }
 
 Unit* RcBwlFearWardAction::GetTarget()
@@ -1109,8 +1417,7 @@ bool RcBwlWyrmguardKeepAwayTrigger::IsActive()
     // out of it until the pack arrives, and the pack stomps 3-4 s after that.
     if (!bot->IsAlive() || PlayerbotAI::IsTank(bot) || !botAI->CanMove())
         return false;
-    std::vector<Position> stomps;
-    WyrmguardStomps(botAI, bot, stomps);
+    std::vector<Position> const& stomps = CachedStomps(botAI, bot);
     return !stomps.empty() &&
            StompGap(stomps, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) < WYRMGUARD_KEEP_AWAY;
 }
@@ -1119,47 +1426,61 @@ bool RcBwlWyrmguardKeepAwayAction::Execute(Event /*event*/)
 {
     if (PlayerbotAI::IsTank(bot))
         return false;
-    std::vector<Position> stomps;
-    WyrmguardStomps(botAI, bot, stomps);
+    // A copy: the walk asks for paths, and the cache is the bot's own anyway.
+    std::vector<Position> const stomps = CachedStomps(botAI, bot);
     if (stomps.empty())
         return false;
 
     auto const gapAt = [&stomps](float x, float y, float z) { return StompGap(stomps, x, y, z); };
     if (gapAt(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) >= WYRMGUARD_KEEP_AWAY)
         return false;
-    return _walk.Go(gapAt, WYRMGUARD_KEEP_AWAY, WYRMGUARD_SPOT, WYRMGUARD_WORTH_IT);
+    return _walk.Go(gapAt, WYRMGUARD_KEEP_AWAY, WYRMGUARD_SPOT, WYRMGUARD_WORTH_IT, WYRMGUARD_WAY_OUT_SEARCH);
 }
 
 float RcBwlWyrmguardHoldMultiplier::GetValue(Action* action)
 {
-    // Nothing walks a bot that isn't a tank toward something in a stomp it should be out of:
-    // casters and healers reach it from outside, melee wait until the tanks have the
-    // Wyrmguards apart.
+    // Nothing walks a bot that isn't a tank into a stomp it should be out of: casters and
+    // healers reach their target from outside, melee only go to the one Wyrmguard they may stand
+    // by. Picking a target isn't held (see Walks): a bot held here still fights from where it is.
     if (!action || !Walks(action) || PlayerbotAI::IsTank(bot))
         return 1.0f;
 
-    // Walks back to a spot, not to a target: mod-dungeon-clear's camp hold, assist and follow
-    // (their target is the bot itself) and playerbots' "stay". The camp is where the pack is
+    // Walks back to a spot (follow and formation, mod-dungeon-clear's camp hold, assist and
+    // follow, playerbots' "stay"), from wherever the bot starts: the camp is where the pack is
     // dragged to, and the way out stops sending for 700 ms after each send, long enough for one
-    // of these to walk the bot back in.
-    static constexpr std::array<char const*, 6> WALKS_BACK = {
-        "dungeon clear hold at camp", "dungeon clear stay at camp", "dungeon clear assist camp",
-        "dungeon clear assist camp combat", "dungeon clear follow tank", "return to stay position",
-    };
-    std::string const name = action->getName();
-    bool const walksBack =
-        std::any_of(WALKS_BACK.begin(), WALKS_BACK.end(), [&name](char const* walk) { return name == walk; });
+    // of these to walk the bot back in. Where the walk ends isn't always known: then it waits
+    // until no Wyrmguard is fighting near it.
+    Position to;
+    bool known = false;
+    bool const walksBack = WalksBack(botAI, action, to, known);
     Unit* target = action->GetTarget();
     if (!walksBack && (!target || target == bot))
         return 1.0f;
 
-    std::vector<Position> stomps;
-    WyrmguardStomps(botAI, bot, stomps);
-    for (Position const& stomp : stomps)
-        if (bot->GetExactDist(stomp) < WYRMGUARD_HOLD &&
-            (walksBack || target->GetExactDist(stomp) < WYRMGUARD_KEEP_AWAY))
-            return 0.0f;
-    return 1.0f;
+    std::vector<Position> const& stomps = CachedStomps(botAI, bot);
+    if (stomps.empty())
+        return 1.0f;
+    // A walk that ends somewhere unknown is only held for a bot already near the fight; one
+    // further off (rezzed at the entrance, behind on the route) has to be able to come back.
+    if (walksBack)
+    {
+        if (known)
+            return StompGap(stomps, to.GetPositionX(), to.GetPositionY(), to.GetPositionZ()) < WYRMGUARD_KEEP_AWAY
+                       ? 0.0f
+                       : 1.0f;
+        return StompGap(stomps, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) < WYRMGUARD_HOLD
+                   ? 0.0f
+                   : 1.0f;
+    }
+
+    // Toward a target: melee end up next to it, casters and healers stop at spell range, so for
+    // them only once they are close already.
+    if (StompGap(stomps, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ()) >= WYRMGUARD_KEEP_AWAY)
+        return 1.0f;
+    if (!KeepsBack(bot))
+        return 0.0f;
+    return StompGap(stomps, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) < WYRMGUARD_HOLD ? 0.0f
+                                                                                                             : 1.0f;
 }
 
 // --- The drakes: who holds them ---------------------------------------------
@@ -1363,6 +1684,19 @@ public:
         if (boss->GetEntry() == NPC_CHROMAGGUS)
         {
             NoteChromaggusBreath(boss, spellInfo->Id);
+            return;
+        }
+        // Bellowing Roar: the warriors it would reach look at once, for Berserker Rage.
+        if (boss->GetEntry() == NPC_NEFARIAN && spellInfo->Id == SPELL_BELLOWING_ROAR)
+        {
+            Map::PlayerList const& players = boss->GetMap()->GetPlayers();
+            for (Map::PlayerList::const_iterator it = players.begin(); it != players.end(); ++it)
+            {
+                Player* player = it->GetSource();
+                PlayerbotAI* botAI = player && player->IsClass(CLASS_WARRIOR) ? GET_PLAYERBOT_AI(player) : nullptr;
+                if (botAI && botAI->HasStrategy("rc bwl", BOT_STATE_COMBAT) && RagesThroughRoar(botAI, player, boss))
+                    botAI->ResetActionDuration();
+            }
             return;
         }
 

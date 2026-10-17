@@ -10,8 +10,16 @@
  * BlackwingLair and the trash SmartAI):
  *   - Kill order: Blackwing Warlocks first. Each casts Demon Portal every 30-45s and every portal
  *     summons an Enraged Felguard every 30s until its warlock dies (which despawns its portals),
- *     so the pack only shrinks once the warlocks are dead. Then the casters and elites that heal,
+ *     so the pack only shrinks once the warlocks are dead. Technicians die with them: each
+ *     throws a Bomb at someone every few seconds. Then the casters and elites that heal,
  *     polymorph or buff: Taskmasters, Spellbinders, Hatchers.
+ *   - Interrupts (BwlInterrupts.cpp): any bot with a kick, pummel, shield bash, wind shear,
+ *     counterspell or silence in reach stops a trash cast, its target or not, one bot per cast:
+ *     Fireball Volley, then Healing Circle, Shadow Bolt, Flamestrike, Fireball. In one 40-bot
+ *     evening only 17 casts were interrupted (playerbots only kicks the bot's own target).
+ *     Only the Warlocks' Shadow Bolt and the Mages' Fireball can be stopped on this core: the
+ *     Wyrmkin, Hatchers and Spellbinders are immune to interrupts, and Healing Circle can't be
+ *     silenced (Common/Interrupts.h). The others stay listed for a core that changes that.
  *   - Suppression Devices: Suppression Aura reaches 20 yd, playerbots' disarm only 15, so a bot
  *     standing 15-20 yd from an armed device stays slowed. With the "raid" bot cheat on, bots in
  *     the Suppression Room turn off every armed device within 22 yd.
@@ -56,7 +64,9 @@
  *     Everyone but the dragon's victim and the tank that takes it next stays out of the front,
  *     and a bot standing in it when a cast starts drops everything and runs. Playerbots' own
  *     rule takes every non-victim to the flank at melee range, casters and healers included;
- *     for those it is switched off.
+ *     for those it is switched off. Follow and formation don't walk a bot back into the front,
+ *     and Charge, Intercept and Feral Charge onto the dragon aren't used from in front of it
+ *     (they land on the near side).
  *   - Chromaggus: he breathes every 30s from the pull, his two breaths taking turns, and a 2s
  *     cast is too short to reach cover in. Everyone but the bot he is on goes behind cover a few
  *     seconds before a breath is due (the clock is kept from his casts), Time Lapse included: it
@@ -78,13 +88,30 @@
  *     roar where the healers stand, the casters and healers stand on it, and the pile dies to
  *     everyone's area damage. (Inside the roar a fear scattered the pile into his front: one
  *     Shadow Flame killed nine of it.)
+ *   - Nefarian's Bellowing Roar: every roar of one evening feared all four tanks for its full
+ *     length, he turned with them, and each Shadow Flame after it hit four to eight others. 84
+ *     Tremor Totems did nothing: Tremor only frees its shaman's own party within 30 yd of the
+ *     totem, and they stood with the shamans out on the ranged ring (and were put down again
+ *     every time a shaman moved, since playerbots only counts a totem within 30 yd of its shaman).
+ *     So each tank gets the Tremor Totem of the first shaman in its own party: that shaman walks
+ *     in under the roar to within 22 yd of its tank, outside his front and tail, puts it down
+ *     there and goes back; nothing replaces it in its earth slot, and it is put down again only
+ *     once it is gone or more than 28 yd from the tank. A party without a tank or a shaman does
+ *     without. Warriors within the roar use Berserker Rage the moment it starts. Taunts don't land
+ *     on him; a non-tank he is on (as when he lands) walks to his tank, so his breath goes where
+ *     the tank stands and not through the ranged ring, until the threat or a paladin's Hand of
+ *     Protection (Common/TankRoles.h) hands him to it. His fly-in Shadow Flame (22992) isn't a
+ *     breath: it is fire dropped on fixed spots as he comes in, before he lands.
  *   - Death Talon Wyrmguards: War Stomp hits everything within 15 yd, and all three of a pack
  *     stomp exactly 8 s after the pull (their SmartAI), by which time the tank has brought them
  *     to the raid: two or three stomps at once killed 6 to 16 bots in one second, four times
  *     in one evening. Non-tanks stay 17.5 yd from every Wyrmguard and from whoever a Wyrmguard
- *     is still running to, from the moment the pack is pulled. Melee only stand by the one
+ *     is still running to (and from the main tank, where the pack ends up), from the moment the
+ *     pack is pulled, and look up to 36 yd round them for a way out. Melee only stand by the one
  *     they hit, and only once no other Wyrmguard is within 20 yd of it. These rules run on both
- *     engines ("rc bwl runners"): a bot waiting at the camp isn't in combat yet.
+ *     engines ("rc bwl runners"): a bot waiting at the camp isn't in combat yet. Their tanks
+ *     hold them where they took them, not 30 yd apart: three stomps spread down a corridor left
+ *     the raid nowhere to stand, two stomps on one spot leave everywhere else.
  *   - Hunters Tranquilizing Shot Flamegor's and Chromaggus' Frenzy, like the Seethers' Enrage.
  *     Class calls: priests stop healing while Corrupted Healing is on them (every heal would put
  *     a shadow DoT on its target; shields still go out, and a tank below 35% still gets healed);
@@ -96,8 +123,14 @@
  *   - Razorgore's and Nefarian's adds die in order: dragonkin first, then casters, then melee;
  *     Drakonids and Bone Constructs before Nefarian.
  *   - Technician packs: Blackwing Technicians throw Bomb (22334, 5 yd splash) at random raiders
- *     within 30 yd, so ranged and healers keep 6 yd from each other while one is fighting nearby.
- *     Only bots in a clump move, one short step at a time.
+ *     within 30 yd, so ranged and healers keep 7 yd from each other while one is fighting nearby.
+ *     Only a bot with someone that close moves, to the nearest spot with nobody that close (a
+ *     search all the way round it; pushes away from each neighbour cancel out in a ring of
+ *     them), and its follow, formation or camp hold doesn't walk it straight back.
+ *   - Trash ground fire and cleaves (BwlHazards.cpp): bots walk out of the Warlocks' Rain of
+ *     Fire and the Spellbinders' and Hatchers' Flamestrike while they burn (the fire on the
+ *     ground, not the cast), and everyone but the tanks out of the front of a Death Talon
+ *     Captain or Overseer it isn't on (Cleave). The way out is the one the leash allows.
  *   - Death Talon packs (Hall of the Dragonspawn: a Captain, two Seethers, two Wyrmkin and a
  *     Flamescale each). The Captain puts Mark of Detonation (22438, 30s, magic) on whoever he
  *     hits; every melee hit on that player then explodes (22439) for 657-844 fire on all of that
@@ -151,6 +184,7 @@ namespace RaidClear::BlackwingLair
         NPC_DEATH_TALON_HATCHER   = 12468,  // Suppression Room elites
         NPC_BLACKWING_TECHNICIAN  = 13996,  // Bomb
         NPC_DEATH_TALON_WYRMGUARD = 12460,  // War Stomp, 15 yd
+        NPC_DEATH_TALON_OVERSEER  = 12461,  // Cleave
         NPC_DEATH_TALON_WYRMKIN   = 12465,  // Fireball Volley, Blast Wave
         NPC_DEATH_TALON_SEETHER   = 12464,  // Enrage, Flame Buffet
         NPC_DEATH_TALON_FLAMESCALE = 12463, // Flame Shock, Berserker Charge
@@ -216,6 +250,20 @@ namespace RaidClear::BlackwingLair
         SPELL_CORROSIVE_ACID    = 23313,
         SPELL_IGNITE_FLESH      = 23315,
         SPELL_FROST_BURN        = 23187,
+
+        // Trash casts worth an interrupt (BwlInterrupts.cpp).
+        SPELL_FIREBALL_VOLLEY   = 22425,   // Death Talon Wyrmkin: everyone within 45 yd
+        SPELL_HEALING_CIRCLE    = 22458,   // Blackwing Taskmaster
+        SPELL_BWL_SHADOW_BOLT   = 22336,   // Blackwing Warlock
+        SPELL_BWL_FLAMESTRIKE   = 22275,   // Blackwing Spellbinder, Death Talon Hatcher
+        SPELL_BWL_FIREBALL      = 17290,   // Blackwing Mage (Razorgore)
+
+        SPELL_BELLOWING_ROAR    = 22686,   // Nefarian: fears everyone within 35 yd of his middle
+        SPELL_TREMOR_TOTEM      = 8143,
+        SPELL_BERSERKER_RAGE    = 18499,   // fear immunity for 10 s
+
+        // Fire left on the ground (BwlHazards.cpp).
+        SPELL_BWL_RAIN_OF_FIRE  = 19717,   // Blackwing Warlock, 10 yd
     };
 
     enum GameObjects : uint32
@@ -229,13 +277,20 @@ namespace RaidClear::BlackwingLair
     constexpr float BROODLORD_RANGED_MIN = 23.0f;
     constexpr float BROODLORD_RANGED_TARGET = 26.0f;
 
-    // Bomb (22334) splashes 5 yd; a yard more so the edge of one doesn't reach the next bot.
-    constexpr float TECHNICIAN_SPREAD = 6.0f;
-    // Technicians fighting this close count; Bomb's own range is 30 yd.
+    // Bomb (22334) splashes 5 yd round whoever it is thrown at, plus the size of whoever else it
+    // reaches; two yards more so the edge of one doesn't reach the next bot.
+    constexpr float TECHNICIAN_SPREAD = 7.0f;
+    // Technicians fighting this close count (looked up per bot every TECHNICIAN_FRESH_MS);
+    // Bomb's own range is 30 yd.
     constexpr float TECHNICIAN_RANGE = 35.0f;
-    // Each step out of a clump, and the pause before the next one. Re-deciding every tick makes
-    // the whole camp zigzag as every bot reacts to every other bot's last move.
-    constexpr float TECHNICIAN_STEP = 4.0f;
+    constexpr uint32 TECHNICIAN_FRESH_MS = 100;
+    // How long after a bot spread out a camp or follow walk with no known end waits.
+    constexpr uint32 TECHNICIAN_SPREAD_HOLD_MS = 4000;
+    // How far round the bot a spot is looked for, how far from its target it may be, and the
+    // pause before the next look. Re-deciding every tick makes the whole camp zigzag as every
+    // bot reacts to every other bot's last move.
+    constexpr float TECHNICIAN_SEARCH = 12.0f;
+    constexpr float TECHNICIAN_TARGET_REACH = 30.0f;
     constexpr uint32 TECHNICIAN_STEP_INTERVAL_MS = 1500;
 
     // The technicians that run from Vaelastrasz's room. A bot hits one that is this close
@@ -358,6 +413,16 @@ namespace RaidClear::BlackwingLair
     constexpr float FEAR_WARD_RANGE = 30.0f;
     constexpr float FEAR_WARD_WALK = 70.0f;
     constexpr uint32 FEAR_WARD_RETRY_MS = 3000;
+    // Tremor Totem frees its shaman's party within 30 yd of the totem. A tank's shaman puts it
+    // down within TREMOR_TANK_NEAR of the tank (spots on rings TREMOR_RING apart round it), and
+    // again only once it is gone or further than TREMOR_TANK_REACH from the tank.
+    constexpr float TREMOR_TANK_NEAR = 22.0f;
+    constexpr float TREMOR_TANK_REACH = 28.0f;
+    constexpr float TREMOR_RING = 4.0f;
+    // Path checks per walk to such a spot, nearest first.
+    constexpr uint32 TREMOR_SPOT_TRIES = 8;
+    // A non-tank Nefarian is on walks to within this of the tank that should have him.
+    constexpr float NEFARIAN_LOOSE_NEAR = 4.0f;
 
     // War Stomp (24375) hits everyone within 15 yd of the Wyrmguard's middle, plus their own
     // size. Non-tanks stay this far from every Wyrmguard they aren't in melee with, and go to a
@@ -369,6 +434,28 @@ namespace RaidClear::BlackwingLair
     constexpr float WYRMGUARD_WORTH_IT = 2.0f;
     constexpr float WYRMGUARD_APART = 20.0f;
     constexpr float WYRMGUARD_HOLD = 24.0f;
+    // How far round the bot the way out is looked for: from the middle of a pack that has just
+    // arrived, 21 yd (the usual) is barely past the stomps, and in a corridor often nowhere.
+    constexpr float WYRMGUARD_WAY_OUT_SEARCH = 36.0f;
+    // Melee stand by the Wyrmguard they hit only while a tank holds it and they have this much
+    // health. The stomps are looked up per bot every WYRMGUARD_STOMPS_FRESH_MS.
+    constexpr float WYRMGUARD_MELEE_HEALTH_PCT = 75.0f;
+    constexpr uint32 WYRMGUARD_STOMPS_FRESH_MS = 100;
+
+    // Ground fire (BwlHazards.cpp): a bot keeps this far past its edge. A Captain's or Overseer's
+    // Cleave reaches this far past its own size, this far either side of its facing. The hazards
+    // are looked up per bot every HAZARD_FRESH_MS.
+    constexpr float GROUND_FIRE_MARGIN = 1.5f;
+    constexpr float CLEAVE_REACH = 6.0f;
+    constexpr float CLEAVE_HALF_ANGLE = 1.0472f;  // 60 degrees
+    constexpr float HAZARD_SPOT = 2.0f;
+    constexpr uint32 HAZARD_FRESH_MS = 100;
+
+    // Interrupts (BwlInterrupts.cpp). After a bot sends one at a caster the rest leave that
+    // caster alone this long; bots this close to a caster when it starts a cast are woken to
+    // look (Silencing Shot, the farthest, reaches 35 yd).
+    constexpr uint32 INTERRUPT_SPREAD_MS = 400;
+    constexpr float INTERRUPT_WAKE_RANGE = 40.0f;
 
     // Mark of Detonation's explosion (22439) hits the marked player's allies within 30 yd.
     // Non-tanks keep a margin beyond it. Within DETONATION_HOLD (+4) of the marked player they
@@ -456,6 +543,11 @@ namespace RaidClear::BlackwingLair
     bool InDragonsWay(Player* bot, Creature* boss, float x, float y);
     bool DragonBreathing(Creature* boss);
 
+    // Whether this action walks the bot back to its place rather than to a target: playerbots'
+    // follow (to its place in the formation) and "stay", mod-dungeon-clear's camp hold, follow,
+    // assist, regroup and transit walks. `to` is where it ends when that is known.
+    bool WalksBack(PlayerbotAI* botAI, Action* action, Position& to, bool& known);
+
     // The bot has set off to hide from Firemaw's Flame Buffet and holds there until the last
     // stack is gone. One answer for every bot: healers' turns, his tanks and the front rule all
     // go by it.
@@ -482,6 +574,8 @@ namespace RaidClear::BlackwingLair
     void AddScripts();
     // Spell hooks: bots woken out of a cast when a dragon starts its breath, the breath clock.
     void AddPositionScripts();
+    // Spell hooks: bots woken to interrupt a trash cast.
+    void AddInterruptScripts();
 }
 
 class RaidClearBlackwingLairStrategy : public Strategy
@@ -493,6 +587,28 @@ public:
     void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
     bool HasTargetExclusions() const override { return true; }
     void AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type) override;
+};
+
+// --- Interrupts (BwlInterrupts.cpp) ---------------------------------------
+
+// A trash mob fighting the raid is casting something on the list that this bot can stop now,
+// and no other bot has just sent an interrupt at it.
+class RcBwlInterruptTrigger : public Trigger
+{
+public:
+    RcBwlInterruptTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl interrupt") {}
+    bool IsActive() override;
+};
+
+// Interrupts from where the bot stands, and is named for it: playerbots' "passive" (which
+// mod-dungeon-clear puts on the bots held at the camp) lets through only names with "stay",
+// "follow" or "move from group" in them. Not a cast action, so mod-dungeon-clear's hold on
+// damage at the pull doesn't take it either. On both engines, in "rc bwl runners".
+class RcBwlInterruptAction : public Action
+{
+public:
+    RcBwlInterruptAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl stay and interrupt") {}
+    bool Execute(Event event) override;
 };
 
 // --- Suppression Room -----------------------------------------------------
@@ -523,16 +639,52 @@ private:
     uint64 _nextStepMs = 0;  // game time (ms) before which this bot doesn't step again
 };
 
-class RcBwlTechnicianSpreadAction : public MovementAction
+// Named with "stay" on purpose, like the Wyrmguard one: it still runs while mod-dungeon-clear
+// keeps the bot passive. Not a MovementAction: see RaidClear::WayOutWalk.
+class RcBwlTechnicianSpreadAction : public Action
 {
 public:
-    RcBwlTechnicianSpreadAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl technician spread") {}
+    RcBwlTechnicianSpreadAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl technician stay apart"), _walk(botAI) {}
     bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
+// Follow, formation and the camp hold don't walk a bot that spread out back into the clump.
+class RcBwlTechnicianHoldMultiplier : public Multiplier
+{
+public:
+    RcBwlTechnicianHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl technician hold") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Trash ground fire and cleaves (BwlHazards.cpp) ------------------------
+
+// The bot stands in a Rain of Fire or Flamestrike that is burning, or (not a tank) in front of a
+// Death Talon Captain or Overseer that isn't on it. On both engines, in "rc bwl runners".
+class RcBwlTrashHazardTrigger : public Trigger
+{
+public:
+    RcBwlTrashHazardTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl trash hazard") {}
+    bool IsActive() override;
+};
+
+// With "stay" in the name for the passive camp hold (see the Wyrmguard one).
+class RcBwlTrashHazardAction : public Action
+{
+public:
+    RcBwlTrashHazardAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl hazard stay clear"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
 };
 
 // --- Vaelastrasz's room: the technicians that run (BwlRunners.cpp) --------
 
-// On both engines: nothing is fighting anyone when they set off.
+// On both engines: nothing is fighting anyone when they set off. The rules a bot waiting at the
+// camp needs before the pack reaches it (War Stomp, ground fire, interrupts) are here too.
 class RaidClearBwlRunnersStrategy : public Strategy
 {
 public:
@@ -743,10 +895,11 @@ public:
     bool IsActive() override;
 };
 
+// "stay" in the name: it still runs while mod-dungeon-clear keeps the bot passive.
 class RcBwlDetonationKeepAwayAction : public MovementAction
 {
 public:
-    RcBwlDetonationKeepAwayAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl detonation keep away") {}
+    RcBwlDetonationKeepAwayAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl detonation stay clear") {}
     bool Execute(Event event) override;
 };
 
@@ -868,7 +1021,9 @@ private:
 };
 
 // Casters and healers aren't taken to the dragon's flank at melee range by playerbots' own
-// positioning, and nothing walks them in under Nefarian's roar.
+// positioning, and nothing walks them in under Nefarian's roar. Follow and formation don't
+// walk anyone who keeps out of the front back into it, and nobody charges onto the dragon from
+// in front of it.
 class RcBwlDragonHoldMultiplier : public Multiplier
 {
 public:
@@ -886,7 +1041,8 @@ public:
     float GetValue(Action* action) override;
 };
 
-// A shaman in the Nefarian fight without a Tremor Totem down ("rc mc tremor totem" drops it).
+// A shaman whose party has one of Nefarian's tanks, and no Tremor Totem of its own within
+// TREMOR_TANK_REACH of that tank.
 class RcBwlNefarianTremorTrigger : public Trigger
 {
 public:
@@ -894,7 +1050,16 @@ public:
     bool IsActive() override;
 };
 
-// ...and nothing else goes in the earth slot meanwhile.
+// Walks to within TREMOR_TANK_NEAR of the tank, outside his front and tail (in under the roar),
+// and puts it down there.
+class RcBwlTremorTankAction : public MovementAction
+{
+public:
+    RcBwlTremorTankAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl tremor for tank") {}
+    bool Execute(Event event) override;
+};
+
+// ...and nothing else goes in that shaman's earth slot while it keeps the tank's Tremor.
 class RcBwlNefarianTremorMultiplier : public Multiplier
 {
 public:
@@ -920,6 +1085,37 @@ public:
 
 private:
     uint32 _failedAtMs = 0;
+};
+
+// Nefarian is casting Bellowing Roar, and this warrior is in its reach with Berserker Rage ready.
+class RcBwlBellowingRoarTrigger : public Trigger
+{
+public:
+    RcBwlBellowingRoarTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl bellowing roar") {}
+    bool IsActive() override;
+};
+
+class RcBwlBerserkerRageAction : public Action
+{
+public:
+    RcBwlBerserkerRageAction(PlayerbotAI* botAI) : Action(botAI, "rc bwl berserker rage") {}
+    bool Execute(Event event) override;
+};
+
+// Nefarian is on this bot, which isn't a tank (he picks whoever comes first when he lands).
+class RcBwlNefarianLooseTrigger : public Trigger
+{
+public:
+    RcBwlNefarianLooseTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc bwl nefarian loose") {}
+    bool IsActive() override;
+};
+
+// Walks to the tank that should have him, so he faces where that tank stands.
+class RcBwlNefarianToTankAction : public MovementAction
+{
+public:
+    RcBwlNefarianToTankAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc bwl nefarian to tank") {}
+    bool Execute(Event event) override;
 };
 
 // Nefarian's rogue call: the bot he is on has stunned raid members in front of him.

@@ -32,6 +32,7 @@
 #include <cstring>
 #include <list>
 #include <string>
+#include <vector>
 
 using namespace RaidClear::BlackwingLair;
 
@@ -40,6 +41,8 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::BlackwingLair::KillOrde
     static std::vector<KillOrderEntry> const table = {
         // Each living warlock keeps opening portals that keep summoning felguards.
         { NPC_BLACKWING_WARLOCK, 0 },
+        // Each technician throws a Bomb at someone every few seconds, and goes down in a few.
+        { NPC_BLACKWING_TECHNICIAN, 0 },
 
         // Heals the pack (Healing Circle), polymorphs.
         { NPC_BLACKWING_TASKMASTER, 1 },
@@ -47,10 +50,11 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::BlackwingLair::KillOrde
         // The Suppression Room elites, before Broodlord if he gets pulled with them.
         { NPC_DEATH_TALON_HATCHER, 1 },
 
-        // Death Talon packs: the Wyrmkin's Fireball Volley hits the whole raid, so they go first.
-        // The Captain is off on his own tank (Mark of Detonation) and dies last, once the melee
-        // has nothing else to hit near the main tank.
-        { NPC_DEATH_TALON_WYRMKIN, 1 },
+        // Death Talon packs: the Wyrmkin's Fireball Volley hits everyone within 45 yd (one evening:
+        // 45 casts, 38 deaths), and nothing stops it: they are immune to interrupts, silences and
+        // stuns. So they go first, ahead of everything. The Captain is off on his own tank (Mark
+        // of Detonation) and dies last, once the melee has nothing else to hit near the main tank.
+        { NPC_DEATH_TALON_WYRMKIN, 0 },
         { NPC_DEATH_TALON_FLAMESCALE, 2 },
         { NPC_DEATH_TALON_SEETHER, 2 },
         { NPC_DEATH_TALON_CAPTAIN, 3 },
@@ -115,7 +119,8 @@ std::vector<uint32> const& RaidClear::BlackwingLair::TankSplitSkipBosses()
 
 std::vector<RaidClear::Tanks::SplashRadius> const& RaidClear::BlackwingLair::TankSplitSplashRadii()
 {
-    // War Stomp (24375) reaches 15 yd: two Wyrmguards end up 30 yd apart.
+    // War Stomp (24375) reaches 15 yd: a Wyrmguard is held 15 yd further from other mobs.
+    // (Not from another Wyrmguard: those stay together, see Tanks::WantedSeparation.)
     static std::vector<Tanks::SplashRadius> const radii = {
         { NPC_DEATH_TALON_WYRMGUARD, 15.0f },
         // Not his own AoE: the Mark of Detonation on his tank, 30 yd around it.
@@ -194,7 +199,7 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
         new TriggerNode("rc bwl drake front", { NextAction("rc bwl drake front", ACTION_RAID + 1) }));
 
     triggers.push_back(
-        new TriggerNode("rc bwl technician spread", { NextAction("rc bwl technician spread", ACTION_RAID) }));
+        new TriggerNode("rc bwl technician spread", { NextAction("rc bwl technician stay apart", ACTION_RAID) }));
 
     triggers.push_back(
         new TriggerNode("rc bwl firemaw hide", { NextAction("rc bwl firemaw hide", ACTION_RAID + 1) }));
@@ -213,7 +218,13 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
     triggers.push_back(
         new TriggerNode("rc bwl dragon breath", { NextAction("rc bwl dragon move", ACTION_EMERGENCY + 6) }));
     triggers.push_back(
-        new TriggerNode("rc bwl nefarian tremor", { NextAction("rc mc tremor totem", ACTION_RAID + 1) }));
+        new TriggerNode("rc bwl nefarian tremor", { NextAction("rc bwl tremor for tank", ACTION_RAID + 1) }));
+    // Berserker Rage before the roar lands; with the breath escapes.
+    triggers.push_back(
+        new TriggerNode("rc bwl bellowing roar", { NextAction("rc bwl berserker rage", ACTION_EMERGENCY + 5) }));
+    // He is on a non-tank: it takes his front to his tank before anything else but a breath.
+    triggers.push_back(
+        new TriggerNode("rc bwl nefarian loose", { NextAction("rc bwl nefarian to tank", ACTION_EMERGENCY + 3) }));
     triggers.push_back(
         new TriggerNode("rc bwl nefarian fear ward", { NextAction("rc bwl nefarian fear ward", ACTION_RAID + 4) }));
     triggers.push_back(
@@ -226,7 +237,7 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
     // Above the heals, like the other blasts a bot can simply walk out of.
 
     triggers.push_back(
-        new TriggerNode("rc bwl detonation keep away", { NextAction("rc bwl detonation keep away", ACTION_RAID + 1) }));
+        new TriggerNode("rc bwl detonation keep away", { NextAction("rc bwl detonation stay clear", ACTION_RAID + 1) }));
 
     triggers.push_back(new TriggerNode("rc bwl tranq", { NextAction("rc bwl tranq", ACTION_RAID + 1) }));
     triggers.push_back(new TriggerNode("rc bwl fire nova totem",
@@ -245,6 +256,7 @@ void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& m
     multipliers.push_back(new RcBwlHoldCoverMultiplier(botAI));
     multipliers.push_back(new RcBwlSpotHoldMultiplier(botAI));
     multipliers.push_back(new RcBwlDetonationHoldMultiplier(botAI));
+    multipliers.push_back(new RcBwlTechnicianHoldMultiplier(botAI));
     multipliers.push_back(new RcBwlCaptainMainTankMultiplier(botAI));
     multipliers.push_back(new RcBwlCorruptedHealingMultiplier(botAI));
     multipliers.push_back(new RcBwlDragonHoldMultiplier(botAI));
@@ -321,64 +333,74 @@ namespace
         return !PlayerbotAI::IsTank(bot) && (PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot));
     }
 
-    // Push away from every living group member closer than TECHNICIAN_SPREAD, nearer ones
-    // harder. Zero when nobody is that close.
-    void Repulsion(Player* bot, float& outX, float& outY)
+    // Where the other living group members stand, those close enough to matter for a spot
+    // within TECHNICIAN_SEARCH of the bot.
+    void Neighbours(Player* bot, std::vector<Position>& out)
     {
-        outX = 0.0f;
-        outY = 0.0f;
         Group* group = bot->GetGroup();
         if (!group)
             return;
-
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->GetSource();
-            if (!member || member == bot || !member->IsAlive() || !member->IsInMap(bot))
-                continue;
-
-            float const dist = bot->GetExactDist2d(member);
-            if (dist >= TECHNICIAN_SPREAD)
-                continue;
-
-            float const weight = 1.0f - dist / TECHNICIAN_SPREAD;
-            if (dist < 0.1f)
-            {
-                // Standing on top of each other: split by GUID so the two go opposite ways.
-                float const angle = bot->GetGUID() < member->GetGUID() ? 0.0f : float(M_PI);
-                outX += std::cos(angle) * weight;
-                outY += std::sin(angle) * weight;
-                continue;
-            }
-            outX += (bot->GetPositionX() - member->GetPositionX()) / dist * weight;
-            outY += (bot->GetPositionY() - member->GetPositionY()) / dist * weight;
+            if (member && member != bot && member->IsAlive() && member->IsInMap(bot) &&
+                bot->GetExactDist2d(member) < TECHNICIAN_SEARCH + TECHNICIAN_SPREAD)
+                out.push_back(member->GetPosition());
         }
     }
 
+    // Yards from a spot to the nearest of them.
+    float SpreadGap(std::vector<Position> const& others, float x, float y)
+    {
+        float gap = 1000.0f;
+        for (Position const& other : others)
+            gap = std::min(gap, other.GetExactDist2d(x, y));
+        return gap;
+    }
+
+    // A technician fighting within TECHNICIAN_RANGE, per bot for TECHNICIAN_FRESH_MS: the hold
+    // below asks once for every action.
+    // When this bot last walked out of a clump (getMSTime()). One map thread updates a bot at
+    // a time.
+    thread_local std::unordered_map<ObjectGuid, uint32> tSpreadMs;
+
     bool TechnicianFighting(Player* bot)
     {
+        struct Entry
+        {
+            uint32 ms = 0;
+            bool fighting = false;
+        };
+        thread_local std::unordered_map<ObjectGuid, Entry> tSeen;
+        uint32 const now = getMSTime();
+        Entry& entry = tSeen[bot->GetGUID()];
+        if (entry.ms && getMSTimeDiff(entry.ms, now) < TECHNICIAN_FRESH_MS)
+            return entry.fighting;
+
         std::list<Creature*> technicians;
         bot->GetCreatureListWithEntryInGrid(technicians, NPC_BLACKWING_TECHNICIAN, TECHNICIAN_RANGE);
-        for (Creature* technician : technicians)
-            if (technician && technician->IsAlive() && technician->IsInCombat())
-                return true;
-        return false;
+        entry.fighting = std::any_of(technicians.begin(), technicians.end(), [](Creature* technician)
+        {
+            return technician && technician->IsAlive() && technician->IsInCombat();
+        });
+        entry.ms = now ? now : 1;
+        return entry.fighting;
     }
 }
 
 bool RcBwlTechnicianSpreadTrigger::IsActive()
 {
-    if (!SpreadsFromBombs(bot) || !bot->IsInCombat())
+    if (!SpreadsFromBombs(bot) || !bot->IsInCombat() || !botAI->CanMove())
         return false;
 
     uint64 const now = GameTime::GetGameTimeMS().count();
     if (now < _nextStepMs)
         return false;
 
-    // The cheap test first: only a bot in a clump has anything to do.
-    float x, y;
-    Repulsion(bot, x, y);
-    if (x == 0.0f && y == 0.0f)
+    // The cheap test first: only a bot with someone too close has anything to do.
+    std::vector<Position> others;
+    Neighbours(bot, others);
+    if (SpreadGap(others, bot->GetPositionX(), bot->GetPositionY()) >= TECHNICIAN_SPREAD)
         return false;
 
     if (!TechnicianFighting(bot))
@@ -390,37 +412,52 @@ bool RcBwlTechnicianSpreadTrigger::IsActive()
 
 bool RcBwlTechnicianSpreadAction::Execute(Event /*event*/)
 {
-    float pushX, pushY;
-    Repulsion(bot, pushX, pushY);
-    float const length = std::sqrt(pushX * pushX + pushY * pushY);
-    if (length < 0.01f)
-        return false;
-
-    Map* map = bot->GetMap();
+    // To the nearest spot with nobody within TECHNICIAN_SPREAD, looked for all the way round:
+    // pushes away from each neighbour add up to nothing in the middle of a ring of them. Not out
+    // of reach of the bot's target, so casters don't step out of their own fight.
+    std::vector<Position> others;
+    Neighbours(bot, others);
     Unit* target = AI_VALUE(Unit*, "current target");
-    float const base = std::atan2(pushY, pushX);
-
-    // Straight out of the clump first, then slide along walls; keep sight of the target so
-    // casters don't step out of their own fight.
-    static float const offsets[] = { 0.0f, float(M_PI_4), -float(M_PI_4), float(M_PI_2), -float(M_PI_2) };
-    for (float const offset : offsets)
+    if (target && (target == bot || !target->IsInMap(bot)))
+        target = nullptr;
+    auto const gapAt = [&others, target](float x, float y, float /*z*/)
     {
-        float const angle = base + offset;
-        float const x = bot->GetPositionX() + std::cos(angle) * TECHNICIAN_STEP;
-        float const y = bot->GetPositionY() + std::sin(angle) * TECHNICIAN_STEP;
-        float const z = map->GetHeight(bot->GetPhaseMask(), x, y, bot->GetPositionZ() + 3.0f);
+        float const gap = SpreadGap(others, x, y);
+        return target ? std::min(gap, TECHNICIAN_TARGET_REACH - target->GetExactDist2d(x, y)) : gap;
+    };
+    if (gapAt(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) >= TECHNICIAN_SPREAD)
+        return false;
+    if (!_walk.Go(gapAt, TECHNICIAN_SPREAD, TECHNICIAN_SPREAD + 1.0f, 1.0f, TECHNICIAN_SEARCH))
+        return false;
+    uint32 const now = getMSTime();
+    tSpreadMs[bot->GetGUID()] = now ? now : 1;
+    return true;
+}
 
-        if (z <= INVALID_HEIGHT || std::fabs(z - bot->GetPositionZ()) > 3.0f)
-            continue;
-        if (!bot->IsWithinLOS(x, y, z + 2.0f))
-            continue;
-        if (target && !target->IsWithinLOS(x, y, z + 2.0f))
-            continue;
-
-        if (MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT))
-            return true;
+float RcBwlTechnicianHoldMultiplier::GetValue(Action* action)
+{
+    // A bot that spread out isn't walked straight back into the clump by its follow, its
+    // formation or mod-dungeon-clear's camp hold. Picking targets, casting, and walking to a
+    // target still go.
+    if (!action || !dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
+        !SpreadsFromBombs(bot) || !bot->IsInCombat())
+        return 1.0f;
+    Position to;
+    bool known = false;
+    if (!WalksBack(botAI, action, to, known) || !TechnicianFighting(bot))
+        return 1.0f;
+    // A walk that ends somewhere unknown (mod-dungeon-clear's) is only held for a few seconds
+    // after the bot spread out: long enough not to be walked straight back, short enough that a
+    // bot the camp needs elsewhere isn't left standing for the whole fight.
+    if (!known)
+    {
+        auto const it = tSpreadMs.find(bot->GetGUID());
+        return it != tSpreadMs.end() && getMSTimeDiff(it->second, getMSTime()) < TECHNICIAN_SPREAD_HOLD_MS ? 0.0f
+                                                                                                           : 1.0f;
     }
-    return false;
+    std::vector<Position> others;
+    Neighbours(bot, others);
+    return SpreadGap(others, to.GetPositionX(), to.GetPositionY()) < TECHNICIAN_SPREAD ? 0.0f : 1.0f;
 }
 
 // --- Keep out of a boss's AoE (Broodlord, Nefarian) -----------------------
@@ -987,4 +1024,5 @@ void RaidClear::BlackwingLair::AddScripts()
 {
     new RaidClearBwlPlayerScript();
     RaidClear::BlackwingLair::AddPositionScripts();
+    RaidClear::BlackwingLair::AddInterruptScripts();
 }
