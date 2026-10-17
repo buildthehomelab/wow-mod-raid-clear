@@ -34,6 +34,16 @@
  *     target is on; one only crossing the pit is left alone. A tank with a mob on it goes 22 yd
  *     out when either of them is within 12 yd, so the mob follows it out of reach. Melee whose
  *     target stands in it stay on that target.
+ *   - Ragnaros' Lava Burst (21908): three eruptions every 10 s or so at eight fixed places,
+ *     seven of them on the rock 30 to 45 yd from him, each hitting whoever stands around it (logs
+ *     of 2026-10-15/16: 157 and 252 hits, up to 38 players by one eruption; Wrath of Ragnaros hit
+ *     no ranged bot or healer at all). Ranged bots and healers each take a spot of their own on
+ *     the rock 30 to 42 yd from him, as far from all eight as there is, dry and in his line of
+ *     sight, 3.5 yd apart: the west side of the room. Healers pick first, among spots within
+ *     36 yd of the main tank so he stays in reach of their heals. Spots are handed out once and
+ *     kept, a dead bot's too, so a death or the tank thrown back doesn't move everyone. While he
+ *     is up a bot walks back to its spot when it is more than 4 yd off, and doesn't walk away
+ *     from it for anything else but the lava (a heal out of reach is somebody else's).
  *   - Ragnaros: ranged and healers stay out of Wrath of Ragnaros (20566), which reaches 25 yd
  *     from his middle. He is 20 yd wide himself (his combat reach), so this is measured centre
  *     to centre: 27.5 yd from his middle is only 6 yd from his edge. A bot closer than that
@@ -52,10 +62,22 @@
  *     nearest spot 5 yd clear of every one in the fight.
  *   - Core Hounds: one brought to 0 health plays dead for 10 s and takes no damage; then it
  *     dies if no other Core Hound within 80 yd is still standing in the fight, else it gets up
- *     at full health. Playerbots skulls the hound with the most health, which evens the pack
- *     out. Here nobody hits a hound that is playing dead (a log of 2026-10-16: a quarter of all
- *     hits on hounds landed on those, for nothing), and from the moment one plays dead skull
- *     goes to the standing hound with the least health, so the rest go down inside its 10 s.
+ *     at full health. So the pack has to come down together. Playerbots skulls the healthiest
+ *     hound, but only among those on the main tank's own threat list, and the off-tank split
+ *     spread the pack over four tanks and three pets (a log of 2026-10-16: ten hounds at
+ *     Lucifron went down one after another, two seconds apart, fourteen times each in 7.5
+ *     minutes; five at Magmadar's door took two minutes). Here the hounds are tanked in one
+ *     heap (the raid's stack adds, see Common/TankRoles.h) and:
+ *       - skull sits on the healthiest standing hound in the fight, and stays there until
+ *         another has more than half the band (CORE_HOUND_HEALTH_BAND) more health;
+ *       - nobody but the tank holding it aims a single-target attack at a hound more than the
+ *         band below the healthiest (bots already on one turn away, pets too); area and chain
+ *         spells still go out while no hound is that far behind, they even the pack out, and
+ *         wait while one is (a hound that got up again at full health);
+ *       - nobody hits a hound that is playing dead (a log of 2026-10-16: a quarter of all
+ *         hits on hounds landed on those, for nothing), and from the moment one plays dead
+ *         skull goes to the standing hound with the least health, so the rest, all within the
+ *         band of each other, go down inside its 10 s.
  *   - Garr: a Firesworn more than 40 yd from him gets Separation Anxiety (23492, +300% damage),
  *     and a Firesworn erupts when it dies (Eruption, 19497: about 2,000 fire to everyone within
  *     15 yd). With the two together that is 8,000, which kills everyone around it. So the fight
@@ -86,6 +108,8 @@
 #include "Multiplier.h"
 #include "Strategy.h"
 #include "Trigger.h"
+
+#include <array>
 
 #include <vector>
 
@@ -182,6 +206,24 @@ namespace RaidClear::MoltenCore
     constexpr float RAGNAROS_SEARCH = 30.0f;
     // Within this of his middle they don't walk toward anything closer to him than KEEP_AWAY.
     constexpr float RAGNAROS_HOLD = 36.0f;
+    // Lava Burst (21908) erupts at three of eight fixed places (Ragnaros' LAVA_BURSTS) every
+    // 10 s or so while he is up, and an eruption hits most of the raid around it. Seven of the
+    // eight are on the rock 30 to 45 yd from him, the ring KEEP_AWAY sends ranged bots to. So
+    // each ranged bot and healer holds a spot of its own on rings this far from his middle,
+    // this far apart, as far from all eight as the rock allows; a healer's within this of the
+    // main tank, so it can still heal him.
+    constexpr std::array<float, 4> RAGNAROS_RINGS = { 30.0f, 34.0f, 38.0f, 42.0f };
+    constexpr float RAGNAROS_SPOT_SPACING = 3.5f;
+    constexpr float RAGNAROS_HEAL_REACH = 36.0f;
+    // A bot further than this from its spot walks back to it; one this close holds it.
+    constexpr float RAGNAROS_SPOT_LEAVE = 4.0f;
+    constexpr float RAGNAROS_SPOT_HOLD = 6.0f;
+    // A spot has dry ground this far round it too.
+    constexpr float RAGNAROS_SPOT_DRY = 2.5f;
+    // Where his main tank stands: this far in front of him as he was summoned.
+    constexpr float RAGNAROS_TANK_SPOT = 18.0f;
+    // A layout nobody has asked for in this long belongs to an earlier pull.
+    constexpr uint32 RAGNAROS_LAYOUT_FORGET_MS = 30000;
 
     // Garr checks his Firesworn once a second: more than 40 yd from him (edge to edge) and it
     // gets Separation Anxiety. A Firesworn this far out counts as having it already.
@@ -196,6 +238,9 @@ namespace RaidClear::MoltenCore
     // A Core Hound's Play Dead ends in its death only if no other Core Hound within this of it
     // is still standing in the fight; otherwise it gets up at full health.
     constexpr float CORE_HOUND_LINK_RANGE = 80.0f;
+    // While none plays dead, a hound more than this many percent of health below the healthiest
+    // one is left to area spells and the tanks.
+    constexpr float CORE_HOUND_HEALTH_BAND = 10.0f;
 
     std::vector<KillOrderEntry> const& KillOrder();
     // Adds the kill order leaves alone for now (a Firesworn with Separation Anxiety, a Core Hound
@@ -210,6 +255,8 @@ namespace RaidClear::MoltenCore
 
     // Trash whose AoE needs more room than the default tank separation.
     std::vector<Tanks::SplashRadius> const& TankSplitSplashRadii();
+    // Adds tanked in one heap: off-tanks bring theirs to the tank holding the pack.
+    std::vector<uint32> const& TankSplitStackAdds();
 
     // The mobs that throw players about, with the spell they do it with (Common/Knockback.h).
     std::vector<Knockback::Thrower> const& Throwers();
@@ -423,27 +470,27 @@ private:
 
 // --- Core Hounds -----------------------------------------------------------
 
-// The bot is hitting, casting at or channelling into a Core Hound that is playing dead.
-class RcMcPlayDeadTargetTrigger : public Trigger
+// The bot (or its pet) is hitting a Core Hound that is playing dead or that is held back for the
+// rest of the pack to catch up, or is casting or channelling at one that is playing dead.
+class RcMcHoundTargetTrigger : public Trigger
 {
 public:
-    RcMcPlayDeadTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc play dead target") {}
+    RcMcHoundTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc hound target") {}
     bool IsActive() override;
 };
 
-class RcMcLeavePlayDeadAction : public Action
+class RcMcLeaveHoundAction : public Action
 {
 public:
-    RcMcLeavePlayDeadAction(PlayerbotAI* botAI) : Action(botAI, "rc mc leave play dead") {}
+    RcMcLeaveHoundAction(PlayerbotAI* botAI) : Action(botAI, "rc mc leave hound") {}
     bool Execute(Event event) override;
 };
 
-// The group's marker, with a Core Hound playing dead and skull not on the standing hound with the
-// least health.
-class RcMcFinishHoundsTrigger : public Trigger
+// The group's marker, with Core Hounds in the fight and skull not where the hounds' rule wants it.
+class RcMcHoundSkullTrigger : public Trigger
 {
 public:
-    RcMcFinishHoundsTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc finish hounds") {}
+    RcMcHoundSkullTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc hound skull") {}
     bool IsActive() override;
 };
 
@@ -454,8 +501,8 @@ public:
     bool Execute(Event event) override;
 };
 
-// Nothing is aimed at a hound playing dead, and playerbots' own hound marking (most health
-// first) waits while the pack is being finished.
+// Nothing is aimed at a hound playing dead, no single-target attack but a tank's at a hound held
+// back, and playerbots' own hound marking is off (rc mc mark hound does it).
 class RcMcCoreHoundMultiplier : public Multiplier
 {
 public:
@@ -472,7 +519,23 @@ public:
     bool IsActive() override;
 };
 
-// Ranged bots and healers at Ragnaros don't walk toward something inside his Wrath.
+// A ranged bot or healer away from its spot at Ragnaros (see RAGNAROS_RINGS).
+class RcMcRagnarosSpotTrigger : public Trigger
+{
+public:
+    RcMcRagnarosSpotTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc mc ragnaros spot") {}
+    bool IsActive() override;
+};
+
+class RcMcRagnarosSpotAction : public MovementAction
+{
+public:
+    RcMcRagnarosSpotAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc mc ragnaros spot") {}
+    bool Execute(Event event) override;
+};
+
+// Ranged bots and healers at Ragnaros don't walk toward something inside his Wrath, and one on
+// its spot doesn't walk off it.
 class RcMcRagnarosHoldMultiplier : public Multiplier
 {
 public:

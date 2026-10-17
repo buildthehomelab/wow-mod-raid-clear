@@ -60,6 +60,7 @@ public:
         creators["rc mark kill order"] = &RaidClearActionContext::mark_kill_order;
         creators["rc offtank target"] = &RaidClearActionContext::offtank_target;
         creators["rc offtank separate"] = &RaidClearActionContext::offtank_separate;
+        creators["rc offtank stack"] = &RaidClearActionContext::offtank_stack;
         creators["rc tank share threat"] = &RaidClearActionContext::tank_share_threat;
         creators["rc protect boss victim"] = &RaidClearActionContext::protect_boss_victim;
         creators["rc salvation on player"] = &RaidClearActionContext::salvation_on_player;
@@ -70,10 +71,11 @@ public:
         creators["rc mc tremor totem"] = &RaidClearActionContext::mc_tremor_totem;
         creators["rc mc stop melee"] = &RaidClearActionContext::mc_stop_melee;
         creators["rc mc ragnaros move out"] = &RaidClearActionContext::mc_ragnaros_move_out;
+        creators["rc mc ragnaros spot"] = &RaidClearActionContext::mc_ragnaros_spot;
         creators["rc mc garr gather"] = &RaidClearActionContext::mc_garr_gather;
         creators["rc mc leave firesworn"] = &RaidClearActionContext::mc_leave_firesworn;
         creators["rc mc leave splash trash"] = &RaidClearActionContext::mc_leave_splash_trash;
-        creators["rc mc leave play dead"] = &RaidClearActionContext::mc_leave_play_dead;
+        creators["rc mc leave hound"] = &RaidClearActionContext::mc_leave_hound;
         creators["rc mc mark hound"] = &RaidClearActionContext::mc_mark_hound;
         creators["rc mc leave inferno"] = &RaidClearActionContext::mc_leave_inferno;
         creators["rc mc leave hot coal"] = &RaidClearActionContext::mc_leave_hot_coal;
@@ -146,6 +148,7 @@ private:
     static Action* mark_kill_order(PlayerbotAI* botAI) { return new RcMarkKillOrderAction(botAI); }
     static Action* offtank_target(PlayerbotAI* botAI) { return new RcOffTankTargetAction(botAI); }
     static Action* offtank_separate(PlayerbotAI* botAI) { return new RcOffTankSeparateAction(botAI); }
+    static Action* offtank_stack(PlayerbotAI* botAI) { return new RcOffTankStackAction(botAI); }
     static Action* tank_share_threat(PlayerbotAI* botAI) { return new RcTankShareThreatAction(botAI); }
     static Action* protect_boss_victim(PlayerbotAI* botAI) { return new RcProtectBossVictimAction(botAI); }
     static Action* salvation_on_player(PlayerbotAI* botAI) { return new RcSalvationOnPlayerAction(botAI); }
@@ -156,10 +159,11 @@ private:
     static Action* mc_tremor_totem(PlayerbotAI* botAI) { return new RcMcTremorTotemAction(botAI); }
     static Action* mc_stop_melee(PlayerbotAI* botAI) { return new RcMcStopMeleeAction(botAI); }
     static Action* mc_ragnaros_move_out(PlayerbotAI* botAI) { return new RcMcRagnarosMoveOutAction(botAI); }
+    static Action* mc_ragnaros_spot(PlayerbotAI* botAI) { return new RcMcRagnarosSpotAction(botAI); }
     static Action* mc_garr_gather(PlayerbotAI* botAI) { return new RcMcGarrGatherAction(botAI); }
     static Action* mc_leave_firesworn(PlayerbotAI* botAI) { return new RcMcLeaveFireswornAction(botAI); }
     static Action* mc_leave_splash_trash(PlayerbotAI* botAI) { return new RcMcLeaveSplashTrashAction(botAI); }
-    static Action* mc_leave_play_dead(PlayerbotAI* botAI) { return new RcMcLeavePlayDeadAction(botAI); }
+    static Action* mc_leave_hound(PlayerbotAI* botAI) { return new RcMcLeaveHoundAction(botAI); }
     static Action* mc_mark_hound(PlayerbotAI* botAI) { return new RcMcMarkHoundAction(botAI); }
     static Action* mc_leave_inferno(PlayerbotAI* botAI) { return new RcMcLeaveInfernoAction(botAI); }
     static Action* mc_leave_hot_coal(PlayerbotAI* botAI) { return new RcMcLeaveHotCoalAction(botAI); }
@@ -240,6 +244,7 @@ public:
         creators["rc kill order"] = &RaidClearTriggerContext::kill_order;
         creators["rc offtank target"] = &RaidClearTriggerContext::offtank_target;
         creators["rc offtank separate"] = &RaidClearTriggerContext::offtank_separate;
+        creators["rc offtank stack"] = &RaidClearTriggerContext::offtank_stack;
         creators["rc tank share threat"] = &RaidClearTriggerContext::tank_share_threat;
         creators["rc boss on non tank"] = &RaidClearTriggerContext::boss_on_non_tank;
         creators["rc player over threat"] = &RaidClearTriggerContext::player_over_threat;
@@ -251,11 +256,12 @@ public:
         creators["rc mc magmadar tremor"] = &RaidClearTriggerContext::mc_magmadar_tremor;
         creators["rc mc damage reflection"] = &RaidClearTriggerContext::mc_damage_reflection;
         creators["rc mc ragnaros ranged"] = &RaidClearTriggerContext::mc_ragnaros_ranged;
+        creators["rc mc ragnaros spot"] = &RaidClearTriggerContext::mc_ragnaros_spot;
         creators["rc mc garr gather"] = &RaidClearTriggerContext::mc_garr_gather;
         creators["rc mc anxious firesworn"] = &RaidClearTriggerContext::mc_anxious_firesworn;
         creators["rc mc splash trash"] = &RaidClearTriggerContext::mc_splash_trash;
-        creators["rc mc play dead target"] = &RaidClearTriggerContext::mc_play_dead_target;
-        creators["rc mc finish hounds"] = &RaidClearTriggerContext::mc_finish_hounds;
+        creators["rc mc hound target"] = &RaidClearTriggerContext::mc_hound_target;
+        creators["rc mc hound skull"] = &RaidClearTriggerContext::mc_hound_skull;
         creators["rc mc inferno"] = &RaidClearTriggerContext::mc_inferno;
         creators["rc mc hot coal"] = &RaidClearTriggerContext::mc_hot_coal;
         creators["rc mc living bomb"] = &RaidClearTriggerContext::mc_living_bomb;
@@ -331,6 +337,7 @@ private:
     static Trigger* kill_order(PlayerbotAI* botAI) { return new RcKillOrderTrigger(botAI); }
     static Trigger* offtank_target(PlayerbotAI* botAI) { return new RcOffTankTargetTrigger(botAI); }
     static Trigger* offtank_separate(PlayerbotAI* botAI) { return new RcOffTankSeparateTrigger(botAI); }
+    static Trigger* offtank_stack(PlayerbotAI* botAI) { return new RcOffTankStackTrigger(botAI); }
     static Trigger* tank_share_threat(PlayerbotAI* botAI) { return new RcTankShareThreatTrigger(botAI); }
     static Trigger* boss_on_non_tank(PlayerbotAI* botAI) { return new RcBossOnNonTankTrigger(botAI); }
     static Trigger* player_over_threat(PlayerbotAI* botAI) { return new RcPlayerOverThreatTrigger(botAI); }
@@ -348,11 +355,12 @@ private:
     static Trigger* mc_magmadar_tremor(PlayerbotAI* botAI) { return new RcMcMagmadarTremorTrigger(botAI); }
     static Trigger* mc_damage_reflection(PlayerbotAI* botAI) { return new RcMcDamageReflectionTrigger(botAI); }
     static Trigger* mc_ragnaros_ranged(PlayerbotAI* botAI) { return new RcMcRagnarosRangedTrigger(botAI); }
+    static Trigger* mc_ragnaros_spot(PlayerbotAI* botAI) { return new RcMcRagnarosSpotTrigger(botAI); }
     static Trigger* mc_garr_gather(PlayerbotAI* botAI) { return new RcMcGarrGatherTrigger(botAI); }
     static Trigger* mc_anxious_firesworn(PlayerbotAI* botAI) { return new RcMcAnxiousFireswornTrigger(botAI); }
     static Trigger* mc_splash_trash(PlayerbotAI* botAI) { return new RcMcSplashTrashTrigger(botAI); }
-    static Trigger* mc_play_dead_target(PlayerbotAI* botAI) { return new RcMcPlayDeadTargetTrigger(botAI); }
-    static Trigger* mc_finish_hounds(PlayerbotAI* botAI) { return new RcMcFinishHoundsTrigger(botAI); }
+    static Trigger* mc_hound_target(PlayerbotAI* botAI) { return new RcMcHoundTargetTrigger(botAI); }
+    static Trigger* mc_hound_skull(PlayerbotAI* botAI) { return new RcMcHoundSkullTrigger(botAI); }
     static Trigger* mc_inferno(PlayerbotAI* botAI) { return new RcMcInfernoTrigger(botAI); }
     static Trigger* mc_hot_coal(PlayerbotAI* botAI) { return new RcMcHotCoalTrigger(botAI); }
     static Trigger* mc_living_bomb(PlayerbotAI* botAI) { return new RcMcLivingBombTrigger(botAI); }
