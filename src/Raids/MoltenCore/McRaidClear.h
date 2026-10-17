@@ -220,6 +220,10 @@ namespace RaidClear::MoltenCore
     constexpr float RAGNAROS_SPOT_HOLD = 6.0f;
     // A spot has dry ground this far round it too.
     constexpr float RAGNAROS_SPOT_DRY = 2.5f;
+    // Where his main tank stands: this far in front of him as he was summoned.
+    constexpr float RAGNAROS_TANK_SPOT = 18.0f;
+    // A layout nobody has asked for in this long belongs to an earlier pull.
+    constexpr uint32 RAGNAROS_LAYOUT_FORGET_MS = 30000;
 
     // Garr checks his Firesworn once a second: more than 40 yd from him (edge to edge) and it
     // gets Separation Anxiety. A Firesworn this far out counts as having it already.

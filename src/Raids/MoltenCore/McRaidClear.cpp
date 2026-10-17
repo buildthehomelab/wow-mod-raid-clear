@@ -1078,6 +1078,7 @@ namespace
     struct RagnarosLayout
     {
         ObjectGuid boss;
+        uint32 usedMs = 0;
         std::vector<RagnarosSpot> spots;
         std::map<ObjectGuid, std::size_t> holder;
     };
@@ -1085,7 +1086,7 @@ namespace
     // This bot's spot. The first time a bot of the group has none, every ranged bot and healer
     // still without one gets one: healers first and each in group order, every one the spot
     // furthest from the eruptions that is a spacing clear of those already held; a healer's
-    // within reach of where the main tank stands then, if any is. Map updates run on several
+    // within reach of where the main tank stands, if any is. Map updates run on several
     // threads, hence the lock.
     bool SpotFor(Player* bot, Creature* boss, RagnarosSpot& out)
     {
@@ -1098,12 +1099,17 @@ namespace
 
         std::lock_guard<std::mutex> guard(lock);
         RagnarosLayout& layout = layouts[boss->GetInstanceId()];
+        uint32 const now = getMSTime();
         if (layout.boss != boss->GetGUID())
         {
             layout.boss = boss->GetGUID();
             layout.spots = SpotsRound(boss);
             layout.holder.clear();
         }
+        // Nobody asked for a while: a new pull (after a wipe he keeps his guid), hand out afresh.
+        else if (getMSTimeDiff(layout.usedMs, now) > RAGNAROS_LAYOUT_FORGET_MS)
+            layout.holder.clear();
+        layout.usedMs = now;
 
         auto const held = layout.holder.find(bot->GetGUID());
         if (held != layout.holder.end())
@@ -1125,7 +1131,11 @@ namespace
             (PlayerbotAI::IsHeal(member) ? healers : ranged).push_back(member);
         }
 
-        Player* mainTank = RaidClear::Tanks::ActingMainTank(group);
+        // Where the main tank stands: in front of him as he was summoned (he turns to the tank, but
+        // at the pull the tank is still running in, or thrown back by his Wrath).
+        Position const& home = boss->GetHomePosition();
+        float const tankX = home.GetPositionX() + std::cos(home.GetOrientation()) * RAGNAROS_TANK_SPOT;
+        float const tankY = home.GetPositionY() + std::sin(home.GetOrientation()) * RAGNAROS_TANK_SPOT;
         auto const clear = [&layout](RagnarosSpot const& spot)
         {
             for (auto const& [guid, index] : layout.holder)
@@ -1144,7 +1154,7 @@ namespace
                 RagnarosSpot const& spot = layout.spots[i];
                 if (!clear(spot))
                     continue;
-                if (!healer || !mainTank || mainTank->GetExactDist2d(spot.x, spot.y) <= RAGNAROS_HEAL_REACH)
+                if (!healer || std::hypot(spot.x - tankX, spot.y - tankY) <= RAGNAROS_HEAL_REACH)
                     return i;
                 if (fallback == layout.spots.size())
                     fallback = i;
@@ -1167,6 +1177,38 @@ namespace
         out = layout.spots[mine->second];
         return true;
     }
+}
+
+bool RcMcRagnarosRangedTrigger::IsActive()
+{
+    if (!bot->IsAlive() || !KeepsOutOfWrath(bot) || !botAI->CanMove())
+        return false;
+
+    // From his middle: the spell measures from there, and he is 20 yd wide.
+    Creature* boss = EmergedRagnaros(bot);
+    return boss && bot->GetExactDist(boss) < RAGNAROS_KEEP_AWAY;
+}
+
+bool RcMcRagnarosMoveOutAction::Execute(Event /*event*/)
+{
+    Creature* boss = EmergedRagnaros(bot);
+    if (!boss || bot->GetExactDist(boss) >= RAGNAROS_KEEP_AWAY)
+        return false;
+
+    // He sits in the lava in the middle of the room and the raid stands on the rock round it:
+    // a spot further from him only counts when it is dry.
+    Position const centre = boss->GetPosition();
+    Map* map = bot->GetMap();
+    uint32 const phaseMask = bot->GetPhaseMask();
+    float const height = bot->GetCollisionHeight();
+    auto const gapAt = [&centre, map, phaseMask, height](float x, float y, float z)
+    {
+        LiquidData const liquid = map->GetLiquidData(phaseMask, x, y, z, height, {});
+        return liquid.Status & MAP_LIQUID_STATUS_IN_CONTACT ? 0.0f : centre.GetExactDist(x, y, z);
+    };
+    // A bot knocked into the lava scores 0 where it stands: every ring is worth a look then.
+    bool const dry = gapAt(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) > 0.0f;
+    return _walk.Go(gapAt, RAGNAROS_KEEP_AWAY, RAGNAROS_SPOT, RAGNAROS_WORTH_IT, RAGNAROS_SEARCH, dry);
 }
 
 bool RcMcRagnarosSpotTrigger::IsActive()
