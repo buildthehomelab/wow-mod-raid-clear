@@ -600,6 +600,8 @@ private:
     Position _cover;
     uint64 _coverFoundMs = 0;
     uint64 _noCoverUntilMs = 0;  // a search just found nothing; don't repeat it every tick
+    Position _sentTo;            // the last walk sent, and when: not sent again for a moment
+    uint64 _sentAtMs = 0;
 };
 
 // While a bot is hidden, nothing else walks it back into view (its spells still go out). The

@@ -1184,8 +1184,8 @@ bool RcBwlDrakeFrontTrigger::IsActive()
     Creature* drake = FightingDrake(bot);
     if (!drake || !HoldsDrake(bot, drake))
         return false;
-    // Firemaw with an off-tank spot set: that is where his second tank stands ("rc bwl boss spot").
-    if (drake->GetEntry() == NPC_FIREMAW && BossSpot(NPC_FIREMAW, Spot::OffTank))
+    // Firemaw with both tank spots set: his second tank stands at one of them ("rc bwl boss spot").
+    if (drake->GetEntry() == NPC_FIREMAW && BossSpot(NPC_FIREMAW, Spot::Tank) && BossSpot(NPC_FIREMAW, Spot::OffTank))
         return false;
     Player* victim = DrakeVictimToJoin(bot, drake);
     return victim && AwayFromFront(bot, drake, victim);

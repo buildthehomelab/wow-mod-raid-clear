@@ -52,6 +52,7 @@ namespace
     // search found nothing (each one is up to ~150 line-of-sight checks and paths).
     constexpr uint64 COVER_REUSE_MS = 15000;
     constexpr uint64 COVER_RETRY_MS = 3000;
+    constexpr uint64 HIDE_RESEND_MS = 1500;
 }
 
 bool RaidClear::BlackwingLair::SeenBy(Unit const* boss, WorldObject const* who)
@@ -654,12 +655,20 @@ bool RcBwlHideAction::Execute(Event /*event*/)
         target = _cover;
     }
 
-    // On its way: nothing else this tick, so no cast stops the run.
+    // On its way: nothing else this tick, so no cast stops the run. A walk that ends short of
+    // the spot (the path can't reach it) isn't sent again for a moment either.
     if (OnTheWay(bot, target))
         return true;
+    uint64 const sentNow = GameTime::GetGameTimeMS().count();
+    if (_sentAtMs && sentNow - _sentAtMs < HIDE_RESEND_MS && _sentTo.GetExactDist(target) < 1.0f)
+        return false;
     AI_VALUE(LastMovement&, "last movement").clear();
-    return MoveTo(bot->GetMapId(), target.GetPositionX(), target.GetPositionY(), target.GetPositionZ(), false, false,
-                  false, false, MovementPriority::MOVEMENT_FORCED);
+    if (!MoveTo(bot->GetMapId(), target.GetPositionX(), target.GetPositionY(), target.GetPositionZ(), false, false,
+                false, false, MovementPriority::MOVEMENT_FORCED))
+        return false;
+    _sentTo = target;
+    _sentAtMs = sentNow;
+    return true;
 }
 
 float RcBwlHoldCoverMultiplier::GetValue(Action* action)
