@@ -74,6 +74,11 @@ namespace
     }
 }
 
+std::vector<ToxinCloud> const& RaidClear::TempleOfAhnQiraj::BugTrioClouds(Player* bot)
+{
+    return Clouds(bot);
+}
+
 // --- Great Heal -----------------------------------------------------------
 
 bool RcAq40YaujHealTrigger::IsActive()

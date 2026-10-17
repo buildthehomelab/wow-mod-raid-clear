@@ -230,6 +230,7 @@ namespace
         uint32 engagedMs = 0;
         uint32 seenMs = 0;
         uint32 lastTeleportMs = 0;  // 0: none yet in this fight
+        int8 veknilashSpot = -1;    // torch spot Vek'nilash is held at: 0 A, 1 B, -1 not picked yet
     };
     // A fight nobody has looked at for this long is over: the next look starts a new one.
     constexpr uint32 TELEPORT_CLOCK_STALE_MS = 10000;
@@ -254,7 +255,11 @@ namespace
     {
         uint32 const now = getMSTime();
         std::lock_guard<std::mutex> guard(sClockLock);
-        ClockOf(veklor, now).lastTeleportMs = now ? now : 1;
+        TeleportClock& clock = ClockOf(veklor, now);
+        clock.lastTeleportMs = now ? now : 1;
+        // Vek'nilash lands where Vek'lor stood, by the other torch.
+        if (clock.veknilashSpot >= 0)
+            clock.veknilashSpot = 1 - clock.veknilashSpot;
     }
 
     uint32 MsSinceTeleport(Unit const* veklor)
@@ -361,24 +366,31 @@ namespace
         return TWINS_HEAL_RANGE + veklor->GetCombatReach() + veknilash->GetCombatReach() + TWINS_APART_MARGIN;
     }
 
-    // With both torch spots set (the raid guide's): the one Vek'nilash's tank holds him at, the one
-    // farther from Vek'lor. Vek'lor lands where Vek'nilash stood, so after a teleport the tank
-    // Vek'nilash lands on is at the other spot, and that one is then the farther.
+    // With both torch spots set (the raid guide's): the one Vek'nilash's tank holds him at. Picked
+    // once per fight, the one farther from Vek'lor, and swapped at every teleport (Vek'lor lands
+    // where Vek'nilash stood, and Vek'nilash by the other torch). Not looked at again in between:
+    // Vek'lor follows his victim about, and the farther one would turn with him.
     Position const* VeknilashSpot(Creature const* veklor)
     {
         Position const* a = SpotOf(Spot::TwinsA);
         Position const* b = SpotOf(Spot::TwinsB);
         if (!a || !b)
             return nullptr;
-        return veklor->GetExactDist2d(a->GetPositionX(), a->GetPositionY()) >=
-                       veklor->GetExactDist2d(b->GetPositionX(), b->GetPositionY())
-                   ? a
-                   : b;
+        uint32 const now = getMSTime();
+        std::lock_guard<std::mutex> guard(sClockLock);
+        TeleportClock& clock = ClockOf(veklor, now);
+        if (clock.veknilashSpot < 0)
+            clock.veknilashSpot = veklor->GetExactDist2d(a->GetPositionX(), a->GetPositionY()) >=
+                                          veklor->GetExactDist2d(b->GetPositionX(), b->GetPositionY())
+                                      ? 0
+                                      : 1;
+        return clock.veknilashSpot == 0 ? a : b;
     }
 
     // The bot is the tank Vek'nilash is on, he can follow it, and he is in Vek'lor's heal range;
     // with the torch spots set, it isn't at his spot.
-    bool MustWalkApart(Player* bot, TwinsView const& view, Creature*& veklor, Creature*& veknilash)
+    bool MustWalkApart(PlayerbotAI* botAI, Player* bot, TwinsView const& view, Creature*& veklor,
+                       Creature*& veknilash)
     {
         if (view.landing || RoleOf(bot, view) != TwinRole::VeknilashTank)
             return false;
@@ -390,7 +402,15 @@ namespace
         if (veknilash->HasAura(SPELL_TWIN_TELEPORT_STUN) || veknilash->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED))
             return false;
         if (Position const* spot = VeknilashSpot(veklor))
-            return bot->GetExactDist2d(spot->GetPositionX(), spot->GetPositionY()) > RaidClear::Spots::TANK_NEAR;
+        {
+            if (bot->GetExactDist2d(spot->GetPositionX(), spot->GetPositionY()) <= RaidClear::Spots::TANK_NEAR)
+                return false;
+            // Not back into a Blizzard or a bug's blast the bot has just walked out of: "rc aq40
+            // twins position" would only walk it out again.
+            Rules rules;
+            return ReadRules(botAI, bot, view, rules) &&
+                   RulesGap(rules, spot->GetPositionX(), spot->GetPositionY()) >= 0.0f;
+        }
         return veknilash->GetExactDist2d(veklor) < ApartKeep(veklor, veknilash);
     }
 
@@ -569,7 +589,7 @@ bool RcAq40TwinsApartTrigger::IsActive()
     TwinsView const* view = Twins(bot);
     Creature* veklor = nullptr;
     Creature* veknilash = nullptr;
-    return view && MustWalkApart(bot, *view, veklor, veknilash);
+    return view && MustWalkApart(botAI, bot, *view, veklor, veknilash);
 }
 
 bool RcAq40TwinsApartAction::Execute(Event /*event*/)
@@ -577,7 +597,7 @@ bool RcAq40TwinsApartAction::Execute(Event /*event*/)
     TwinsView const* view = Twins(bot);
     Creature* veklor = nullptr;
     Creature* veknilash = nullptr;
-    if (!view || !MustWalkApart(bot, *view, veklor, veknilash))
+    if (!view || !MustWalkApart(botAI, bot, *view, veklor, veknilash))
         return false;
 
     if (Position const* spot = VeknilashSpot(veklor))

@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <list>
 #include <map>
 #include <mutex>
 #include <utility>
@@ -123,7 +124,26 @@ namespace
             if (aoe)
                 zones.push_back({ unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), aoe, radius });
         }
-        return zones;
+
+        // A Thunderclap mob and a Shadow Storm mob (two Sentinels of one pack): the spots that keep
+        // to both are behind the Storm one, inside its dead zone and out of the Thunderclap. Tanked
+        // nearly on top of each other there are none worth the walk (under STORM_CLAP_BAND yd of
+        // room): the Storm hits harder, so its dead zone wins and that Thunderclap is borne.
+        std::vector<DefenderZone> kept;
+        for (DefenderZone const& zone : zones)
+        {
+            bool clash = false;
+            if (zone.aoe == SPELL_DEFENDER_THUNDERCLAP)
+                for (DefenderZone const& storm : zones)
+                    if (storm.aoe == SPELL_DEFENDER_SHADOW_STORM &&
+                        std::hypot(zone.x - storm.x, zone.y - storm.y) <
+                            zone.radius + THUNDERCLAP_KEEP + bot->GetObjectSize() -
+                                (SHADOW_STORM_SAFE - SHADOW_STORM_KEEP) + STORM_CLAP_BAND)
+                        clash = true;
+            if (!clash)
+                kept.push_back(zone);
+        }
+        return kept;
     }
 
     // Who stands by the Defenders' and Sentinels' area spells: ranged bots and healers. Melee and
@@ -312,12 +332,23 @@ uint8 RaidClear::TempleOfAhnQiraj::KillOrderRank(Unit const* unit, uint8 rank)
         SPELL_SENTINEL_KNOCK_AWAY,          SPELL_SENTINEL_THORNS,               SPELL_SENTINEL_MORTAL_STRIKE,
         SPELL_SENTINEL_MANA_BURN,           SPELL_SENTINEL_THUNDERCLAP_AURA,     SPELL_SENTINEL_SHADOW_STORM_AURA,
     };
-    // By its worst ability: one that got Shadow Storm from a dead brother passes it on as it dies.
-    uint8 worst = 0;
+    // By its own ability, the one it passes on as it dies. The ones it got from a dead brother
+    // every living brother got too: its own is the one the others don't all have. Without living
+    // brothers, its worst.
+    std::list<Creature*> pack;
+    unit->GetCreatureListWithEntryInGrid(pack, NPC_ANUBISATH_SENTINEL, SENTINEL_PACK_RANGE);
+    pack.remove_if([unit](Creature const* other) { return other == unit || !other->IsAlive() || !other->IsInCombat(); });
+    uint8 own = 0;
     for (uint8 i = 0; i < std::size(ORDER); ++i)
-        if (unit->HasAura(ORDER[i]))
-            worst = i;
-    return rank + worst;
+    {
+        if (!unit->HasAura(ORDER[i]))
+            continue;
+        bool const shared = !pack.empty() && std::all_of(pack.begin(), pack.end(), [i](Creature const* other)
+                                                         { return other->HasAura(ORDER[i]); });
+        if (!shared)
+            own = i;
+    }
+    return rank + own;
 }
 
 void RaidClear::TempleOfAhnQiraj::AddDefenderScripts()

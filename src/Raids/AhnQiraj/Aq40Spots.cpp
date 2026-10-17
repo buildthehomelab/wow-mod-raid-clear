@@ -105,24 +105,34 @@ namespace
     }
 
     // Whether a caster or healer standing there can do its job: a healer reach and see whoever
-    // the boss is on, a damage dealer reach and see the boss. A spot it can't is no spot: the bot
-    // is left to playerbots' own positioning until it can again.
-    bool CanWorkFrom(Player* bot, Unit* boss, Position const& place)
+    // each boss of the fight is on (the Bug Trio's three tanks), a damage dealer reach and see the
+    // first boss. A spot it can't is no spot: the bot is left to playerbots' own positioning until
+    // it can again.
+    bool CanWorkFrom(Player* bot, std::vector<Unit*> const& bosses, Position const& place)
     {
         if (PlayerbotAI::IsHeal(bot))
         {
-            Unit* victim = boss->GetVictim();
-            return !victim || (victim->GetExactDist(place) <= SPOT_HEAL_REACH && SeesFrom(bot, place, victim));
+            for (Unit* boss : bosses)
+            {
+                Unit* victim = boss->GetVictim();
+                if (victim && (victim->GetExactDist(place) > SPOT_HEAL_REACH || !SeesFrom(bot, place, victim)))
+                    return false;
+            }
+            return true;
         }
+        Unit* boss = bosses.front();
         return boss->GetExactDist2d(place.GetPositionX(), place.GetPositionY()) - boss->GetCombatReach() <=
                    SPOT_SPELL_REACH &&
                SeesFrom(bot, place, boss);
     }
 
-    // A caster's or healer's spot dropped for being out of reach is kept dropped for this long, so
-    // a tank at the edge of heal range doesn't flip the bot between its spot and free movement
-    // every tick. By bot, for all instances (a bot is in one at a time).
+    // A caster's or healer's spot dropped for being out of reach, or anyone's that its walks
+    // don't get it to, is kept dropped for this long, so a tank at the edge of heal range doesn't
+    // flip the bot between its spot and free movement every tick. By bot, for all instances (a bot
+    // is in one at a time).
     constexpr uint32 SPOT_DROP_MS = 3000;
+    // A walk sent this recently that ended no nearer counts as a spot the bot can't get to.
+    constexpr uint32 SPOT_STUCK_MS = 5000;
     std::mutex sSpotDropLock;
     std::unordered_map<ObjectGuid, uint32> sSpotDropped;  // when
 
@@ -151,8 +161,8 @@ namespace
     };
 
     // A ranged damage dealer's or healer's spot in this fight, if the config has one it can work
-    // from.
-    bool BackRowWant(Player* bot, Unit* boss, Spot ranged, Spot healer, SpotWant& want)
+    // from. `bosses`: the fight's bosses, the one the damage dealers hit first.
+    bool BackRowWant(Player* bot, std::vector<Unit*> const& bosses, Spot ranged, Spot healer, SpotWant& want)
     {
         if (PlayerbotAI::IsTank(bot))
             return false;
@@ -168,13 +178,10 @@ namespace
         if (!spot)
             return false;
 
-        uint32 const now = getMSTime();
-        if (SpotDropped(bot, now))
-            return false;
         want.place = Spots::Scatter(bot, *spot);
-        if (!CanWorkFrom(bot, boss, want.place))
+        if (!CanWorkFrom(bot, bosses, want.place))
         {
-            DropSpot(bot, now);
+            DropSpot(bot, getMSTime());
             return false;
         }
         return true;
@@ -301,10 +308,16 @@ namespace
             return true;
         }
 
-        return BackRowWant(bot, skeram, Spot::SkeramRanged, Spot::SkeramHealer, want);
+        return BackRowWant(bot, { skeram }, Spot::SkeramRanged, Spot::SkeramHealer, want);
     }
 
     // --- Bug Trio -----------------------------------------------------------
+
+    // Not a spot in one of Kri's Poison Clouds: the bot would walk in and straight out again.
+    bool SpotClear(Player* bot, Position const& place)
+    {
+        return ToxinGap(BugTrioClouds(bot), &place) >= TOXIN_KEEP + 1.0f;
+    }
 
     bool BugWant(Player* bot, SpotWant& want)
     {
@@ -333,22 +346,26 @@ namespace
                 {
                     want.place = *spot;
                     want.tank = true;
-                    return true;
+                    return SpotClear(bot, want.place);
                 }
             }
             return false;
         }
 
-        // The first of them in the kill order is what the back row has to reach.
-        Creature* first = kri ? kri : yauj ? yauj : vem;
-        return BackRowWant(bot, first, Spot::BugRanged, Spot::BugHealer, want);
+        // The first of them in the kill order is what the damage dealers have to reach; the
+        // healers have to reach all three tanks.
+        std::vector<Unit*> bosses;
+        for (Creature* bug : { kri, yauj, vem })
+            if (bug)
+                bosses.push_back(bug);
+        return BackRowWant(bot, bosses, Spot::BugRanged, Spot::BugHealer, want) && SpotClear(bot, want.place);
     }
 
     // Where this bot belongs right now, if its role has a spot in the fight it is in.
     bool WantedSpot(PlayerbotAI* botAI, Player* bot, SpotWant& want)
     {
         if (bot->GetMapId() != MAP_ID || !bot->IsAlive() || !bot->IsInCombat() ||
-            RaidClear::Charmed::IsCharmedByEnemy(bot))
+            RaidClear::Charmed::IsCharmedByEnemy(bot) || SpotDropped(bot, getMSTime()))
             return false;
         if (Creature* skeram = FightingSkeram(bot))
             return SkeramWant(botAI, bot, skeram, want);
@@ -385,8 +402,14 @@ bool RcAq40BossSpotTrigger::IsActive()
 {
     if (!botAI->CanMove())
         return false;
-    SpotWant want;
-    return WantedSpot(botAI, bot, want) && bot->GetExactDist(want.place) > SpotNear(want);
+    uint32 const now = getMSTime();
+    if (!_checkedAtMs || getMSTimeDiff(_checkedAtMs, now) >= 250)
+    {
+        _checkedAtMs = now ? now : 1;
+        SpotWant want;
+        _active = WantedSpot(botAI, bot, want) && bot->GetExactDist(want.place) > SpotNear(want);
+    }
+    return _active;
 }
 
 bool RcAq40BossSpotAction::Execute(Event /*event*/)
@@ -398,6 +421,20 @@ bool RcAq40BossSpotAction::Execute(Event /*event*/)
     // heals and instants go out meanwhile.
     if (Spots::OnTheWay(bot, want.place))
         return want.tank;
+
+    // The last walk ended and got it no nearer (the path stops short of the spot): the spot is
+    // dropped for a while rather than sent again every tick, the bot's rotation stopped meanwhile.
+    uint32 const now = getMSTime();
+    float const dist = bot->GetExactDist(want.place);
+    if (_sentMs && getMSTimeDiff(_sentMs, now) < SPOT_STUCK_MS && !bot->isMoving() && dist > _sentDist - 1.0f)
+    {
+        _sentMs = 0;
+        DropSpot(bot, now);
+        return false;
+    }
+    _sentMs = now ? now : 1;
+    _sentDist = dist;
+
     if (want.tank)
         AI_VALUE(LastMovement&, "last movement").clear();
     return MoveTo(bot->GetMapId(), want.place.GetPositionX(), want.place.GetPositionY(), want.place.GetPositionZ(),

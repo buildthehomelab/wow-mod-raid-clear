@@ -219,8 +219,10 @@
  *         keeps out of Vek'lor's 12 yd and the twins' walks keep out of the blast.
  *       - Fixed spots (RaidClear.TempleOfAhnQiraj.TwinEmperors.TankSpotA / TankSpotB, by the two
  *         torches as in the raid guide, more than 60 yd apart): with both set, the tank
- *         Vek'nilash is on walks him to the one farther from Vek'lor instead of just away from
- *         him, and holds him there. Vek'lor lands where Vek'nilash stood, so after the first
+ *         Vek'nilash is on walks him to his spot instead of just away from Vek'lor, and holds
+ *         him there: the one farther from Vek'lor when first looked at, the other one after each
+ *         teleport (picked again, it would turn as Vek'lor follows his victim about). Not while
+ *         a Blizzard or a bug's blast is on it. Vek'lor lands where Vek'nilash stood, so after the first
  *         teleport both twins sit on the two spots.
  *     Not solved: the pull itself (both run to the puller; the first teleport sorts it out), a
  *     twin landing on a pet or totem that is nearer than its tank, and Vek'nilash's mutated
@@ -231,12 +233,14 @@
  *     once), and as one dies the others get its ability and half their health back. The raid
  *     guide kills them in an order that passes the dangerous abilities on last: Fire/Arcane
  *     reflect, Shadow/Frost reflect, Mending, Knock Away, Thorns, Mortal Strike, Mana Burn,
- *     Thunderclap, Shadow Storm. Skull goes by the worst ability each one has: the one whose
- *     worst comes first in that list dies first.
+ *     Thunderclap, Shadow Storm. Skull goes by each one's own ability (the one it passes on;
+ *     those it got from a dead one all the others got too): the earliest in that list dies first.
  *   - Thunderclap (8732, 25 yd) and Shadow Storm (26546: everyone within 45 yd but the ones
  *     within 25) are the Defenders' spells: ranged bots and healers stand outside a Thunderclap
  *     Sentinel's reach and inside a Shadow Storm one's dead zone, as at the Defenders, from the
  *     pull on. One that has both (a death passed one on) is left alone: no spot is out of both.
+ *     A Thunderclap one tanked nearly on a Shadow Storm one (no room keeps to both) gives way to
+ *     the Storm.
  *   - Not done: Mana Burn (40 yd round it, nowhere to stand), Thorns and Knock Away (melee and
  *     tanks fight them as they are).
  *
@@ -559,6 +563,9 @@ namespace RaidClear::TempleOfAhnQiraj
     // Tremor Totem goes down while Yauj is alive and this close.
     constexpr float YAUJ_FEAR_RANGE = 50.0f;
 
+    // Kri's Poison Clouds in the bot's copy of the room (a fresh look at most every 200 ms).
+    std::vector<ToxinCloud> const& BugTrioClouds(Player* bot);
+
     // --- Twin Emperors ----------------------------------------------------
     enum : uint32
     {
@@ -668,6 +675,9 @@ namespace RaidClear::TempleOfAhnQiraj
     constexpr float THUNDERCLAP_KEEP = 2.0f;
     constexpr float SHADOW_STORM_SAFE = 25.0f;
     constexpr float SHADOW_STORM_KEEP = 3.0f;
+    // A Thunderclap mob that leaves less than this many yards between its reach and a Shadow Storm
+    // mob's dead zone (they are tanked nearly together) gives way to the Storm.
+    constexpr float STORM_CLAP_BAND = 4.0f;
     // A plagued bot keeps this much more than the plague's reach (and the others' edge) from
     // every other raid member.
     constexpr float PLAGUE_KEEP = 1.5f;
@@ -695,8 +705,10 @@ namespace RaidClear::TempleOfAhnQiraj
         SPELL_SENTINEL_SHADOW_STORM_AURA = 2148, // casts
         SPELL_SENTINEL_SHADOW_STORM = 26546,     // the Defenders' 25 yd dead zone (spell_aq_shadow_storm)
     };
-    // Skull rank of a Sentinel: this plus the place of its worst ability in the guide's list.
+    // Skull rank of a Sentinel: this plus the place of its own ability in the guide's list. Its
+    // pack (it calls the Sentinels within 100 yd) is looked for this far round it.
     constexpr uint8 SENTINEL_RANK_BASE = 6;
+    constexpr float SENTINEL_PACK_RANGE = 100.0f;
 
     // A unit's rank in the kill order, from its rank in the table (Sentinels go by their
     // abilities).
@@ -1159,6 +1171,10 @@ class RcAq40BossSpotTrigger : public Trigger
 public:
     RcAq40BossSpotTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 boss spot") {}
     bool IsActive() override;
+
+private:
+    uint32 _checkedAtMs = 0;  // the answer holds for a few ticks: the look is several lookups
+    bool _active = false;
 };
 
 class RcAq40BossSpotAction : public MovementAction
@@ -1166,6 +1182,10 @@ class RcAq40BossSpotAction : public MovementAction
 public:
     RcAq40BossSpotAction(PlayerbotAI* botAI) : MovementAction(botAI, "rc aq40 boss spot") {}
     bool Execute(Event event) override;
+
+private:
+    uint32 _sentMs = 0;  // the last walk sent, and how far off the spot the bot was then
+    float _sentDist = 0.0f;
 };
 
 // On its spot, nothing but the raid mechanics walks the bot off it.
