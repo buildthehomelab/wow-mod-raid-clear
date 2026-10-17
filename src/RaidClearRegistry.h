@@ -35,6 +35,10 @@ namespace RaidClear
     // Who starts a fight and who stays out of melee (see Common/RaidDiscipline.h). On the
     // non-combat engine too: a pull starts from there.
     inline constexpr char const* DISCIPLINE_STRATEGY = "rc raid discipline";
+    // Playerbots' own: out of ground fire the bot stands in. Installed on every bot in
+    // AVOID_AOE_MAP (Blackwing Lair); playerbots only gives it to bots with a real player as master.
+    inline constexpr char const* AVOID_AOE_STRATEGY = "avoid aoe";
+    inline constexpr uint32 AVOID_AOE_MAP = 469;
 
     inline constexpr std::array<RaidEntry, 6> Raids = {{
         { 409, "rc moltencore", "MoltenCore" },

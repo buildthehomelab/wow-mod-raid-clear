@@ -740,6 +740,11 @@ namespace RaidClear::Tanks
 
     float WantedSeparation(Unit const* mine, Unit const* theirs)
     {
+        // Two of a pack where every tank takes one stay where their tanks took them. Dragged
+        // apart, three Wyrmguards' stomps covered a whole corridor and the raid had nowhere left
+        // to stand; on one spot they make one circle to stay out of.
+        if (IsSpreadAdd(mine) && IsSpreadAdd(theirs))
+            return 0.0f;
         return std::max(GetConfig().tankSeparation, SplashRadiusOf(mine) + SplashRadiusOf(theirs));
     }
 

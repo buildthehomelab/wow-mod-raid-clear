@@ -180,6 +180,12 @@ void RaidClearBwlRunnersStrategy::InitTriggers(std::vector<TriggerNode*>& trigge
     // the pack stomps 3-4 s after it arrives. With the life-savers.
     triggers.push_back(new TriggerNode("rc bwl wyrmguard keep away",
                                        { NextAction("rc bwl wyrmguard stay clear", ACTION_EMERGENCY + 4) }));
+    // Rain of Fire, Flamestrike and the cleaves (BwlHazards.cpp): the fire lands on the camp too.
+    triggers.push_back(
+        new TriggerNode("rc bwl trash hazard", { NextAction("rc bwl hazard stay clear", ACTION_EMERGENCY + 3) }));
+    // Trash interrupts (BwlInterrupts.cpp): a caster may Counterspell a mob that is still being
+    // dragged in. Like the other raids' interrupts, above the heals.
+    triggers.push_back(new TriggerNode("rc bwl interrupt", { NextAction("rc bwl stay and interrupt", ACTION_RAID + 4) }));
 }
 
 void RaidClearBwlRunnersStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)

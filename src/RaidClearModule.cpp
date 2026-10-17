@@ -11,7 +11,8 @@
  *  2. Install "rc <raid>" on the combat engine of every bot on that raid's map (and a raid's
  *     "early" strategy, if it has one, on both engines), and strip it when the bot leaves. Login and map-change hooks do it immediately; a sweep every few
  *     seconds puts it back after anything that resets a bot's strategies inside the raid
- *     (group change, talent swap, `.playerbots reset`).
+ *     (group change, talent swap, `.playerbots reset`). Playerbots' own "avoid aoe" goes on
+ *     with it.
  *
  * Released under the MIT License.
  */
@@ -38,6 +39,7 @@
 
 #include "Playerbots.h"
 #include "PlayerbotAI.h"
+#include "PlayerbotAIConfig.h"
 
 #include "DKAiObjectContext.h"
 #include "DruidAiObjectContext.h"
@@ -133,6 +135,19 @@ namespace RaidClear
 
         if (sConfig.enable && map && map->IsRaid())
             Discipline::TeachRaidSpells(player);
+
+        // Playerbots' "avoid aoe" (out of a Rain of Fire or a Flamestrike the bot stands in) only
+        // goes on bots with a real player as master; in Blackwing Lair, where the trash leaves
+        // fire on the camp, every bot gets it. It comes off again outside, unless playerbots
+        // would have given it to the bot anyway. Only there: the other raids' movement was
+        // never tuned against its step-back.
+        bool const wantAvoid = sConfig.enable && sPlayerbotAIConfig.AutoAvoidAoe && mapId == AVOID_AOE_MAP &&
+                               sConfig.IsRaidEnabled(AVOID_AOE_MAP);
+        bool const hasAvoid = botAI->HasStrategy(AVOID_AOE_STRATEGY, BOT_STATE_COMBAT);
+        if (wantAvoid && !hasAvoid)
+            botAI->ChangeStrategy(std::string("+") + AVOID_AOE_STRATEGY, BOT_STATE_COMBAT);
+        else if (!wantAvoid && hasAvoid && !botAI->HasGameClientMaster())
+            botAI->ChangeStrategy(std::string("-") + AVOID_AOE_STRATEGY, BOT_STATE_COMBAT);
 
         for (RaidEntry const& raid : Raids)
         {
