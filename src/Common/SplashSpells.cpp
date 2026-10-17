@@ -112,7 +112,12 @@ namespace RaidClear::Splash
             return reach;
         }
 
-        SpellInfo const* info = InfoOf(botAI, name);
+        return ReachOfSpell(bot, InfoOf(botAI, name));
+    }
+
+    Reach ReachOfSpell(Player* bot, SpellInfo const* info)
+    {
+        Reach reach;
         if (!info || info->IsPositive())
             return reach;
         for (SpellEffectInfo const& effect : info->Effects)

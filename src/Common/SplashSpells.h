@@ -15,6 +15,7 @@
 
 class Player;
 class PlayerbotAI;
+class SpellInfo;
 class Unit;
 
 namespace RaidClear::Splash
@@ -40,6 +41,9 @@ namespace RaidClear::Splash
         bool Any() const { return aroundCaster > 0.0f || aroundTarget > 0.0f || chainHops > 0; }
     };
     Reach ReachOf(PlayerbotAI* botAI, Player* bot, std::string const& name);
+    // The same from the spell's own data: for a spell already being cast. Doesn't know the spells
+    // whose damage sits in something they trigger or summon (Starfall, Magma Totem).
+    Reach ReachOfSpell(Player* bot, SpellInfo const* info);
 
     // Whether a spell with this reach, cast at `target` (nullptr for one cast on the bot or the
     // ground under it), lands on one of `fighting` for which `pick` says yes: within its reach of

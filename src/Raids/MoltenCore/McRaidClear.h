@@ -65,8 +65,10 @@
  *     Separation Anxiety or is about to get it (bots already on one stop, pets too, and a cast
  *     or channel already going at it is broken off), no area or chain spell is cast where it
  *     would land on one (a log of 2026-10-15: a Multi-Shot at the Firesworn beside it and an
- *     Arcane Missiles that kept channelling finished one, and its Eruption killed nine), tanks'
- *     area spells spare one that is below 40%, and the kill order skips it.
+ *     Arcane Missiles that kept channelling finished one, and its Eruption killed nine), a
+ *     running Blizzard or Volley it walks into is broken off, a tank holds one below 40% with
+ *     taunts only (no swings, no area spells) until Separation Anxiety is gone, and the kill
+ *     order skips it.
  *
  * Released under the MIT License.
  */
@@ -373,7 +375,8 @@ public:
 };
 
 // A bot that isn't a tank is attacking, casting at or channelling into a Firesworn that has
-// Separation Anxiety, or its pet is on one.
+// Separation Anxiety (or a running area spell or chain would land on one), or its pet is on one;
+// or a tank is swinging at one that is low.
 class RcMcAnxiousFireswornTrigger : public Trigger
 {
 public:
