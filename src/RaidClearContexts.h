@@ -136,6 +136,8 @@ public:
         creators["rc aq40 poison bolt keep away"] = &RaidClearActionContext::aq40_poison_bolt_keep_away;
         creators["rc aq40 defender aoe move"] = &RaidClearActionContext::aq40_defender_aoe_move;
         creators["rc aq40 plague move away"] = &RaidClearActionContext::aq40_plague_move_away;
+        creators["rc aq40 boss spot"] = &RaidClearActionContext::aq40_boss_spot;
+        creators["rc aq40 skeram pickup"] = &RaidClearActionContext::aq40_skeram_pickup;
         creators["rc aq40 glob aoe"] = &RaidClearActionContext::aq40_glob_aoe;
         creators["rc aq40 attack twin"] = &RaidClearActionContext::aq40_attack_twin;
         creators["rc aq40 twins position"] = &RaidClearActionContext::aq40_twins_position;
@@ -230,6 +232,8 @@ private:
     static Action* aq40_poison_bolt_keep_away(PlayerbotAI* botAI) { return new RcAq40PoisonBoltKeepAwayAction(botAI); }
     static Action* aq40_defender_aoe_move(PlayerbotAI* botAI) { return new RcAq40DefenderAoeMoveAction(botAI); }
     static Action* aq40_plague_move_away(PlayerbotAI* botAI) { return new RcAq40PlagueMoveAwayAction(botAI); }
+    static Action* aq40_boss_spot(PlayerbotAI* botAI) { return new RcAq40BossSpotAction(botAI); }
+    static Action* aq40_skeram_pickup(PlayerbotAI* botAI) { return new RcAq40SkeramPickupAction(botAI); }
     static Action* aq40_glob_aoe(PlayerbotAI* botAI) { return new RcAq40GlobAoeAction(botAI); }
     static Action* aq40_attack_twin(PlayerbotAI* botAI) { return new RcAq40AttackTwinAction(botAI); }
     static Action* aq40_twins_position(PlayerbotAI* botAI) { return new RcAq40TwinsPositionAction(botAI); }
@@ -327,6 +331,8 @@ public:
         creators["rc aq40 poison bolt"] = &RaidClearTriggerContext::aq40_poison_bolt;
         creators["rc aq40 defender aoe"] = &RaidClearTriggerContext::aq40_defender_aoe;
         creators["rc aq40 plague"] = &RaidClearTriggerContext::aq40_plague;
+        creators["rc aq40 boss spot"] = &RaidClearTriggerContext::aq40_boss_spot;
+        creators["rc aq40 skeram pickup"] = &RaidClearTriggerContext::aq40_skeram_pickup;
         creators["rc aq40 glob aoe"] = &RaidClearTriggerContext::aq40_glob_aoe;
         creators["rc aq40 twin target"] = &RaidClearTriggerContext::aq40_twin_target;
         creators["rc aq40 twins position"] = &RaidClearTriggerContext::aq40_twins_position;
@@ -433,6 +439,8 @@ private:
     static Trigger* aq40_poison_bolt(PlayerbotAI* botAI) { return new RcAq40PoisonBoltTrigger(botAI); }
     static Trigger* aq40_defender_aoe(PlayerbotAI* botAI) { return new RcAq40DefenderAoeTrigger(botAI); }
     static Trigger* aq40_plague(PlayerbotAI* botAI) { return new RcAq40PlagueTrigger(botAI); }
+    static Trigger* aq40_boss_spot(PlayerbotAI* botAI) { return new RcAq40BossSpotTrigger(botAI); }
+    static Trigger* aq40_skeram_pickup(PlayerbotAI* botAI) { return new RcAq40SkeramPickupTrigger(botAI); }
     static Trigger* aq40_glob_aoe(PlayerbotAI* botAI) { return new RcAq40GlobAoeTrigger(botAI); }
     static Trigger* aq40_twin_target(PlayerbotAI* botAI) { return new RcAq40TwinTargetTrigger(botAI); }
     static Trigger* aq40_twins_position(PlayerbotAI* botAI) { return new RcAq40TwinsPositionTrigger(botAI); }

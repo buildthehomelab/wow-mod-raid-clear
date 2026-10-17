@@ -9,6 +9,7 @@
 
 #include "Common/BossLookup.h"
 #include "Common/Charmed.h"
+#include "Common/FixedSpots.h"
 #include "Common/TankRoles.h"
 #include "RaidClearConfig.h"
 
@@ -20,6 +21,7 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
+#include "LastMovementValue.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
 #include "Pet.h"
@@ -228,6 +230,7 @@ namespace
         uint32 engagedMs = 0;
         uint32 seenMs = 0;
         uint32 lastTeleportMs = 0;  // 0: none yet in this fight
+        int8 veknilashSpot = -1;    // torch spot Vek'nilash is held at: 0 A, 1 B, -1 not picked yet
     };
     // A fight nobody has looked at for this long is over: the next look starts a new one.
     constexpr uint32 TELEPORT_CLOCK_STALE_MS = 10000;
@@ -252,7 +255,11 @@ namespace
     {
         uint32 const now = getMSTime();
         std::lock_guard<std::mutex> guard(sClockLock);
-        ClockOf(veklor, now).lastTeleportMs = now ? now : 1;
+        TeleportClock& clock = ClockOf(veklor, now);
+        clock.lastTeleportMs = now ? now : 1;
+        // Vek'nilash lands where Vek'lor stood, by the other torch.
+        if (clock.veknilashSpot >= 0)
+            clock.veknilashSpot = 1 - clock.veknilashSpot;
     }
 
     uint32 MsSinceTeleport(Unit const* veklor)
@@ -359,8 +366,51 @@ namespace
         return TWINS_HEAL_RANGE + veklor->GetCombatReach() + veknilash->GetCombatReach() + TWINS_APART_MARGIN;
     }
 
-    // The bot is the tank Vek'nilash is on, he can follow it, and he is in Vek'lor's heal range.
-    bool MustWalkApart(Player* bot, TwinsView const& view, Creature*& veklor, Creature*& veknilash)
+    // With both torch spots set (the raid guide's): the one Vek'nilash's tank holds him at. Picked
+    // once per fight, the one farther from Vek'lor, and swapped at every teleport (Vek'lor lands
+    // where Vek'nilash stood, and Vek'nilash by the other torch). Not picked again in between, as
+    // the farther one would turn as Vek'lor follows his victim about; only when Vek'lor has come
+    // within heal range of it and not of the other.
+    Position const* VeknilashSpot(Creature const* veklor, Creature const* veknilash)
+    {
+        Position const* a = SpotOf(Spot::TwinsA);
+        Position const* b = SpotOf(Spot::TwinsB);
+        if (!a || !b)
+            return nullptr;
+        float const toA = veklor->GetExactDist2d(a->GetPositionX(), a->GetPositionY());
+        float const toB = veklor->GetExactDist2d(b->GetPositionX(), b->GetPositionY());
+        float const keep = ApartKeep(veklor, veknilash);
+        uint32 const now = getMSTime();
+        std::lock_guard<std::mutex> guard(sClockLock);
+        TeleportClock& clock = ClockOf(veklor, now);
+        if (clock.veknilashSpot < 0)
+            clock.veknilashSpot = toA >= toB ? 0 : 1;
+        else if (clock.veknilashSpot == 0 && toA < keep && toB >= keep)
+            clock.veknilashSpot = 1;
+        else if (clock.veknilashSpot == 1 && toB < keep && toA >= keep)
+            clock.veknilashSpot = 0;
+        return clock.veknilashSpot == 0 ? a : b;
+    }
+
+    // Vek'nilash's torch spot, when there is one and it can be stood on now: not in a Blizzard or
+    // a bug's blast ("rc aq40 twins position" would only walk the bot out again). Else the tank
+    // keeps him out of heal range as without spots.
+    Position const* UsableVeknilashSpot(PlayerbotAI* botAI, Player* bot, TwinsView const& view, Creature const* veklor,
+                                        Creature const* veknilash)
+    {
+        Position const* spot = VeknilashSpot(veklor, veknilash);
+        if (!spot)
+            return nullptr;
+        Rules rules;
+        if (!ReadRules(botAI, bot, view, rules) || RulesGap(rules, spot->GetPositionX(), spot->GetPositionY()) < 0.0f)
+            return nullptr;
+        return spot;
+    }
+
+    // The bot is the tank Vek'nilash is on, he can follow it, and he is in Vek'lor's heal range;
+    // with the torch spots set, it isn't at his spot.
+    bool MustWalkApart(PlayerbotAI* botAI, Player* bot, TwinsView const& view, Creature*& veklor,
+                       Creature*& veknilash)
     {
         if (view.landing || RoleOf(bot, view) != TwinRole::VeknilashTank)
             return false;
@@ -371,7 +421,22 @@ namespace
         // Landing after a teleport he is rooted and stunned for a moment: nothing follows then.
         if (veknilash->HasAura(SPELL_TWIN_TELEPORT_STUN) || veknilash->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED))
             return false;
+        if (Position const* spot = UsableVeknilashSpot(botAI, bot, view, veklor, veknilash))
+            return bot->GetExactDist2d(spot->GetPositionX(), spot->GetPositionY()) > RaidClear::Spots::TANK_NEAR;
         return veknilash->GetExactDist2d(veklor) < ApartKeep(veklor, veknilash);
+    }
+
+    // The bot is the tank Vek'nilash is on and stands at his torch spot: it stays.
+    bool HoldsVeknilashSpot(Player* bot, TwinsView const& view)
+    {
+        if (view.landing || RoleOf(bot, view) != TwinRole::VeknilashTank)
+            return false;
+        Creature* veklor = ObjectAccessor::GetCreature(*bot, view.veklor);
+        Creature* veknilash = ObjectAccessor::GetCreature(*bot, view.veknilash);
+        if (!veklor || !veknilash || veknilash->GetVictim() != bot)
+            return false;
+        Position const* spot = VeknilashSpot(veklor, veknilash);
+        return spot && bot->GetExactDist2d(spot->GetPositionX(), spot->GetPositionY()) <= RaidClear::Spots::HOLD;
     }
 }
 
@@ -503,6 +568,10 @@ float RcAq40TwinsHoldMultiplier::GetValue(Action* action)
     // While they land, each tank stands where its new twin will find it nearest.
     if (view->landing && role != TwinRole::None)
         return 0.0f;
+    // Vek'nilash's tank at his torch spot: only the fight's own walks (out of a Blizzard or a bug)
+    // take it off.
+    if (HoldsVeknilashSpot(bot, *view) && !RaidClear::Spots::IsDodge(action))
+        return 0.0f;
     Unit* target = RaidClear::AhnQiraj::WalkTarget(action, bot);
     if (!target || !IsTwin(target, *view))
         return 1.0f;
@@ -532,7 +601,7 @@ bool RcAq40TwinsApartTrigger::IsActive()
     TwinsView const* view = Twins(bot);
     Creature* veklor = nullptr;
     Creature* veknilash = nullptr;
-    return view && MustWalkApart(bot, *view, veklor, veknilash);
+    return view && MustWalkApart(botAI, bot, *view, veklor, veknilash);
 }
 
 bool RcAq40TwinsApartAction::Execute(Event /*event*/)
@@ -540,8 +609,18 @@ bool RcAq40TwinsApartAction::Execute(Event /*event*/)
     TwinsView const* view = Twins(bot);
     Creature* veklor = nullptr;
     Creature* veknilash = nullptr;
-    if (!view || !MustWalkApart(bot, *view, veklor, veknilash))
+    if (!view || !MustWalkApart(botAI, bot, *view, veklor, veknilash))
         return false;
+
+    if (Position const* spot = UsableVeknilashSpot(botAI, bot, *view, veklor, veknilash))
+    {
+        // He follows it there; a walk already on its way isn't sent again.
+        if (RaidClear::Spots::OnTheWay(bot, *spot))
+            return true;
+        AI_VALUE(LastMovement&, "last movement").clear();
+        return MoveTo(bot->GetMapId(), spot->GetPositionX(), spot->GetPositionY(), spot->GetPositionZ(), false, false,
+                      false, false, MovementPriority::MOVEMENT_FORCED);
+    }
 
     // He follows his victim and stops a melee reach short of it, in the worst case on Vek'lor's
     // side: a spot is as good as that much short of it.

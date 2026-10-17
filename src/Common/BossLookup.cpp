@@ -26,7 +26,8 @@ namespace RaidClear
         constexpr uint32 MISSING_CACHE_MS = 3000;
         constexpr float SEARCH_RANGE = 250.0f;
 
-        // One slot per creature asked for on this map thread; Blackwing Lair asks for seven.
+        // One slot per creature asked for on this map thread; Blackwing Lair asks for seven, the
+        // Temple of Ahn'Qiraj about a dozen (two of its instances on one thread share them).
         struct Slot
         {
             bool valid = false;
@@ -36,7 +37,7 @@ namespace RaidClear
             ObjectGuid guid;
             uint32 seenMs = 0;  // when it was last found here; 0 = never
         };
-        thread_local std::array<Slot, 16> tSlots;
+        thread_local std::array<Slot, 32> tSlots;
         thread_local uint8 tNextSlot = 0;
 
         bool Matches(Creature const* creature, std::initializer_list<uint32> entries)

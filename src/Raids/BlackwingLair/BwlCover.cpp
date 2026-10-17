@@ -10,6 +10,7 @@
 #include "RaidClearConfig.h"
 #include "Common/AggroLeash.h"
 #include "Common/BossLookup.h"
+#include "Common/FixedSpots.h"
 
 #include "Config.h"
 #include "Creature.h"
@@ -35,7 +36,6 @@
 #include <cstdlib>
 #include <mutex>
 #include <optional>
-#include <regex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -88,40 +88,12 @@ namespace
         "RangedSpot", "RangedHideSpot", "HealerSpot", "HealerHideSpot",
     };
 
-    // "x y z", or whatever .gps printed ("X: -7486.3 Y: -1030.1 Z: 449.3 Orientation: ..."): the
-    // first three numbers.
-    std::optional<Position> ParseSpot(std::string const& key, std::string const& text)
-    {
-        if (text.empty())
-            return std::nullopt;
-        static std::regex const number(R"(-?\d+(?:\.\d+)?)");
-        std::vector<float> values;
-        bool bad = false;
-        for (auto it = std::sregex_iterator(text.begin(), text.end(), number); it != std::sregex_iterator() && values.size() < 3;
-             ++it)
-        {
-            // strtof, not stof: a number too long for a float throws from stof, and this runs in
-            // the config load.
-            std::string const word = it->str();
-            float const value = std::strtof(word.c_str(), nullptr);
-            if (!std::isfinite(value) || std::fabs(value) > 100000.0f)
-                bad = true;
-            values.push_back(value);
-        }
-        if (bad || values.size() < 3)
-        {
-            LOG_ERROR("module", "mod-raid-clear: {} = \"{}\" isn't \"x y z\"; the spot is ignored.", key, text);
-            return std::nullopt;
-        }
-        return Position(values[0], values[1], values[2]);
-    }
-
     void LoadSet(SpotSet& set, std::string const& boss)
     {
         for (size_t i = 0; i < set.size(); ++i)
         {
             std::string const key = "RaidClear.BlackwingLair." + boss + "." + SPOT_KEYS[i];
-            set[i] = ParseSpot(key, sConfigMgr->GetOption<std::string>(key, "", false));
+            set[i] = RaidClear::Spots::Load(key);
         }
     }
 }

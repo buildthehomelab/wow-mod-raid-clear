@@ -1,7 +1,7 @@
 /*
- * mod-raid-clear: Temple of Ahn'Qiraj, the Anubisath Defenders. See AqRaidClear.h for the
- * constants; their Explode is the rule both raids share (AqRaidClear.cpp), their reflects
- * Common/SpellReflect.h's.
+ * mod-raid-clear: Temple of Ahn'Qiraj, the Anubisath Defenders and Sentinels. See AqRaidClear.h
+ * for the constants; the Defenders' Explode is the rule both raids share (AqRaidClear.cpp), the
+ * reflects Common/SpellReflect.h's.
  *
  *   - Thunderclap or Shadow Storm. In one bot raid a Defender's Thunderclap (25 yd) hit 37 of the
  *     40 every few seconds: the ranged bots and healers stood in it. Once a Defender has shown
@@ -16,6 +16,9 @@
  *     (it casts that as it is pulled).
  *   - Not done: Meteor, split among everyone within 8 yd of its second on threat, and the
  *     Anubisath Warriors and Swarmguards it calls, which the tanks pick up like any add.
+ *   - Sentinels cast the same Thunderclap and Shadow Storm, and show which from the pull (an
+ *     aura): the same rules hold for them at once. Their skull order goes by the same auras
+ *     (KillOrderRank).
  *
  * Released under the MIT License.
  */
@@ -31,6 +34,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
+#include <list>
 #include <map>
 #include <mutex>
 #include <utility>
@@ -75,36 +80,79 @@ namespace
         float x;
         float y;
         float z;
-        uint32 aoe;
+        uint32 aoe;    // SPELL_DEFENDER_THUNDERCLAP or SPELL_DEFENDER_SHADOW_STORM: which rule
+        float radius;  // Thunderclap's reach
     };
 
-    // The Defenders fighting the raid near the bot that have shown their area spell.
+    // A Sentinel's area spell, from its auras: 0 for none, and for both (a death passed one on):
+    // no spot is out of both, so it is left alone.
+    uint32 SentinelAoe(Unit const* sentinel)
+    {
+        bool const thunderclap = sentinel->HasAura(SPELL_SENTINEL_THUNDERCLAP_AURA);
+        bool const storm = sentinel->HasAura(SPELL_SENTINEL_SHADOW_STORM_AURA);
+        if (thunderclap == storm)
+            return 0;
+        return thunderclap ? SPELL_DEFENDER_THUNDERCLAP : SPELL_DEFENDER_SHADOW_STORM;
+    }
+
+    // The Defenders and Sentinels fighting the raid near the bot whose area spell is known.
     std::vector<DefenderZone> Zones(PlayerbotAI* botAI, Player* bot)
     {
+        static float const defenderClap = RaidClear::AhnQiraj::SpellRadius(SPELL_DEFENDER_THUNDERCLAP, 25.0f);
+        static float const sentinelClap = RaidClear::AhnQiraj::SpellRadius(SPELL_SENTINEL_THUNDERCLAP, 25.0f);
         std::vector<DefenderZone> zones;
         for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
         {
             Unit* unit = botAI->GetUnit(guid);
-            if (!unit || unit->GetEntry() != NPC_ANUBISATH_DEFENDER || !unit->IsAlive() ||
-                bot->GetExactDist(unit) > DEFENDER_SEARCH_RANGE)
+            if (!unit || !unit->IsAlive() || bot->GetExactDist(unit) > DEFENDER_SEARCH_RANGE)
                 continue;
-            // About to Explode: everyone gets out of its 20 yd, Shadow Storm or not.
-            if (unit->HasAura(RaidClear::AhnQiraj::SPELL_EXPLODE_FUSE))
-                continue;
-            if (uint32 const aoe = AoeOf(unit))
-                zones.push_back({ unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), aoe });
+            uint32 aoe = 0;
+            float radius = 0.0f;
+            if (unit->GetEntry() == NPC_ANUBISATH_DEFENDER)
+            {
+                // About to Explode: everyone gets out of its 20 yd, Shadow Storm or not.
+                if (unit->HasAura(RaidClear::AhnQiraj::SPELL_EXPLODE_FUSE))
+                    continue;
+                aoe = AoeOf(unit);
+                radius = defenderClap;
+            }
+            else if (unit->GetEntry() == NPC_ANUBISATH_SENTINEL)
+            {
+                aoe = SentinelAoe(unit);
+                radius = sentinelClap;
+            }
+            if (aoe)
+                zones.push_back({ unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), aoe, radius });
         }
-        return zones;
+
+        // A Thunderclap mob and a Shadow Storm mob (two Sentinels of one pack): the spots that keep
+        // to both are behind the Storm one, inside its dead zone and out of the Thunderclap. Tanked
+        // nearly on top of each other there are none worth the walk (under STORM_CLAP_BAND yd of
+        // room): the Storm hits harder, so its dead zone wins and that Thunderclap is borne.
+        std::vector<DefenderZone> kept;
+        for (DefenderZone const& zone : zones)
+        {
+            bool clash = false;
+            if (zone.aoe == SPELL_DEFENDER_THUNDERCLAP)
+                for (DefenderZone const& storm : zones)
+                    if (storm.aoe == SPELL_DEFENDER_SHADOW_STORM &&
+                        std::hypot(zone.x - storm.x, zone.y - storm.y) <
+                            zone.radius + THUNDERCLAP_KEEP + bot->GetObjectSize() -
+                                (SHADOW_STORM_SAFE - SHADOW_STORM_KEEP) + STORM_CLAP_BAND)
+                        clash = true;
+            if (!clash)
+                kept.push_back(zone);
+        }
+        return kept;
     }
 
-    // Who stands by the Defenders' area spells: ranged bots and healers. Melee and tanks are in
-    // Thunderclap anyway, and never in Shadow Storm.
+    // Who stands by the Defenders' and Sentinels' area spells: ranged bots and healers. Melee and
+    // tanks are in Thunderclap anyway, and never in Shadow Storm.
     bool MindsDefenderAoe(Player* bot) { return PlayerbotAI::IsRanged(bot) && !PlayerbotAI::IsTank(bot); }
 
     // Yards a spot has to spare (less than 0: it is hit).
     float AoeGap(std::vector<DefenderZone> const& zones, float botReach, float x, float y, float z)
     {
-        static float const thunderclap = RaidClear::AhnQiraj::SpellRadius(SPELL_DEFENDER_THUNDERCLAP, 25.0f);
         float gap = 1000.0f;
         for (DefenderZone const& zone : zones)
         {
@@ -113,7 +161,7 @@ namespace
                 // The core takes in everyone whose edge is within its reach of the caster.
                 float const dist = std::sqrt((x - zone.x) * (x - zone.x) + (y - zone.y) * (y - zone.y) +
                                              (z - zone.z) * (z - zone.z));
-                gap = std::min(gap, dist - thunderclap - botReach - THUNDERCLAP_KEEP);
+                gap = std::min(gap, dist - zone.radius - botReach - THUNDERCLAP_KEEP);
             }
             else
                 gap = std::min(gap, SHADOW_STORM_SAFE - SHADOW_STORM_KEEP - std::hypot(x - zone.x, y - zone.y));
@@ -270,6 +318,38 @@ public:
             ForgetAoe(caster);
     }
 };
+
+// --- Sentinels' kill order --------------------------------------------------
+
+uint8 RaidClear::TempleOfAhnQiraj::KillOrderRank(Unit const* unit, uint8 rank)
+{
+    if (!unit || unit->GetEntry() != NPC_ANUBISATH_SENTINEL)
+        return rank;
+
+    // The raid guide's order: the abilities that do least harm passed on to the others go first.
+    static constexpr uint32 ORDER[] = {
+        SPELL_SENTINEL_FIRE_ARCANE_REFLECT, SPELL_SENTINEL_SHADOW_FROST_REFLECT, SPELL_SENTINEL_MENDING,
+        SPELL_SENTINEL_KNOCK_AWAY,          SPELL_SENTINEL_THORNS,               SPELL_SENTINEL_MORTAL_STRIKE,
+        SPELL_SENTINEL_MANA_BURN,           SPELL_SENTINEL_THUNDERCLAP_AURA,     SPELL_SENTINEL_SHADOW_STORM_AURA,
+    };
+    // By its own ability, the one it passes on as it dies. The ones it got from a dead brother
+    // every living brother got too: its own is the one the others don't all have. Without living
+    // brothers, its worst.
+    std::list<Creature*> pack;
+    unit->GetCreatureListWithEntryInGrid(pack, NPC_ANUBISATH_SENTINEL, SENTINEL_PACK_RANGE);
+    pack.remove_if([unit](Creature const* other) { return other == unit || !other->IsAlive() || !other->IsInCombat(); });
+    uint8 own = 0;
+    for (uint8 i = 0; i < std::size(ORDER); ++i)
+    {
+        if (!unit->HasAura(ORDER[i]))
+            continue;
+        bool const shared = !pack.empty() && std::all_of(pack.begin(), pack.end(), [i](Creature const* other)
+                                                         { return other->HasAura(ORDER[i]); });
+        if (!shared)
+            own = i;
+    }
+    return rank + own;
+}
 
 void RaidClear::TempleOfAhnQiraj::AddDefenderScripts()
 {

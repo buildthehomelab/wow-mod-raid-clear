@@ -95,6 +95,10 @@ void RaidClearAq40Strategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("rc aq40 plague", { NextAction("rc aq40 plague move away", ACTION_EMERGENCY + 5) }));
     triggers.push_back(new TriggerNode("rc aq40 defender aoe",
                                        { NextAction("rc aq40 defender aoe move", ACTION_EMERGENCY + 4) }));
+    // A role's fixed spot (Skeram, the Bug Trio): under the dodges, over the rest, as in Blackwing
+    // Lair. Skeram landing on an off-tank's platform: picked up before he Earth Shocks anyone.
+    triggers.push_back(new TriggerNode("rc aq40 skeram pickup", { NextAction("rc aq40 skeram pickup", ACTION_RAID + 3) }));
+    triggers.push_back(new TriggerNode("rc aq40 boss spot", { NextAction("rc aq40 boss spot", ACTION_RAID) }));
 
     // A heal that undoes the kill, and the stun that stops a whirlwind: over the rotation and the
     // skull, like Lor'Khan's heal in Zul'Gurub.
@@ -147,6 +151,7 @@ void RaidClearAq40Strategy::InitMultipliers(std::vector<Multiplier*>& multiplier
     multipliers.push_back(new RcAq40TwinTargetMultiplier(botAI));
     multipliers.push_back(new RcAq40TwinsHoldMultiplier(botAI));
     multipliers.push_back(new RcAq40VeklorThreatMultiplier(botAI));
+    multipliers.push_back(new RcAq40SpotHoldMultiplier(botAI));
     multipliers.push_back(new RcCharmedSplashMultiplier(botAI));
     multipliers.push_back(new RcCharmedSelfMultiplier(botAI));
     multipliers.push_back(new RcSpellReflectMultiplier(botAI));
@@ -175,14 +180,16 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::TempleOfAhnQiraj::KillO
         { NPC_VEKNISS_HATCHLING, 1 },
         // The adds before their boss.
         { NPC_SARTURA_ROYAL_GUARD, 1 },
-        // The Bug Trio: Yauj's brood, then Yauj (heals, fears), then Kri, then Vem, whose death
-        // enrages whoever is left.
+        // The Bug Trio, the raid guide's easiest order: Yauj's brood, then Kri (his Toxic Volley
+        // keeps the healers curing), then Yauj, then Vem, whose death enrages whoever is left.
         { NPC_YAUJ_BROOD, 1 },
-        { NPC_YAUJ, 2 },
-        { NPC_KRI, 3 },
+        { NPC_KRI, 2 },
+        { NPC_YAUJ, 3 },
         { NPC_VEM, 4 },
         // One at a time: each enrages at 20%.
         { NPC_VEKNISS_GUARDIAN, 5 },
+        // By their abilities (KillOrderRank): SENTINEL_RANK_BASE and up.
+        { NPC_ANUBISATH_SENTINEL, SENTINEL_RANK_BASE },
     };
     return table;
 }
