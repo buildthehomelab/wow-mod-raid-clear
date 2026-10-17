@@ -473,9 +473,16 @@ namespace
                     return false;
                 Unit* victim = boss->GetVictim();
                 Player* onTank = victim ? victim->ToPlayer() : nullptr;
-                bool const freshTank = onTank && onTank != bot && PlayerbotAI::IsTank(onTank) &&
-                                       BuffetStacks(onTank) + TANK_SWAP_GAP <= stacks;
-                return freshTank || SpareTank(bot, boss, hiding);
+                bool const tankOn = onTank && onTank != bot && PlayerbotAI::IsTank(onTank);
+                if (tankOn && BuffetStacks(onTank) + TANK_SWAP_GAP <= stacks)
+                    return true;
+                if (SpareTank(bot, boss, hiding))
+                    return true;
+                // Only two tanks: both stand in his sight and stack together, so no gap ever
+                // opens. The one he isn't on goes first (he has a tank meanwhile, and any tank
+                // may take him off someone else after DRAKE_LOOSE_TAUNT_MS); the swap does the
+                // rest once it is back.
+                return tankOn && BuffetStacks(onTank) <= stacks;
             }
             return stacks >= FlameBuffetThreshold(bot);
         }
@@ -585,14 +592,15 @@ void RaidClear::BlackwingLair::NoteChromaggusBreath(Creature* boss, uint32 spell
 
 namespace
 {
-    // Already walking to within a yard of there: a walk sent again every tick plans its path
-    // again every tick.
+    // Already walking toward there: a walk sent again every tick plans its path again every
+    // tick. A path that can't reach the spot ends short of it, so the walk's end is only checked
+    // to be near.
     bool OnTheWay(Player* bot, Position const& to)
     {
         if (!bot->isMoving() || bot->movespline->Finalized())
             return false;
         G3D::Vector3 const dest = bot->movespline->FinalDestination();
-        return to.GetExactDist(dest.x, dest.y, dest.z) < 1.0f;
+        return to.GetExactDist2d(dest.x, dest.y) < 3.0f;
     }
 }
 
@@ -730,6 +738,31 @@ namespace
                         bot->GetCollisionHeight());
     }
 
+    // A caster's or healer's spot dropped for being out of reach is kept dropped for this long,
+    // so a tank at the edge of heal range doesn't flip the bot between its spot and free
+    // movement every tick. By bot, for all instances (a bot is in one at a time).
+    constexpr uint32 SPOT_DROP_MS = 3000;
+    std::mutex sSpotDropLock;
+    std::unordered_map<ObjectGuid, uint32> sSpotDropped;  // when
+
+    bool SpotDropped(Player* bot, uint32 now)
+    {
+        std::lock_guard<std::mutex> guard(sSpotDropLock);
+        auto it = sSpotDropped.find(bot->GetGUID());
+        if (it == sSpotDropped.end())
+            return false;
+        if (getMSTimeDiff(it->second, now) < SPOT_DROP_MS)
+            return true;
+        sSpotDropped.erase(it);
+        return false;
+    }
+
+    void DropSpot(Player* bot, uint32 now)
+    {
+        std::lock_guard<std::mutex> guard(sSpotDropLock);
+        sSpotDropped[bot->GetGUID()] = now ? now : 1;
+    }
+
     struct SpotWant
     {
         Position place;
@@ -740,23 +773,27 @@ namespace
     // Firemaw's two tank spots, for one of his tanks: the one he is on keeps to whichever of the
     // two it stands at (a swap doesn't drag him across), else the tank spot; the other takes the
     // one the tank he is on doesn't.
+    Position const* VictimSpot(Unit const* victim, Position const* main, Position const* side)
+    {
+        if (main && side && victim->GetExactDist(*side) < victim->GetExactDist(*main) &&
+            victim->GetExactDist(*side) <= SPOT_HOLD)
+            return side;
+        return main ? main : side;
+    }
+
     Position const* FiremawTankSpot(Player* bot, Creature* boss)
     {
         Position const* main = BossSpot(NPC_FIREMAW, Spot::Tank);
         Position const* side = BossSpot(NPC_FIREMAW, Spot::OffTank);
         Unit* victim = boss->GetVictim();
         if (victim == bot)
-        {
-            if (main && side && bot->GetExactDist(*side) < bot->GetExactDist(*main) &&
-                bot->GetExactDist(*side) <= SPOT_HOLD)
-                return side;
-            return main;
-        }
+            return VictimSpot(bot, main, side);
         if (!HoldsDrake(bot, boss))
             return nullptr;
-        if (main && side && victim)
-            return victim->GetExactDist(*main) <= victim->GetExactDist(*side) ? side : main;
-        return side;
+        if (!victim)
+            return side;
+        Position const* theirs = VictimSpot(victim, main, side);
+        return theirs == main ? side : main;
     }
 
     // Where this bot belongs in the fight, if its role has a spot and it isn't hiding: the tank
@@ -799,12 +836,19 @@ namespace
         if (!spot)
             return false;
 
+        uint32 const now = getMSTime();
+        if (SpotDropped(bot, now))
+            return false;
         want.place = PlaceAt(bot, *spot, nullptr);
         // Not a place in Firemaw's front (where that is moves with his tank), and not one it
         // can't heal or hit from.
-        if (entry == NPC_FIREMAW && InDragonsWay(bot, boss, want.place.GetPositionX(), want.place.GetPositionY()))
+        if ((entry == NPC_FIREMAW && InDragonsWay(bot, boss, want.place.GetPositionX(), want.place.GetPositionY())) ||
+            !CanWorkFrom(bot, boss, want.place))
+        {
+            DropSpot(bot, now);
             return false;
-        return CanWorkFrom(bot, boss, want.place);
+        }
+        return true;
     }
 
     float SpotNear(SpotWant const& want)

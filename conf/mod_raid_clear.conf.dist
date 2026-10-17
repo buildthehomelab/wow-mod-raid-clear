@@ -276,8 +276,10 @@ RaidClear.BlackwingLair.Enable = 1
 #                     Changes apply on .reload config.
 #                     TankSpot       - where the tank the boss is on holds him (back to a wall,
 #                                      so Wing Buffet throws nobody).
-#                     OffTankSpot    - Firemaw: where his second tank stands, beside TankSpot
-#                                      and in melee reach of him.
+#                     OffTankSpot    - Firemaw: where his second tank stands, beside TankSpot,
+#                                      in melee reach of him and also with its back to the wall
+#                                      (his two tanks trade him, and he stays where he is: the
+#                                      one he is on can be on either spot).
 #                     TankHideSpot   - Firemaw: where a tank drops its Flame Buffet stacks
 #                                      (empty: MeleeHideSpot).
 #                     MeleeHideSpot  - where melee hide (out of the boss's sight).
