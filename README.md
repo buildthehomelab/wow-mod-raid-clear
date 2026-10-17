@@ -213,7 +213,9 @@ Core Rager tank split (the off-tank split stays out of that fight), Core Hound p
 |---|---|
 | Firelord trash | Kill **Lava Spawn** before anything else (they split every 15 seconds). |
 | Lucifron, Gehennas, Garr | Kill the Flamewaker Protectors, Flamewalkers and Firesworn before the boss. |
-| Garr | A **Firesworn** more than 40 yards from Garr gets **Separation Anxiety** (four times the damage), and every Firesworn erupts when it dies: about 2,000 fire damage to everyone within 15 yards, or 8,000 with Separation Anxiety. So the fight stays with Garr. A bot more than 30 yards from him walks back to 22, and the Firesworn on it follows (a tank only comes when a Firesworn is on it, so trash pulled with the boss stays where its tank holds it). Nobody but the tanks hits a Firesworn that has Separation Anxiety or is far enough out to get it: bots already attacking one stop, pets and Auto Shot included, and the skull never goes on one. |
+| Garr | A **Firesworn** more than 40 yards from Garr gets **Separation Anxiety** (four times the damage), and every Firesworn erupts when it dies: about 2,000 fire damage to everyone within 15 yards, or 8,000 with Separation Anxiety. So the fight stays with Garr. A bot more than 30 yards from him walks back to 22, and the Firesworn on it follows (a tank only comes when a Firesworn is on it, so trash pulled with the boss stays where its tank holds it). Nobody but the tanks hits a Firesworn that has Separation Anxiety or is far enough out to get it: bots already attacking one stop, pets and Auto Shot included, a cast or channel at one (Arcane Missiles) is broken off, no area or chain spell (Multi-Shot, Cleave, Consecration) is cast where it would land on one, tanks' area spells spare one below 40%, and the skull never goes on one. |
+| Molten Giant, Molten Destroyer | **Smash** hits everyone within 10 yards of a giant, **Massive Tremor** everyone within 13 yards of a destroyer. Ranged and healers inside either walk out to 5 yards past its edge. |
+| Lucifron, Magmadar (Core Hounds) | A Core Hound brought to 0 health **plays dead** for 10 seconds and takes no damage, then gets up at full health unless every other Core Hound within 80 yards in the fight is down too. Nobody hits a hound that is playing dead (bots on one switch, pets too), and from the moment one plays dead the skull goes to the standing hound with the least health, so the rest go down inside its 10 seconds. |
 | Magmadar | Every shaman keeps **Tremor Totem** down against **Panic**, and places no other earth totem while he is near: playerbots keeps Stoneskin or Strength of Earth down the same way, and left alone the two replace each other every second and a half. |
 | Baron Geddon | **Inferno** burns everyone within 20 yards of him for 8 seconds, harder with every pulse, and he stands still for it. Playerbots walks its bots out, but only the ones that have threat on him: a tank holding an add, a bot on the trash that came with him or one revived mid-fight stands in all of it. Here every bot within 23 yards of him drops its spell and walks to the nearest spot 25 yards out, his tank included; nobody walks back toward anything that close to him until it is over, and a bot still inside casts nothing it has to stand still for. |
 | Baron Geddon | **Living Bomb** goes off after 8 seconds and hits every raid member within 18 yards of its carrier. Playerbots moves the carrier away from the middle of the raid by as many yards as its nearest neighbour is short of 20, which gets a bot at the edge of the group clear and leaves one in the middle (where the healers stand) surrounded. Here the carrier walks to the nearest spot 24.5 yards from everyone else and out of Inferno's reach, looked for up to 40 yards away, or to the emptiest spot there is. |
@@ -490,6 +492,13 @@ Category: Raids
 - Bots no longer cast spells into a reflect: against an Anubisath's **Fire and Arcane Reflect**
   or **Shadow and Frost Reflect**, mages switch to the school that gets through instead of hitting
   themselves.
+- Garr: bots no longer finish a **Firesworn** with **Separation Anxiety** by accident: no more
+  Multi-Shots or Cleaves landing on one from its neighbour, and an Arcane Missiles already
+  channelling into one stops.
+- Core Hounds: bots stop hitting a hound that is playing dead (a quarter of their hits went
+  there) and finish the rest of the pack before it gets up again.
+- Molten Core: ranged bots and healers step out of a Molten Giant's **Smash** and a Molten
+  Destroyer's **Massive Tremor**.
 
 > Most vanilla bosses only had a resistance aura in the bots' playbook. This is the first raid
 > of many.
