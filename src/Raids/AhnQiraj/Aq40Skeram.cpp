@@ -12,6 +12,7 @@
 
 #include "AllSpellScript.h"
 #include "Creature.h"
+#include "Group.h"
 #include "Map.h"
 #include "Playerbots.h"
 #include "Spell.h"
@@ -64,6 +65,27 @@ namespace
         sInterruptsSent[{ skeram->GetInstanceId(), skeram->GetGUID() }] = now ? now : 1;
     }
 
+    // Another bot of the raid near this Skeram could interrupt him now. One kick, shout or
+    // counterspell in reach is kept for True Fulfillment: in one bot raid every one of his five
+    // went through, the interrupts all spent on Arcane Explosions a moment before.
+    bool AnotherInterruptReady(Player* bot, Unit* skeram)
+    {
+        Group* group = bot->GetGroup();
+        if (!group)
+            return false;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || member == bot || !member->IsAlive() || !member->IsInMap(bot) ||
+                member->GetExactDist(skeram) > SKERAM_WAKE_RANGE)
+                continue;
+            PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member);
+            if (memberAI && RaidClear::ReadyInterrupt(memberAI, member, skeram))
+                return true;
+        }
+        return false;
+    }
+
     // The Skeram fighting the raid that this bot should interrupt now, and with what: True
     // Fulfillment before Arcane Explosion (a mind-controlled member does more harm than one
     // blast), then the nearest.
@@ -82,6 +104,9 @@ namespace
                 continue;
             char const* interrupt = RaidClear::ReadyInterrupt(botAI, bot, unit);
             if (!interrupt)
+                continue;
+            // Not the last interrupt in reach on an Arcane Explosion.
+            if (cast == SPELL_SKERAM_ARCANE_EXPLOSION && !AnotherInterruptReady(bot, unit))
                 continue;
 
             bool const charm = cast == SPELL_TRUE_FULFILLMENT;
@@ -189,4 +214,16 @@ public:
 void RaidClear::TempleOfAhnQiraj::AddSkeramScripts()
 {
     new RaidClearSkeramWakeSpellScript();
+}
+
+float RcAq40SkeramInterruptMultiplier::GetValue(Action* action)
+{
+    // Playerbots' own interrupts (a rogue's Kick at its target): the last one in reach waits for
+    // True Fulfillment too.
+    if (!action || !bot->IsInCombat() || !RaidClear::IsInterrupt(action->getName()))
+        return 1.0f;
+    Unit* target = action->GetTarget();
+    if (!target || target->GetEntry() != NPC_SKERAM || CastToStop(target) == SPELL_TRUE_FULFILLMENT)
+        return 1.0f;
+    return AnotherInterruptReady(bot, target) ? 1.0f : 0.0f;
 }

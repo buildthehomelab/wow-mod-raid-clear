@@ -12,6 +12,7 @@
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 
+#include <algorithm>
 #include <array>
 
 namespace RaidClear
@@ -59,5 +60,11 @@ namespace RaidClear
             }
         }
         return ready && bot->IsWithinLOSInMap(target) ? ready : nullptr;
+    }
+
+    bool IsInterrupt(std::string const& name)
+    {
+        return std::any_of(INTERRUPTS.begin(), INTERRUPTS.end(),
+                           [&name](Interrupt const& interrupt) { return name == interrupt.spell; });
     }
 }

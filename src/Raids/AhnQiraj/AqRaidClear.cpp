@@ -2,7 +2,8 @@
  * mod-raid-clear: Ahn'Qiraj, both raids. See AqRaidClear.h. The strategies, the kill-order and
  * tank tables, and what the two raids share (Anubisath Explode); each boss is in a file of its
  * own (Aq20Ossirian.cpp, Aq20Kurinnaxx.cpp, Aq20Moam.cpp, Aq20Ayamiss.cpp, Aq40Skeram.cpp,
- * Aq40Viscidus.cpp, Aq40Sartura.cpp, Aq40Fankriss.cpp, Aq40BugTrio.cpp).
+ * Aq40Viscidus.cpp, Aq40Sartura.cpp, Aq40Fankriss.cpp, Aq40BugTrio.cpp, Aq40TwinEmperors.cpp, Aq40Huhuran.cpp,
+ * Aq40Defenders.cpp, Aq40NatureResistance.cpp).
  *
  * Released under the MIT License.
  */
@@ -85,6 +86,15 @@ void RaidClearAq40Strategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                                        { NextAction("rc aq40 whirlwind keep away", ACTION_EMERGENCY + 6) }));
     triggers.push_back(new TriggerNode("rc aq40 poison cloud",
                                        { NextAction("rc aq40 leave poison cloud", ACTION_EMERGENCY + 6) }));
+    // Out of Vek'lor's Burst, Vek'nilash's Uppercut and the Blizzard: under the clouds and blasts,
+    // over everything else.
+    triggers.push_back(new TriggerNode("rc aq40 twins position",
+                                       { NextAction("rc aq40 twins position", ACTION_EMERGENCY + 5) }));
+    triggers.push_back(new TriggerNode("rc aq40 poison bolt",
+                                       { NextAction("rc aq40 poison bolt keep away", ACTION_EMERGENCY + 5) }));
+    triggers.push_back(new TriggerNode("rc aq40 plague", { NextAction("rc aq40 plague move away", ACTION_EMERGENCY + 5) }));
+    triggers.push_back(new TriggerNode("rc aq40 defender aoe",
+                                       { NextAction("rc aq40 defender aoe move", ACTION_EMERGENCY + 4) }));
 
     // A heal that undoes the kill, and the stun that stops a whirlwind: over the rotation and the
     // skull, like Lor'Khan's heal in Zul'Gurub.
@@ -96,21 +106,47 @@ void RaidClearAq40Strategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // Like Ebonroc's swap.
     triggers.push_back(new TriggerNode("rc aq40 mortal wound", { NextAction("rc aq40 mortal wound taunt", ACTION_RAID + 3) }));
     triggers.push_back(new TriggerNode("rc aq40 sartura stun", { NextAction("rc aq40 sartura stun", ACTION_RAID + 3) }));
+    // Over the skull and playerbots' own target picking, like the Ayamiss larva.
+    triggers.push_back(new TriggerNode("rc aq40 twin target", { NextAction("rc aq40 attack twin", ACTION_RAID + 3) }));
+    // Over the tank's rotation: every Heal Brother undoes a few seconds of the raid's damage.
+    triggers.push_back(new TriggerNode("rc aq40 twins apart", { NextAction("rc aq40 twins apart", ACTION_RAID + 1) }));
+    triggers.push_back(new TriggerNode("rc aq40 twins pet", { NextAction("rc aq40 twins pet", ACTION_RAID + 2) }));
+    // Over the tank's rotation, which has nothing else that reaches him from where it stands.
+    triggers.push_back(new TriggerNode("rc aq40 veklor tank threat",
+                                       { NextAction("rc aq40 veklor tank threat", ACTION_RAID + 1) }));
     triggers.push_back(new TriggerNode("rc aq40 yauj tremor", { NextAction("rc mc tremor totem", ACTION_RAID + 1) }));
+    triggers.push_back(new TriggerNode("rc aq40 nature resistance",
+                                       { NextAction("rc aq40 nature resistance", ACTION_RAID + 1) }));
+    // Before the totem's next pulse takes a sting off.
+    triggers.push_back(new TriggerNode("rc aq40 cleansing totem",
+                                       { NextAction("rc aq40 destroy cleansing totem", ACTION_EMERGENCY + 1) }));
 
     // Over the damage dealers' own rotation, under every walk out of something.
     triggers.push_back(new TriggerNode("rc aq40 viscidus frost",
                                        { NextAction("rc aq40 viscidus frost", ACTION_RAID + 1) }));
+    // A glob that arrives heals him: over the skull, like the Ayamiss larva, and an area spell
+    // that catches several over the single glob.
+    triggers.push_back(new TriggerNode("rc aq40 glob", { NextAction("rc aq40 kill glob", ACTION_RAID + 3) }));
+    triggers.push_back(new TriggerNode("rc aq40 glob aoe", { NextAction("rc aq40 glob aoe", ACTION_RAID + 4) }));
 }
 
 void RaidClearAq40Strategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new RcAqExplodeHoldMultiplier(botAI));
     multipliers.push_back(new RcAq40ToxinHoldMultiplier(botAI));
+    multipliers.push_back(new RcAq40GlobMultiplier(botAI));
+    multipliers.push_back(new RcAq40NatureResistanceMultiplier(botAI));
+    multipliers.push_back(new RcAq40WyvernStingMultiplier(botAI));
+    multipliers.push_back(new RcAq40PoisonBoltHoldMultiplier(botAI));
+    multipliers.push_back(new RcAq40DefenderHoldMultiplier(botAI));
     multipliers.push_back(new RcAq40WhirlwindHoldMultiplier(botAI));
     multipliers.push_back(new RcAq40PoisonCloudHoldMultiplier(botAI));
     multipliers.push_back(new RcAq40YaujTremorMultiplier(botAI));
     multipliers.push_back(new RcAq40MortalWoundMultiplier(botAI));
+    multipliers.push_back(new RcAq40SkeramInterruptMultiplier(botAI));
+    multipliers.push_back(new RcAq40TwinTargetMultiplier(botAI));
+    multipliers.push_back(new RcAq40TwinsHoldMultiplier(botAI));
+    multipliers.push_back(new RcAq40VeklorThreatMultiplier(botAI));
     multipliers.push_back(new RcCharmedSplashMultiplier(botAI));
     multipliers.push_back(new RcCharmedSelfMultiplier(botAI));
     multipliers.push_back(new RcSpellReflectMultiplier(botAI));
@@ -203,6 +239,12 @@ float RaidClear::AhnQiraj::ExplodeRadius()
     return radius;
 }
 
+float RaidClear::AhnQiraj::ExplodeBugRadius()
+{
+    static float const radius = SpellRadius(SPELL_EXPLODE_BUG_BLAST, 15.0f);
+    return radius;
+}
+
 std::vector<RaidClear::TempleOfAhnQiraj::ToxinCloud> RaidClear::TempleOfAhnQiraj::FindToxinClouds(
     WorldObject const* centre, uint32 dropper, float range)
 {
@@ -263,29 +305,42 @@ Unit* RaidClear::AhnQiraj::WalkTarget(Action* action, Player* bot)
 
 namespace
 {
-    // Every mob fighting the raid that has its fuse lit.
-    std::vector<Unit*> LitMobs(PlayerbotAI* botAI)
+    // A mob fighting the raid that is about to blow up, and how far its blast reaches.
+    struct LitMob
     {
-        std::vector<Unit*> lit;
+        Unit* mob;
+        float radius;
+    };
+
+    // Every mob fighting the raid that has its fuse lit: an Anubisath's Explode, or a bug Vek'lor
+    // has set to explode.
+    std::vector<LitMob> LitMobs(PlayerbotAI* botAI)
+    {
+        std::vector<LitMob> lit;
         for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
         {
             Unit* unit = botAI->GetUnit(guid);
-            if (unit && unit->IsAlive() && unit->HasAura(SPELL_EXPLODE_FUSE))
-                lit.push_back(unit);
+            if (!unit || !unit->IsAlive())
+                continue;
+            if (unit->HasAura(SPELL_EXPLODE_FUSE))
+                lit.push_back({ unit, ExplodeRadius() });
+            else if (unit->HasAura(SPELL_EXPLODE_BUG))
+                lit.push_back({ unit, ExplodeBugRadius() });
         }
         return lit;
     }
 
-    // Yards from a spot to the nearest of them, centre to centre.
-    float ExplodeGap(std::vector<Unit*> const& lit, float x, float y, float z)
+    // Yards from a spot to the edge of the nearest blast (less than 0 inside one), centre to
+    // centre as the radius is.
+    float ExplodeGap(std::vector<LitMob> const& lit, float x, float y, float z)
     {
         float gap = 1000.0f;
-        for (Unit const* mob : lit)
-            gap = std::min(gap, mob->GetExactDist(x, y, z));
+        for (LitMob const& one : lit)
+            gap = std::min(gap, one.mob->GetExactDist(x, y, z) - one.radius);
         return gap;
     }
 
-    float ExplodeGap(std::vector<Unit*> const& lit, Position const* pos)
+    float ExplodeGap(std::vector<LitMob> const& lit, Position const* pos)
     {
         return ExplodeGap(lit, pos->GetPositionX(), pos->GetPositionY(), pos->GetPositionZ());
     }
@@ -298,20 +353,21 @@ bool RcAqExplodeTrigger::IsActive()
     // A bot that is feared or rooted isn't going anywhere.
     if (!bot->IsAlive() || !bot->IsInCombat() || !botAI->CanMove())
         return false;
-    return ExplodeGap(LitMobs(botAI), bot) < ExplodeRadius() + EXPLODE_KEEP_AWAY_EXTRA;
+    return ExplodeGap(LitMobs(botAI), bot) < EXPLODE_KEEP_AWAY_EXTRA;
 }
 
 bool RcAqExplodeMoveAwayAction::Execute(Event /*event*/)
 {
-    std::vector<Unit*> const lit = LitMobs(botAI);
-    float const radius = ExplodeRadius();
-    float const keepAway = radius + EXPLODE_KEEP_AWAY_EXTRA;
-    if (ExplodeGap(lit, bot) >= keepAway)
+    std::vector<LitMob> const lit = LitMobs(botAI);
+    if (ExplodeGap(lit, bot) >= EXPLODE_KEEP_AWAY_EXTRA)
         return false;
+    float widest = 0.0f;
+    for (LitMob const& one : lit)
+        widest = std::max(widest, one.radius);
     auto const gapAt = [&lit](float x, float y, float z) { return ExplodeGap(lit, x, y, z); };
     // Up to the whole blast across from the middle of it.
-    return _walk.Go(gapAt, keepAway, radius + EXPLODE_SPOT_EXTRA, EXPLODE_WORTH_IT,
-                    radius + EXPLODE_SPOT_EXTRA + 3.0f, lit.size() == 1);
+    return _walk.Go(gapAt, EXPLODE_KEEP_AWAY_EXTRA, EXPLODE_SPOT_EXTRA, EXPLODE_WORTH_IT,
+                    widest + EXPLODE_SPOT_EXTRA + 3.0f, lit.size() == 1);
 }
 
 float RcAqExplodeHoldMultiplier::GetValue(Action* action)
@@ -320,11 +376,10 @@ float RcAqExplodeHoldMultiplier::GetValue(Action* action)
     if (!target)
         return 1.0f;
 
-    std::vector<Unit*> const lit = LitMobs(botAI);
-    float const radius = ExplodeRadius();
-    if (ExplodeGap(lit, bot) >= radius + EXPLODE_HOLD_EXTRA)
+    std::vector<LitMob> const lit = LitMobs(botAI);
+    if (ExplodeGap(lit, bot) >= EXPLODE_HOLD_EXTRA)
         return 1.0f;
-    return ExplodeGap(lit, target) < radius + EXPLODE_KEEP_AWAY_EXTRA ? 0.0f : 1.0f;
+    return ExplodeGap(lit, target) < EXPLODE_KEEP_AWAY_EXTRA ? 0.0f : 1.0f;
 }
 
 // A bot in the middle of a cast doesn't run its engine until the cast ends: wake the ones in reach
@@ -387,4 +442,6 @@ void RaidClear::AhnQiraj::AddScripts()
 {
     new RaidClearAqWakeSpellScript();
     TempleOfAhnQiraj::AddSkeramScripts();
+    TempleOfAhnQiraj::AddTwinEmperorsScripts();
+    TempleOfAhnQiraj::AddDefenderScripts();
 }

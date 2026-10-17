@@ -9,7 +9,9 @@
  *     that does it, can go off at 10% health: Explode (25698) is a 6 s fuse on the mob (it stuns
  *     it), then 25699 hits everyone within 20 yd for about 4,700. Every bot in reach, tanks too, walks out and stays out until it has
  *     gone off, the ZG Bat Rider rule. A bot in the middle of a cast is told to drop it the moment
- *     the fuse is lit.
+ *     the fuse is lit. The Twin Emperors' bugs that Vek'lor sets to explode (Explode Bug, 804:
+ *     3 s, then 26059 hits everyone within 15 yd) are kept away from the same way, by their own
+ *     blast's reach.
  *
  * Ruins of Ahn'Qiraj, Ossirian the Unscarred:
  *   - He fights with Strength of Ossirian (25176): +300% damage, so his War Stomp (25188, 20 yd)
@@ -66,7 +68,9 @@
  *     (a 0.5 s cast) can both be interrupted, and he isn't immune to it. Any bot with an interrupt
  *     in reach stops either, his target or not (a tank only when he is on that tank), True
  *     Fulfillment first; one bot per cast, the next only if the cast is still going a moment
- *     later. A bot that is casting doesn't think until its cast is done, so the moment he starts
+ *     later. The last interrupt ready in reach of him is kept for True Fulfillment: in one bot
+ *     raid all five went through, every interrupt spent on an Arcane Explosion just before (and
+ *     playerbots' own Kick at its target waits the same way). A bot that is casting doesn't think until its cast is done, so the moment he starts
  *     one the bots that could stop it look at once, and if none of those is free, the nearest
  *     one in the middle of a cast drops it. (A bot channelling a spell can't be asked: playerbots
  *     reports none of its spells as ready until the channel ends.)
@@ -136,8 +140,63 @@
  *     them, and walks toward nothing inside one (but him while he is frozen: the melee hits are
  *     what shatter him). The tank he is on walks him out of a cloud when he can follow, but
  *     never toward the room's entrance, where the script makes him evade.
- *   - Globs. When he shatters, the Globs of Viscidus that crawl back to the middle of the room
- *     each heal him if they get there: skull goes on them first.
+ *   - Globs. When he shatters (at 1% health, with a glob for every 5% he had), the Globs of
+ *     Viscidus crawl back to the middle of the room, faster every second, and each one that gets
+ *     there gives him 5% back. Skull on one glob at a time let 12 of 16 through. Now each damage
+ *     dealer takes a glob of its own: melee the nearest, ranged bots the one nearest the middle
+ *     that they can reach, each counting every other raid member on a glob against it
+ *     (GLOB_CROWD_YARDS), so they spread over all of them; nothing else is targeted until they are
+ *     gone. A bot with an instant area spell that would catch three globs or more (Arcane
+ *     Explosion, Chain Lightning, Multi-Shot, Whirlwind, Cleave, Thunder Clap, Blood Boil, Holy
+ *     Nova, Consecration, Divine Storm, Swipe) casts that first. Skull still marks them.
+ *
+ * Temple of Ahn'Qiraj, nature damage (Viscidus, Princess Huhuran, the Bug Trio):
+ *   - One shaman keeps Nature Resistance Totem down and one hunter keeps Aspect of the Wild up
+ *     (raid auras, 30 yd, that don't stack with each other); that shaman places nothing else in
+ *     the air slot and that hunter switches to no other aspect.
+ *
+ * Temple of Ahn'Qiraj, Princess Huhuran: see Aq40Huhuran.cpp (no cures on Wyvern Sting; out of
+ * Poison Bolt's 15 nearest from Berserk).
+ *
+ * Temple of Ahn'Qiraj, Anubisath Defenders: see Aq40Defenders.cpp (out of Thunderclap, into
+ * Shadow Storm's dead zone, a plagued bot walks clear of everyone).
+ *
+ * Temple of Ahn'Qiraj, the Twin Emperors (Vek'lor, Vek'nilash):
+ *   - Each takes the other's damage as a share of health (Twin Empathy), and within 60 yd of each
+ *     other each heals the other (Heal Brother, every 3.6 s). Every 30-40 s Vek'lor teleports the
+ *     two into each other's place (Twin Teleport, 799), wipes both threat lists and each attacks
+ *     the nearest unit with 2,000 threat. Neither can be taunted. Vek'lor takes no physical
+ *     damage, keeps up to 45 yd from whoever he is on and Shadow Bolts it (3,600), Blizzards a
+ *     random player near him (26607, 10 yd), Arcane Bursts (568, 10 yd, about 4,000) whenever a
+ *     player is within 5 yd of him and sets bugs to explode. Vek'nilash takes nothing but
+ *     physical and holy damage and Uppercuts a random player in his reach.
+ *   - In one bot raid the twins stood together the whole fight (126 Heal Brothers each), four
+ *     tanks and the melee stood on Vek'lor (Arcane Burst killed 21) and his Shadow Bolts went to
+ *     hunters and moonkins. Now:
+ *       - Two tanks hold the twins: the first two tank bots in group order, paladins first (holy
+ *         is all a tank has for Vek'lor). Vek'nilash's is the one he is on, else the nearer; the
+ *         other holds Vek'lor from 6.5-9.5 yd edge to edge (Judgement's reach, out of the Burst)
+ *         and casts Avenger's Shield and Exorcism at him besides. Neither picks another target.
+ *       - The tank Vek'nilash is on walks him away from Vek'lor whenever they are within his
+ *         heal range. Vek'lor himself only moves when his victim is 45 yd away, and a teleport
+ *         swaps the two without bringing them closer: held where they land, they stay apart.
+ *       - Melee bots, the other tanks and hunters hit Vek'nilash only; casters and healers Vek'lor
+ *         only (a skull on the wrong one is passed over). Casters keep their threat on Vek'lor
+ *         under 115% of his tank's: away from him he only turns to someone with 130% of his
+ *         victim's.
+ *       - Nobody but his tank comes within 12 yd of Vek'lor (edge to edge); ranged bots and
+ *         healers stay 8 yd from Vek'nilash; everyone walks out of a Blizzard.
+ *       - The teleport clock (from Vek'lor's cast, the first 30 s in): from 2.5 s before the
+ *         earliest one is due until it comes, melee bots and other tanks step 6 yd back from
+ *         Vek'nilash and stay, and pets that would be there are called to their owners
+ *         (passive until the teleport is over). Vek'lor then lands on Vek'nilash's tank, the
+ *         nearest, which becomes his tank; Vek'nilash lands next to Vek'lor's tank, nearer than
+ *         anyone else, which becomes his. A pet that could only hit Vek'lor (all but an Imp or a
+ *         Water Elemental) stays by its owner all fight.
+ *       - Bugs Vek'lor sets to explode are kept away from as an Anubisath's Explode.
+ *     Not solved: the pull itself (both run to the puller; the first teleport sorts it out), a
+ *     twin landing on a pet or totem that is nearer than its tank, and Vek'nilash's mutated
+ *     bugs, left to the off-tanks.
  *
  * Released under the MIT License.
  */
@@ -145,6 +204,7 @@
 #ifndef MOD_RAID_CLEAR_AHN_QIRAJ_H
 #define MOD_RAID_CLEAR_AHN_QIRAJ_H
 
+#include "Common/Charmed.h"
 #include "Common/KillOrder.h"
 #include "Common/TankRoles.h"
 #include "Common/WayOut.h"
@@ -179,9 +239,15 @@ namespace RaidClear::AhnQiraj
     constexpr float EXPLODE_SPOT_EXTRA = 5.0f;
     constexpr float EXPLODE_HOLD_EXTRA = 14.0f;
     constexpr float EXPLODE_WORTH_IT = 2.0f;
+    // Vek'lor's Explode Bug (Twin Emperors): a Qiraji Scarab or Scorpion with this aura goes off 3 s
+    // later (its periodic trigger), 26059: about 2,800 to everyone within 15 yd, and dies.
+    constexpr uint32 SPELL_EXPLODE_BUG = 804;
+    constexpr uint32 SPELL_EXPLODE_BUG_BLAST = 26059;
 
     // The blast's reach, centre to centre, from the spell data (20 yd on a stock server).
     float ExplodeRadius();
+    // An exploding bug's blast, the same way (15 yd).
+    float ExplodeBugRadius();
 
     // An area spell's reach from its effect 0, or `fallback` when the spell data has none.
     float SpellRadius(uint32 spellId, float fallback);
@@ -327,6 +393,18 @@ namespace RaidClear::TempleOfAhnQiraj
     // its melee reach.
     constexpr float MELEE_SLACK = 0.5f;
 
+    // Globs: the middle of the room, where the script sends them (and him).
+    constexpr float VISCIDUS_ROOM_X = -7992.36f;
+    constexpr float VISCIDUS_ROOM_Y = 908.19f;
+    // A damage dealer picks the glob that costs it least: for melee the yards to it, for ranged
+    // bots its yards from the middle (the nearest arrives first); plus GLOB_CROWD_YARDS for every
+    // other raid member already on it.
+    constexpr float GLOB_CROWD_YARDS = 8.0f;
+    // Ranged bots: a glob out of casting range costs this much more.
+    constexpr float GLOB_OUT_OF_RANGE_YARDS = 40.0f;
+    // An area spell that hits at least this many globs goes before the bot's single-target one.
+    constexpr uint32 GLOB_AOE_MIN = 3;
+
     // A Toxin cloud on the floor (25989), or one to come: Viscidus' Toxic Slimes and Lord Kri's
     // Poison Cloud each leave a new one round themselves every 10 s.
     struct ToxinCloud
@@ -419,6 +497,117 @@ namespace RaidClear::TempleOfAhnQiraj
     constexpr float POISON_CLOUD_SEARCH = 100.0f;
     // Tremor Totem goes down while Yauj is alive and this close.
     constexpr float YAUJ_FEAR_RANGE = 50.0f;
+
+    // --- Twin Emperors ----------------------------------------------------
+    enum : uint32
+    {
+        NPC_VEKLOR = 15276,     // the caster: immune to physical damage
+        NPC_VEKNILASH = 15275,  // the fighter: immune to every school but physical and holy
+        NPC_QIRAJI_SCARAB = 15316,
+        NPC_QIRAJI_SCORPION = 15317,
+        SPELL_TWIN_TELEPORT = 799,       // Vek'lor's: the two swap places
+        SPELL_TWIN_TELEPORT_STUN = 800,  // on both, as they land
+        SPELL_HEAL_BROTHER = 7393,
+        SPELL_ARCANE_BURST = 568,
+        SPELL_TWINS_BLIZZARD = 26607,
+    };
+    // Heal Brother goes out every 3.6 s while the two are within 60 yd, which the script measures
+    // edge to edge (both combat reaches added on). The tank Vek'nilash is on walks him away from
+    // Vek'lor when they are closer than APART_KEEP centre to centre, to APART_WANT.
+    constexpr float TWINS_HEAL_RANGE = 60.0f;
+    constexpr float TWINS_APART_MARGIN = 3.0f;
+    constexpr float TWINS_APART_EXTRA = 8.0f;
+    // Vek'lor casts Arcane Burst (10 yd round him, about 4,000) whenever a player is within 5 yd of
+    // him, edge to edge. Nobody comes that close: his tank holds him from VEKLOR_TANK_NEAR to
+    // VEKLOR_TANK_FAR (edge to edge: in reach of Judgement, out of the Burst), everyone else stays
+    // VEKLOR_KEEP away. The tank being the nearest also makes it the one Vek'nilash picks when he
+    // lands there after a teleport.
+    constexpr float VEKLOR_TANK_NEAR = 6.5f;
+    constexpr float VEKLOR_TANK_FAR = 9.5f;
+    constexpr float VEKLOR_KEEP = 12.0f;
+    // Uppercut goes to a random player within Vek'nilash's melee reach (4.5 yd, edge to edge):
+    // ranged bots and healers stay VEKNILASH_KEEP away.
+    constexpr float VEKNILASH_KEEP = 8.0f;
+    // He teleports 30 s into the fight and every 30-40 s after; Vek'lor lands where Vek'nilash
+    // stood and attacks the nearest unit. From TELEPORT_LEAD_MS before the earliest one until it
+    // comes (or TELEPORT_LATE_MS after the latest), melee bots that aren't tanks stand back
+    // VEKNILASH_DUE_KEEP (edge to edge, out of the Burst's reach), so his tank is the nearest.
+    constexpr uint32 TWINS_TELEPORT_MS = 30000;
+    constexpr uint32 TWINS_TELEPORT_MAX_MS = 40000;
+    constexpr uint32 TWINS_TELEPORT_LEAD_MS = 2500;
+    constexpr uint32 TWINS_TELEPORT_LATE_MS = 5000;
+    constexpr float VEKNILASH_DUE_KEEP = 6.0f;
+    // Out of a Blizzard: the gap from the bot's edge to the cloud's.
+    constexpr float BLIZZARD_KEEP = 1.0f;
+    // A bot walks to the nearest spot with this much to spare on every rule above.
+    constexpr float TWINS_SPOT = 1.0f;
+    constexpr float TWINS_WORTH_IT = 1.0f;
+    constexpr float TWINS_SEARCH = 24.0f;
+    // A bot's damage on Vek'lor stays under this share of his tank's threat: out of melee range
+    // he only turns to someone with 130% of his victim's.
+    constexpr float VEKLOR_THREAT_SHARE = 1.15f;
+
+    void AddTwinEmperorsScripts();
+
+    // --- Princess Huhuran -------------------------------------------------
+    enum : uint32
+    {
+        NPC_HUHURAN = 15509,
+        SPELL_WYVERN_STING = 26180,  // a poison: dispelled, it hits for 3,000 (26233)
+        SPELL_HUHURAN_BERSERK = 26068,
+        SPELL_HUHURAN_POISON_BOLT = 26052,
+    };
+    // From Berserk (at 30%, or after 5 min) Poison Bolt hits the 15 raid members nearest to her
+    // every 2 s for about 1,500 nature. Bots that aren't tanks or in plate stand POISON_BOLT_KEEP
+    // from her (centre to centre: in range of their spells still), from HUHURAN_BERSERK_PCT on.
+    constexpr float HUHURAN_BERSERK_PCT = 32.0f;
+    constexpr float POISON_BOLT_KEEP = 32.0f;
+    constexpr float POISON_BOLT_SPOT = 1.0f;
+    constexpr float POISON_BOLT_WORTH_IT = 1.5f;
+    constexpr float POISON_BOLT_SEARCH = 30.0f;
+    // Bots within this much more than POISON_BOLT_KEEP walk toward her no further.
+    constexpr float POISON_BOLT_HOLD_EXTRA = 10.0f;
+
+    // --- Anubisath Defender ----------------------------------------------
+    // Each Defender rolls its abilities as it is pulled, and nothing on it shows which until it
+    // uses them: Thunderclap (26554, everyone within 25 yd, about 1,150) or Shadow Storm (26555,
+    // everyone within 45 yd but not within 25: the script drops those), Plague (26556, on the
+    // highest-threat player who isn't its tank: every 3 s 26557 hits the raid within 5 yd of them)
+    // or Meteor. The first cast tells.
+    enum : uint32
+    {
+        NPC_ANUBISATH_DEFENDER = 15277,
+        SPELL_DEFENDER_THUNDERCLAP = 26554,
+        SPELL_DEFENDER_SHADOW_STORM = 26555,
+        SPELL_DEFENDER_PLAGUE = 26556,
+        SPELL_DEFENDER_PLAGUE_HIT = 26557,
+    };
+    // Ranged bots and healers stand outside Thunderclap by this much (the gap from their edge to
+    // its reach), or inside Shadow Storm's dead zone by this much (centre to centre, flat, as the
+    // script measures it).
+    constexpr float THUNDERCLAP_KEEP = 2.0f;
+    constexpr float SHADOW_STORM_SAFE = 25.0f;
+    constexpr float SHADOW_STORM_KEEP = 3.0f;
+    // A plagued bot keeps this much more than the plague's reach (and the others' edge) from
+    // every other raid member.
+    constexpr float PLAGUE_KEEP = 1.5f;
+    constexpr float DEFENDER_SPOT = 1.0f;
+    constexpr float DEFENDER_WORTH_IT = 1.5f;
+    constexpr float DEFENDER_SEARCH = 24.0f;
+    // Defenders are looked at this far round the bot.
+    constexpr float DEFENDER_SEARCH_RANGE = 60.0f;
+
+    void AddDefenderScripts();
+
+    // --- Nature resistance -------------------------------------------------
+    // Viscidus (Poison Bolt Volley, Toxin), Princess Huhuran (Poison Bolt, Noxious Poison) and the
+    // Bug Trio (Kri's Toxic Volley and cloud) deal nature damage to everyone. Nature Resistance
+    // Totem and Aspect of the Wild are raid auras (30 yd round the totem or the hunter) that don't
+    // stack with each other: one shaman keeps the totem down and one hunter keeps the aspect up,
+    // the first of each in group order who knows it and is within NATURE_HELPER_RANGE of the boss.
+    constexpr uint32 SPELL_NATURE_RESISTANCE_TOTEM_RANK_1 = 10595;
+    constexpr uint32 ASPECT_OF_THE_WILD_RANKS[] = { 20043, 20190, 27045, 49071 };
+    constexpr float NATURE_HELPER_RANGE = 50.0f;
 
     std::vector<KillOrderEntry> const& KillOrder();
 
@@ -562,6 +751,45 @@ private:
     RaidClear::WayOutWalk _walk;
 };
 
+// Viscidus has shattered and this damage dealer isn't on a glob.
+class RcAq40GlobTrigger : public Trigger
+{
+public:
+    RcAq40GlobTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 glob") {}
+    bool IsActive() override;
+};
+
+class RcAq40KillGlobAction : public AttackAction
+{
+public:
+    RcAq40KillGlobAction(PlayerbotAI* botAI) : AttackAction(botAI, "rc aq40 kill glob") {}
+    bool Execute(Event event) override;
+};
+
+// While globs crawl, a damage dealer's target picking (skull, assist) keeps it on its own glob,
+// or on globs at all.
+class RcAq40GlobMultiplier : public Multiplier
+{
+public:
+    RcAq40GlobMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 glob") {}
+    float GetValue(Action* action) override;
+};
+
+// The bot has an area spell ready that would hit GLOB_AOE_MIN globs or more.
+class RcAq40GlobAoeTrigger : public Trigger
+{
+public:
+    RcAq40GlobAoeTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 glob aoe") {}
+    bool IsActive() override;
+};
+
+class RcAq40GlobAoeAction : public Action
+{
+public:
+    RcAq40GlobAoeAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 glob aoe") {}
+    bool Execute(Event event) override;
+};
+
 // Keeps bots from walking toward something that stands in a cloud.
 class RcAq40ToxinHoldMultiplier : public Multiplier
 {
@@ -702,6 +930,14 @@ public:
     bool Execute(Event event) override;
 };
 
+// The last interrupt in reach of Skeram waits for True Fulfillment.
+class RcAq40SkeramInterruptMultiplier : public Multiplier
+{
+public:
+    RcAq40SkeramInterruptMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 skeram interrupt") {}
+    float GetValue(Action* action) override;
+};
+
 // --- Fankriss -------------------------------------------------------------
 
 // The bot is one of Fankriss' two tanks, has no Mortal Wound, and the tank he is on has enough.
@@ -783,6 +1019,247 @@ class RcAq40PoisonCloudHoldMultiplier : public Multiplier
 {
 public:
     RcAq40PoisonCloudHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 poison cloud hold") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Princess Huhuran ------------------------------------------------------
+
+// No poison cure goes to a raid member under Wyvern Sting, no Abolish Poison or Cleansing Totem
+// while she is fighting (each would take it off later).
+class RcAq40WyvernStingMultiplier : public Multiplier
+{
+public:
+    RcAq40WyvernStingMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 wyvern sting") {}
+    float GetValue(Action* action) override;
+};
+
+// A shaman has a Cleansing Totem down while she is fighting.
+class RcAq40CleansingTotemTrigger : public Trigger
+{
+public:
+    RcAq40CleansingTotemTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 cleansing totem") {}
+    bool IsActive() override;
+};
+
+class RcAq40DestroyCleansingTotemAction : public Action
+{
+public:
+    RcAq40DestroyCleansingTotemAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 destroy cleansing totem") {}
+    bool Execute(Event event) override;
+};
+
+// She has Berserk (or is about to), and the bot is one Poison Bolt should miss and stands too close.
+class RcAq40PoisonBoltTrigger : public Trigger
+{
+public:
+    RcAq40PoisonBoltTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 poison bolt") {}
+    bool IsActive() override;
+};
+
+class RcAq40PoisonBoltKeepAwayAction : public Action
+{
+public:
+    RcAq40PoisonBoltKeepAwayAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 poison bolt keep away"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
+// Keeps those bots from walking back up to her.
+class RcAq40PoisonBoltHoldMultiplier : public Multiplier
+{
+public:
+    RcAq40PoisonBoltHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 poison bolt hold") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Anubisath Defender ----------------------------------------------------
+
+// A ranged bot or healer stands inside a Defender's Thunderclap or outside its Shadow Storm's dead
+// zone.
+class RcAq40DefenderAoeTrigger : public Trigger
+{
+public:
+    RcAq40DefenderAoeTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 defender aoe") {}
+    bool IsActive() override;
+};
+
+class RcAq40DefenderAoeMoveAction : public Action
+{
+public:
+    RcAq40DefenderAoeMoveAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 defender aoe move"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
+// The bot has a Defender's Plague and another raid member stands in its reach.
+class RcAq40PlagueTrigger : public Trigger
+{
+public:
+    RcAq40PlagueTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 plague") {}
+    bool IsActive() override;
+};
+
+class RcAq40PlagueMoveAwayAction : public Action
+{
+public:
+    RcAq40PlagueMoveAwayAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 plague move away"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
+// A plagued bot walks toward nothing with raid members round it; a ranged bot or healer toward
+// nothing that would take it into a Thunderclap.
+class RcAq40DefenderHoldMultiplier : public Multiplier
+{
+public:
+    RcAq40DefenderHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 defender hold") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Nature resistance -----------------------------------------------------
+
+// A nature fight, and the bot is the raid's shaman for Nature Resistance Totem (none down) or its
+// hunter for Aspect of the Wild (not up).
+class RcAq40NatureResistanceTrigger : public Trigger
+{
+public:
+    RcAq40NatureResistanceTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 nature resistance") {}
+    bool IsActive() override;
+};
+
+class RcAq40NatureResistanceAction : public Action
+{
+public:
+    RcAq40NatureResistanceAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 nature resistance") {}
+    bool Execute(Event event) override;
+};
+
+// That shaman's air slot is the totem's, and that hunter casts no other aspect.
+class RcAq40NatureResistanceMultiplier : public Multiplier
+{
+public:
+    RcAq40NatureResistanceMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 nature resistance") {}
+    float GetValue(Action* action) override;
+};
+
+// --- Twin Emperors ----------------------------------------------------------
+
+// The bot is on a twin it can't hurt (or nothing), or is a twin's tank and isn't on its twin.
+class RcAq40TwinTargetTrigger : public Trigger
+{
+public:
+    RcAq40TwinTargetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 twin target") {}
+    bool IsActive() override;
+};
+
+// Onto the twin it should be hitting; with none, off the one it can't hurt.
+class RcAq40AttackTwinAction : public RcLeaveTargetAction
+{
+public:
+    RcAq40AttackTwinAction(PlayerbotAI* botAI) : RcLeaveTargetAction(botAI, "rc aq40 attack twin") {}
+    bool Execute(Event event) override;
+
+protected:
+    bool IsBadTarget(Unit const* unit) override;
+    bool IsBadPetTarget(Unit const* unit) override;
+};
+
+// Nothing the bot does is aimed at a twin it can't hurt; a twin's tank picks no other target.
+class RcAq40TwinTargetMultiplier : public Multiplier
+{
+public:
+    RcAq40TwinTargetMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 twin target") {}
+    float GetValue(Action* action) override;
+};
+
+// The bot stands where the twins don't want it: too close to Vek'lor (or, for his tank, not in
+// its band), too close to Vek'nilash, or in a Blizzard.
+class RcAq40TwinsPositionTrigger : public Trigger
+{
+public:
+    RcAq40TwinsPositionTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 twins position") {}
+    bool IsActive() override;
+};
+
+class RcAq40TwinsPositionAction : public Action
+{
+public:
+    RcAq40TwinsPositionAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 twins position"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
+// Keeps Vek'lor's tank from walking into his Burst, and melee from walking back to Vek'nilash
+// while a teleport is due.
+class RcAq40TwinsHoldMultiplier : public Multiplier
+{
+public:
+    RcAq40TwinsHoldMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 twins hold") {}
+    float GetValue(Action* action) override;
+};
+
+// The bot is the tank Vek'nilash is on, and he is close enough to Vek'lor to be healed.
+class RcAq40TwinsApartTrigger : public Trigger
+{
+public:
+    RcAq40TwinsApartTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 twins apart") {}
+    bool IsActive() override;
+};
+
+class RcAq40TwinsApartAction : public Action
+{
+public:
+    RcAq40TwinsApartAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 twins apart"), _walk(botAI) {}
+    bool Execute(Event event) override;
+
+private:
+    RaidClear::WayOutWalk _walk;
+};
+
+// The bot's pet is to be kept by its side (a teleport is due, or all it could hit is Vek'lor), or
+// was and may fight again.
+class RcAq40TwinsPetTrigger : public Trigger
+{
+public:
+    RcAq40TwinsPetTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 twins pet") {}
+    bool IsActive() override;
+};
+
+class RcAq40TwinsPetAction : public Action
+{
+public:
+    RcAq40TwinsPetAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 twins pet") {}
+    bool Execute(Event event) override;
+};
+
+// The bot is Vek'lor's tank and has Avenger's Shield or Exorcism ready for him.
+class RcAq40VeklorTankThreatTrigger : public Trigger
+{
+public:
+    RcAq40VeklorTankThreatTrigger(PlayerbotAI* botAI) : Trigger(botAI, "rc aq40 veklor tank threat") {}
+    bool IsActive() override;
+};
+
+class RcAq40VeklorTankThreatAction : public Action
+{
+public:
+    RcAq40VeklorTankThreatAction(PlayerbotAI* botAI) : Action(botAI, "rc aq40 veklor tank threat") {}
+    bool Execute(Event event) override;
+};
+
+// Holds damage on Vek'lor under his tank's threat.
+class RcAq40VeklorThreatMultiplier : public Multiplier
+{
+public:
+    RcAq40VeklorThreatMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc aq40 veklor threat") {}
     float GetValue(Action* action) override;
 };
 
