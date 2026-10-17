@@ -351,8 +351,20 @@ RaidClear.RuinsOfAhnQiraj.Enable = 1
 #                     Fankriss gets an off-tank and skull first; two tanks take him in turns,
 #                     swapping at 4 stacks of Mortal Wound. Bug Trio: skull on the broods, then
 #                     Yauj, Kri, Vem; Yauj's Great Heal is interrupted, shamans keep Tremor Totem
-#                     down, bots leave Kri's Poison Cloud; Vekniss Guardians one at a time. Also:
-#                     bots walk out of an Anubisath Defender's Explode (20 yd) before it goes off.
+#                     down, bots leave Kri's Poison Cloud; Vekniss Guardians one at a time.
+#                     Viscidus globs: each damage dealer takes a glob of its own, area spells on
+#                     clusters. Nature fights (Viscidus, Huhuran, Bug Trio): one shaman keeps
+#                     Nature Resistance Totem down, one hunter Aspect of the Wild. Huhuran: no
+#                     poison cures on Wyvern Sting (no Abolish Poison or Cleansing Totem at all);
+#                     from Berserk, bots that aren't tanks or in plate stand 32 yd off. Twin
+#                     Emperors: two tanks (paladins first) hold the twins apart, Vek'lor's from
+#                     6.5-9.5 yd; melee hit only Vek'nilash, casters only Vek'lor (under his tank's
+#                     threat); nobody else within 12 yd of Vek'lor, ranged 8 yd from Vek'nilash,
+#                     out of Blizzard; melee step back and pets come back before each teleport.
+#                     Skeram: the last interrupt in reach waits for True Fulfillment. Anubisath
+#                     Defenders: ranged and healers outside Thunderclap or inside Shadow Storm's
+#                     25 yd, a plagued bot walks clear of everyone. Also: bots walk out of an
+#                     Anubisath Defender's Explode (20 yd) and Vek'lor's exploding bugs (15 yd).
 #        Default:     1
 #
 
