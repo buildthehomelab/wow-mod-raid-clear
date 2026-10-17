@@ -562,10 +562,14 @@ namespace
         Unit* mine = KeepsBack(bot) ? nullptr : botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
         if (mine && std::find(guards.begin(), guards.end(), mine) == guards.end())
             mine = nullptr;
+        // Stop at the first one too close: the loop must not measure from mine once it is null.
         if (mine)
             for (Creature const* other : guards)
                 if (other != mine && other->GetExactDist(mine) < WYRMGUARD_APART)
+                {
                     mine = nullptr;
+                    break;
+                }
 
         for (Creature* guard : guards)
         {
