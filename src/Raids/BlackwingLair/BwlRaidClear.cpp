@@ -206,6 +206,20 @@ void RaidClearBlackwingLairStrategy::InitTriggers(std::vector<TriggerNode*>& tri
 
     triggers.push_back(
         new TriggerNode("rc bwl chromaggus breath", { NextAction("rc bwl chromaggus hide", ACTION_RAID + 4) }));
+    // His weak school's spells ahead of the rotation (ACTION_NORMAL and the damage-over-time
+    // triggers), best first; under everything that moves, dispels or heals.
+    for (RaidClear::BlackwingLair::ChromaggusSchoolSpells const& entry :
+         RaidClear::BlackwingLair::ChromaggusSchoolSpellList())
+    {
+        std::vector<NextAction> spells;
+        float relevance = ACTION_HIGH + 2.0f;
+        for (char const* spell : entry.spells)
+        {
+            spells.push_back(NextAction(spell, relevance));
+            relevance -= 0.1f;
+        }
+        triggers.push_back(new TriggerNode(entry.trigger, spells));
+    }
     // A role's fixed spot (Firemaw, Chromaggus): under the hiding and the dodges, over the rest.
     triggers.push_back(new TriggerNode("rc bwl boss spot", { NextAction("rc bwl boss spot", ACTION_RAID) }));
     // Firemaw's tanks trade him; like the Ebonroc swap.
@@ -265,6 +279,7 @@ void RaidClearBlackwingLairStrategy::InitMultipliers(std::vector<Multiplier*>& m
     multipliers.push_back(new RcBwlConstructAnchorMultiplier(botAI));
     multipliers.push_back(new RcBwlDrakeTauntMultiplier(botAI));
     multipliers.push_back(new RcSpellReflectMultiplier(botAI));
+    multipliers.push_back(new RcBwlChromaggusSchoolMultiplier(botAI));
 }
 
 // --- Suppression Room -----------------------------------------------------
