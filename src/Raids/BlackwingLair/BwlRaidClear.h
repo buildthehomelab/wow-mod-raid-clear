@@ -75,6 +75,11 @@
  *     Incinerate and Ignite Flesh deal) is removed before anything else the curse removers would
  *     do: mages, druids and Cleanse Spirit shamans split the cursed players between them, tanks
  *     first, then the lowest on health. Healers leave it while a tank is below half health.
+ *     His Elemental Shield (BwlChromaggusSchool.cpp), recast every 17-25s, cuts Holy and four
+ *     of the five magic schools by 76% and makes the fifth hit about 2.9 times as hard. Ranged
+ *     damage dealers cast their spells of that school first, and while they have one to cast
+ *     they leave their spells of the other schools alone (a mage goes to Fire Blast and
+ *     Fireball, a balance druid to Moonfire and Starfire, a hunter to Arcane Shot).
  *   - Nefarian: no taunt lands on him, and the druid call (cat form) kills a bear that has
  *     him. So a paladin tank holds him when there is one: the other tanks stay under 80% of its
  *     threat, the damage dealers under the tanks' (the threat cap in Common/TankRoles.h).
@@ -250,6 +255,13 @@ namespace RaidClear::BlackwingLair
         SPELL_CORROSIVE_ACID    = 23313,
         SPELL_IGNITE_FLESH      = 23315,
         SPELL_FROST_BURN        = 23187,
+
+        // Chromaggus' Elemental Shield, one per weak school (BwlChromaggusSchool.cpp).
+        SPELL_FIRE_ELEMENTAL_SHIELD   = 22277,
+        SPELL_FROST_ELEMENTAL_SHIELD  = 22278,
+        SPELL_SHADOW_ELEMENTAL_SHIELD = 22279,
+        SPELL_NATURE_ELEMENTAL_SHIELD = 22280,
+        SPELL_ARCANE_ELEMENTAL_SHIELD = 22281,
 
         // Trash casts worth an interrupt (BwlInterrupts.cpp).
         SPELL_FIREBALL_VOLLEY   = 22425,   // Death Talon Wyrmkin: everyone within 45 yd
@@ -530,6 +542,21 @@ namespace RaidClear::BlackwingLair
     // Chromaggus has started casting something: kept for the breath clock.
     void NoteChromaggusBreath(Creature* boss, uint32 spellId);
 
+    // The school Chromaggus' Elemental Shield leaves him weak to (a SpellSchoolMask with one
+    // bit), or 0 when it isn't him or he has none up.
+    uint32 ChromaggusWeakSchool(Unit const* unit);
+
+    // A class's damage spells of one school, by playerbots action name, best first, and the
+    // trigger that puts them first when Chromaggus is weak to it.
+    struct ChromaggusSchoolSpells
+    {
+        uint8 cls;
+        uint32 school;           // SpellSchoolMask
+        char const* trigger;
+        std::vector<char const*> spells;
+    };
+    std::vector<ChromaggusSchoolSpells> const& ChromaggusSchoolSpellList();
+
     // Whether the boss sees this unit, or a spot a player could stand on, the way the core's
     // spells judge it: small props (M2 models) don't block, and a spot is looked at from the
     // boss's own eyes to a player's height above it.
@@ -799,6 +826,31 @@ public:
 
 protected:
     Unit* HideFrom() override;
+};
+
+// A ranged damage dealer of the trigger's class is on Chromaggus while his shield leaves him weak
+// to the school its spells are listed under (ChromaggusSchoolSpellList).
+class RcBwlChromaggusWeakTrigger : public Trigger
+{
+public:
+    RcBwlChromaggusWeakTrigger(PlayerbotAI* botAI, std::string const name) : Trigger(botAI, name) {}
+    bool IsActive() override;
+};
+
+// Zeroes a ranged damage dealer's damage spells of Chromaggus' strong schools while it has a
+// spell of his weak school it can cast.
+class RcBwlChromaggusSchoolMultiplier : public Multiplier
+{
+public:
+    RcBwlChromaggusSchoolMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "rc bwl chromaggus school") {}
+    float GetValue(Action* action) override;
+
+private:
+    // Whether the bot has a weak-school spell to cast, worked out at most every 100 ms per
+    // school: every off-school action asks.
+    uint32 _checkedMs = 0;
+    uint32 _checkedSchool = 0;
+    bool _hasSpell = false;
 };
 
 // The bot has a fixed spot for its role in this fight (the tank the boss is on, Firemaw's second

@@ -20,6 +20,7 @@
 #include "Raids/OnyxiasLair/OnyRaidClear.h"
 #include "Raids/ZulGurub/ZgRaidClear.h"
 
+#include "GenericSpellActions.h"
 #include "NamedObjectContext.h"
 
 class RaidClearStrategyContext : public NamedObjectContext<Strategy>
@@ -58,6 +59,10 @@ public:
     RaidClearActionContext()
     {
         creators["rc mark kill order"] = &RaidClearActionContext::mark_kill_order;
+        // Plain casts at the current target for Chromaggus' weak school: playerbots' own Arcane
+        // Shot is only useful to a hunter with Explosive Shot, its Frost Shock goes to a snare target.
+        creators["rc bwl arcane shot"] = [](PlayerbotAI* botAI) -> Action* { return new CastSpellAction(botAI, "arcane shot"); };
+        creators["rc bwl frost shock"] = [](PlayerbotAI* botAI) -> Action* { return new CastSpellAction(botAI, "frost shock"); };
         creators["rc offtank target"] = &RaidClearActionContext::offtank_target;
         creators["rc offtank separate"] = &RaidClearActionContext::offtank_separate;
         creators["rc offtank stack"] = &RaidClearActionContext::offtank_stack;
@@ -357,6 +362,12 @@ public:
         creators["rc charmed target"] = &RaidClearTriggerContext::charmed_target;
         creators["rc mage target reflects"] = &RaidClearTriggerContext::mage_target_reflects;
         creators["rc warlock target reflects"] = &RaidClearTriggerContext::warlock_target_reflects;
+        // One per class and school, named in ChromaggusSchoolSpellList.
+        for (auto const& entry : RaidClear::BlackwingLair::ChromaggusSchoolSpellList())
+        {
+            std::string const name = entry.trigger;
+            creators[name] = [name](PlayerbotAI* botAI) -> Trigger* { return new RcBwlChromaggusWeakTrigger(botAI, name); };
+        }
     }
 
 private:
