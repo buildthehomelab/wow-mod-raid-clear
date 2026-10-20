@@ -573,6 +573,7 @@ namespace RaidClear::TempleOfAhnQiraj
         NPC_VEKNILASH = 15275,  // the fighter: immune to every school but physical and holy
         NPC_QIRAJI_SCARAB = 15316,
         NPC_QIRAJI_SCORPION = 15317,
+        SPELL_MUTATE_BUG = 802,
         SPELL_TWIN_TELEPORT = 799,       // Vek'lor's: the two swap places
         SPELL_TWIN_TELEPORT_STUN = 800,  // on both, as they land
         SPELL_HEAL_BROTHER = 7393,

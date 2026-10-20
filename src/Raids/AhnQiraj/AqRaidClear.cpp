@@ -171,6 +171,9 @@ std::vector<RaidClear::KillOrderEntry> const& RaidClear::RuinsOfAhnQiraj::KillOr
 std::vector<RaidClear::KillOrderEntry> const& RaidClear::TempleOfAhnQiraj::KillOrder()
 {
     static std::vector<KillOrderEntry> const table = {
+        // Only mutated bugs enter the kill order (KillOrderSkips filters the others).
+        { NPC_QIRAJI_SCARAB, 0 },
+        { NPC_QIRAJI_SCORPION, 0 },
         // Skeram's images, then Skeram (KillOrderSkips holds him back while one is alive).
         { NPC_SKERAM, 0 },
         // Each glob that reaches the middle of the room heals Viscidus.
@@ -205,6 +208,9 @@ bool RaidClear::TempleOfAhnQiraj::KillOrderSkips(Player* /*bot*/, Unit const* un
     if (!unit)
         return false;
     uint32 const entry = unit->GetEntry();
+    // Neutral room bugs are not adds; exploding bugs are escaped rather than chased.
+    if (entry == NPC_QIRAJI_SCARAB || entry == NPC_QIRAJI_SCORPION)
+        return !unit->HasAura(SPELL_MUTATE_BUG) || unit->HasAura(AhnQiraj::SPELL_EXPLODE_BUG);
     if (entry != NPC_YAUJ && entry != NPC_KRI && entry != NPC_VEM)
         return false;
     Creature const* bug = unit->ToCreature();
